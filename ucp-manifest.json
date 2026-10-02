@@ -1,0 +1,55 @@
+{
+  "$schema": "https://ucp.org",
+  "ucpVersion": "2.5.0",
+  "manifestId": "ucp_man_992384a8fbc201e",
+  "timestamp": "2026-10-02T13:35:00Z",
+  
+  "agentIdentity": {
+    "provider": "PayPal AI Gateway",
+    "runtimeEnvironment": "NVIDIA-OpenShell-v0.1.x",
+    "verificationMethod": "Kernel-Enforced-Attestation",
+    "sandboxId": "sb-latam-airlines",
+    "agentPublicKey": "Solana1111111111111111111111111111111112A"
+  },
+
+  "commerceIntent": {
+    "category": "Travel.Flights",
+    "parameters": {
+      "origin": "Any.Verified",
+      "destination": "GIG.RioDeJaneiro.BR",
+      "departureWindow": {
+        "start": "2026-11-01T00:00:00Z",
+        "end": "2026-11-07T23:59:59Z"
+      },
+      "preferences": {
+        "carrierWhitelist": ["LATAM"],
+        "class": "Economy",
+        "passengers": 2
+      }
+    },
+    "governanceConstraints": {
+      "humanInTheLoopRequired": true,
+      "approvalMode": "Copilot",
+      "expiration": "2026-10-31T23:59:59Z"
+    }
+  },
+
+  "settlementSpecification": {
+    "paymentMethod": "Stablecoin.DigitalAsset",
+    "tokenSymbol": "PYUSD",
+    "blockchainNetwork": "Solana.Mainnet",
+    "escrowRequired": true,
+    "maxBudget": {
+      "amount": 900.00,
+      "currency": "USD"
+    },
+    "maxGasFeeAllocation": {
+      "amount": 0.001,
+      "currency": "SOL"
+    },
+    "payoutConditions": {
+      "onTrigger": "Delivery.Carrier.Attestation",
+      "carrierProvider": "DHL_OR_LATAM_API_CONFIRM"
+    }
+  }
+}

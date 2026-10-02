@@ -1,0 +1,330 @@
+{
+  "schema_version": 1,
+  "diagram_type": "architecture",
+  "meta": {
+    "title": "PayPal AI Agent Gateway — System Architecture",
+    "locale": "en",
+    "output": "paypal-ai-agent-architecture.html",
+    "quality_profile": "showcase",
+    "views": [
+      {
+        "id": "intent-path",
+        "label": "Intent to policy",
+        "focus": [
+          "ui",
+          "api",
+          "gemini",
+          "grid"
+        ],
+        "note": "Free text becomes a structured, human-approvable spend rule."
+      },
+      {
+        "id": "approval-gate",
+        "label": "Human approval",
+        "focus": [
+          "grid",
+          "enforce"
+        ],
+        "note": "No rule is live until a person activates it in the table."
+      },
+      {
+        "id": "settlement",
+        "label": "Settlement",
+        "focus": [
+          "paypalclient",
+          "paypal"
+        ],
+        "note": "One shared PayPal client reads balance and transactions."
+      },
+      {
+        "id": "fx-shield",
+        "label": "Venezuela FX shield",
+        "focus": [
+          "api",
+          "inflation",
+          "paypalclient"
+        ],
+        "note": "Opt-in path that shields a devaluing VES balance."
+      }
+    ]
+  },
+  "components": [
+    {
+      "id": "ui",
+      "type": "frontend",
+      "label": "Dashboard UI",
+      "sublabel": "Next.js 15 · React 19",
+      "brand": "next-js",
+      "pos": [
+        40,
+        140
+      ],
+      "size": [
+        170,
+        64
+      ]
+    },
+    {
+      "id": "grid",
+      "type": "frontend",
+      "label": "AG Grid",
+      "sublabel": "policy table",
+      "pos": [
+        40,
+        280
+      ],
+      "size": [
+        170,
+        64
+      ]
+    },
+    {
+      "id": "api",
+      "type": "backend",
+      "label": "Agent API",
+      "sublabel": "POST /api/agent",
+      "pos": [
+        450,
+        60
+      ],
+      "size": [
+        170,
+        64
+      ]
+    },
+    {
+      "id": "inflation",
+      "type": "backend",
+      "label": "FX Shield",
+      "sublabel": "InflationShield.ts",
+      "pos": [
+        450,
+        170
+      ],
+      "size": [
+        170,
+        64
+      ]
+    },
+    {
+      "id": "paypalclient",
+      "type": "backend",
+      "label": "PayPal Client",
+      "sublabel": "lib/paypal.ts",
+      "pos": [
+        450,
+        280
+      ],
+      "size": [
+        170,
+        64
+      ]
+    },
+    {
+      "id": "enforce",
+      "type": "security",
+      "label": "Policy Enforcement",
+      "sublabel": "lib/contingency.ts",
+      "pos": [
+        450,
+        390
+      ],
+      "size": [
+        170,
+        64
+      ]
+    },
+    {
+      "id": "gemini",
+      "type": "external",
+      "label": "Google Gemini",
+      "sublabel": "structured JSON output",
+      "brand": "google-gemini",
+      "pos": [
+        900,
+        60
+      ],
+      "size": [
+        170,
+        64
+      ]
+    },
+    {
+      "id": "paypal",
+      "type": "external",
+      "label": "PayPal API",
+      "sublabel": "Transaction Search v1",
+      "brand": "paypal",
+      "pos": [
+        900,
+        280
+      ],
+      "size": [
+        170,
+        64
+      ]
+    },
+    {
+      "id": "openshell",
+      "type": "security",
+      "label": "NVIDIA OpenShell",
+      "sublabel": "planned sandbox",
+      "pos": [
+        900,
+        390
+      ],
+      "size": [
+        170,
+        64
+      ]
+    }
+  ],
+  "boundaries": [
+    {
+      "kind": "security-group",
+      "label": "Browser — client components",
+      "wraps": [
+        "ui",
+        "grid"
+      ],
+      "pad": 24
+    },
+    {
+      "kind": "security-group",
+      "label": "Next.js server — secrets stay here",
+      "wraps": [
+        "api",
+        "inflation",
+        "paypalclient",
+        "enforce"
+      ],
+      "pad": 24
+    }
+  ],
+  "connections": [
+    {
+      "id": "intent-submit",
+      "from": "ui",
+      "to": "api",
+      "label": "POST /api/agent",
+      "variant": "emphasis",
+      "fromSide": "right",
+      "toSide": "left"
+    },
+    {
+      "id": "intent-to-llm",
+      "from": "api",
+      "to": "gemini",
+      "label": "intent + schema",
+      "fromSide": "right",
+      "toSide": "left"
+    },
+    {
+      "id": "policy-return",
+      "from": "gemini",
+      "to": "api",
+      "label": "policy JSON",
+      "fromSide": "bottom",
+      "toSide": "bottom"
+    },
+    {
+      "id": "render-row",
+      "from": "ui",
+      "to": "grid",
+      "label": "pending policy row",
+      "fromSide": "bottom",
+      "toSide": "top",
+      "labelAt": [
+        125,
+        218
+      ]
+    },
+    {
+      "id": "approve",
+      "from": "grid",
+      "to": "enforce",
+      "label": "approved rule",
+      "fromSide": "right",
+      "toSide": "left"
+    },
+    {
+      "id": "fx-route",
+      "from": "api",
+      "to": "inflation",
+      "label": "FX keywords",
+      "fromSide": "bottom",
+      "toSide": "top",
+      "labelAt": [
+        535,
+        164
+      ]
+    },
+    {
+      "id": "balance-check",
+      "from": "inflation",
+      "to": "paypalclient",
+      "label": "balance",
+      "fromSide": "bottom",
+      "toSide": "top",
+      "labelAt": [
+        535,
+        248
+      ]
+    },
+    {
+      "id": "sign-allow",
+      "from": "enforce",
+      "to": "paypalclient",
+      "label": "ALLOW_AND_SIGN (simulated)",
+      "variant": "dashed",
+      "fromSide": "top",
+      "toSide": "bottom"
+    },
+    {
+      "id": "paypal-queries",
+      "from": "paypalclient",
+      "to": "paypal",
+      "label": "OAuth 2.0 + balance",
+      "fromSide": "right",
+      "toSide": "left"
+    },
+    {
+      "id": "openshell-plan",
+      "from": "enforce",
+      "to": "openshell",
+      "label": "planned sandbox",
+      "variant": "dashed",
+      "fromSide": "right",
+      "toSide": "left"
+    }
+  ],
+  "cards": [
+    {
+      "dot": "cyan",
+      "title": "Intent to policy",
+      "items": [
+        "POST /api/agent rejects malformed JSON, empty intent, and anything over 500 chars",
+        "Gemini is forced to valid JSON by responseSchema, never parsed from prose",
+        "The result lands as a pending row — nothing is live until approved"
+      ]
+    },
+    {
+      "dot": "emerald",
+      "title": "Human approval",
+      "items": [
+        "AG Grid renders Active / Protecting / Activate, not internal jargon",
+        "Autonomous for small routine spends, Copilot for large ones",
+        "Policy and status strings are shared constants in lib/policy.ts"
+      ]
+    },
+    {
+      "dot": "rose",
+      "title": "Security",
+      "items": [
+        "lib/paypal.ts is imported by server code only — no client bundle holds secrets",
+        "Enforcement is an in-process check today; the OpenShell sandbox is not wired yet",
+        "Blocked attempts never reach PayPal, so a local decision log is required"
+      ]
+    }
+  ]
+}
