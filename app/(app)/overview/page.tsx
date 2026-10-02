@@ -10,8 +10,9 @@ export default async function AgentDashboardPage() {
   // browser; only this pre-formatted string is passed down as a prop.
   const pyusdBalance = await getPYUSDBalance();
 
+  // Padding only: the (app) layout owns the page background and the sidebar offset.
   return (
-    <main className="min-h-screen bg-slate-50/50 py-8">
+    <main className="py-8">
       <AgentGrid initialBalance={pyusdBalance} />
     </main>
   );
