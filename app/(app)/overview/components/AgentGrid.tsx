@@ -35,7 +35,7 @@ import WhatCellRenderer from "./WhatCellRenderer";
 import VEPagoMovilShield from "./VEPagoMovilShield";
 
 // Shared status/mode strings (also produced by the API routes on the server).
-import { STATUS, MODE, MODE_OPTIONS } from "@/lib/policy";
+import { STATUS, MODE, MODE_OPTIONS, type HoldAction } from "@/lib/policy";
 
 interface PolicyRow {
   id: number;
@@ -97,7 +97,27 @@ export default function AgentGrid({ initialBalance }: { initialBalance: string }
         "https://cdn.dummyjson.com/product-images/mens-shoes/sports-sneakers-off-white-&-red/thumbnail.webp",
       conditionMet: false,
       conditionDetail:
-        "Price is 119.99 USD, condition requires <= 100 · matched 1/2 terms matched on dummyjson (demo-catalog)",
+        "Price is 119.99 USD, condition requires <= 100 · 2/2 terms matched (full query) on dummyjson (demo-catalog)",
+    },
+    // A held purchase order whose condition is satisfied right now: money is
+    // set aside and waiting for the operator to settle it. The price and
+    // thumbnail are the catalog's own values for this product.
+    {
+      id: 3,
+      what: "Apple AirPods Max Silver",
+      merchant: "Apple",
+      limit: 600,
+      currency: "USD",
+      condition: "price <= 600",
+      expires: "2026-10-31",
+      mode: MODE.autonomous,
+      status: STATUS.reserved,
+      marketPrice: 549.99,
+      marketImage:
+        "https://cdn.dummyjson.com/product-images/mobile-accessories/apple-airpods-max-silver/thumbnail.webp",
+      conditionMet: true,
+      conditionDetail:
+        "Price is 549.99 USD, condition requires <= 600 · 4/4 terms matched (full query) on dummyjson (demo-catalog)",
     },
   ]);
 
@@ -107,22 +127,87 @@ export default function AgentGrid({ initialBalance }: { initialBalance: string }
 
   // Single funnel that every panel writes to: Pago Móvil, the QR scanner and
   // the fraud/deflation simulations all append their events to this console.
-  const addLog = (message: string) => {
+  //
+  // Stable by construction — it only uses the functional form of setState —
+  // so the handlers below can honestly list it as a dependency instead of
+  // closing over a value that changes every render.
+  const addLog = useCallback((message: string) => {
     const time = new Date().toLocaleTimeString();
     setLogs((prev) => [`[${time}] ${message}`, ...prev]);
-  };
-
-  const onApprovePolicy = useCallback((rowToApprove: PolicyRow) => {
-    addLog(`🛡️ [GATEWAY] Enforcing immutable policy for "${rowToApprove.what}". Ceiling: ${rowToApprove.limit} ${rowToApprove.currency}.`);
-    setRowData((prevRows) =>
-      prevRows.map((row) =>
-        row.id === rowToApprove.id ? { ...row, status: STATUS.enforced } : row
-      )
-    );
-    setTimeout(() => {
-      addLog(`🟢 [GATEWAY] Sandbox 'sb-${(rowToApprove.merchant || rowToApprove.what).toLowerCase().replace(/\s+/g, "-")}' sealed and active.`);
-    }, 600);
   }, []);
+
+  /**
+   * Ask the server to move a policy through its lifecycle.
+   *
+   * The browser never decides the outcome. `activate` returns where the row
+   * should land, `capture` is re-judged against the catalog on every attempt,
+   * and an illegal transition comes back as an error the console reports. A
+   * refused capture still refreshes the verdict on the row, because the point
+   * of asking is finding out where the price actually is.
+   */
+  const handleHoldAction = useCallback(
+    async (action: HoldAction, row: PolicyRow) => {
+      try {
+        const res = await fetch("/api/holds", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            action,
+            policy: {
+              id: row.id,
+              what: row.what,
+              merchant: row.merchant,
+              condition: row.condition,
+              limit: row.limit,
+              currency: row.currency,
+              status: row.status,
+            },
+          }),
+        });
+        const data = await res.json();
+
+        if (!data.success) {
+          addLog(`❌ [HOLD] ${data.error ?? "The transition was refused."}`);
+          if (typeof data.conditionMet !== "undefined") {
+            setRowData((prev) =>
+              prev.map((r) =>
+                r.id === row.id
+                  ? {
+                      ...r,
+                      conditionMet: data.conditionMet,
+                      conditionDetail: data.conditionDetail ?? r.conditionDetail,
+                    }
+                  : r
+              )
+            );
+          }
+          return;
+        }
+
+        addLog(data.log);
+
+        setRowData((prev) =>
+          prev.map((r) =>
+            r.id === row.id
+              ? {
+                  ...r,
+                  status: data.status,
+                  conditionMet:
+                    typeof data.conditionMet !== "undefined" ? data.conditionMet : r.conditionMet,
+                  conditionDetail: data.conditionDetail ?? r.conditionDetail,
+                  marketPrice:
+                    typeof data.marketPrice === "number" ? data.marketPrice : r.marketPrice,
+                }
+              : r
+          )
+        );
+      } catch (error) {
+        const message = error instanceof Error ? error.message : String(error);
+        addLog(`❌ Error reaching the hold service: ${message}`);
+      }
+    },
+    [addLog]
+  );
 
   const triggerFraudSimulation = () => {
     addLog("⚠️ [ALERT] Incoming charge attempt detected from an external gateway...");
@@ -315,7 +400,14 @@ export default function AgentGrid({ initialBalance }: { initialBalance: string }
             AG Grid tolerates it, so we keep it for compatibility. What actually
             broke the grid was importing ag-grid.css. */}
         <div className="ag-theme-quartz" style={{ height: 200, width: "100%" }}>
-          <AgGridReact ref={gridRef} rowData={rowData} columnDefs={columnDefs} theme={themeQuartz} animateRows={true} context={{ onApprovePolicy }} />
+          <AgGridReact
+            ref={gridRef}
+            rowData={rowData}
+            columnDefs={columnDefs}
+            theme={themeQuartz}
+            animateRows={true}
+            context={{ onHoldAction: handleHoldAction }}
+          />
         </div>
       </div>
 

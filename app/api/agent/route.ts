@@ -103,7 +103,7 @@ export async function POST(req: NextRequest) {
         marketImage: product?.thumbnail ?? null,
         conditionMet: evaluation.met,
         conditionDetail: product
-          ? `${evaluation.detail} · matched ${matchedBy} on ${CATALOG_SOURCE.name} (${CATALOG_SOURCE.kind})`
+          ? `${evaluation.detail} · ${matchedBy} on ${CATALOG_SOURCE.name} (${CATALOG_SOURCE.kind})`
           : evaluation.detail,
       },
       openShellConfig: {
