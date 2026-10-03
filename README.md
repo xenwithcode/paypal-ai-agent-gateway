@@ -106,13 +106,16 @@ cp env.example .env.local
 PAYPAL_CLIENT_ID=your_sandbox_client_id
 PAYPAL_CLIENT_SECRET=your_sandbox_client_secret
 GEMINI_API_KEY=your_google_ai_studio_key
+# optional — anything other than "Production" runs against the sandbox
+PAYPAL_ENVIRONMENT=Sandbox
 ```
 
 ```bash
 npm run dev
 ```
 
-Open **http://localhost:3000**.
+Open the URL the dev server prints — **http://localhost:3000** unless that
+port is taken, in which case it picks the next free one and says so.
 
 > **No credentials yet?** Everything still runs. The server logs that it is using a demo balance and a deterministic policy fallback, and every screen keeps working. FX rates are live regardless — they need no keys at all.
 
@@ -122,6 +125,7 @@ Open **http://localhost:3000**.
 | `npm run build` | Production build — **stop `dev` first** |
 | `npm start` | Serve the production build |
 | `npm run lint` / `lint:fix` | ESLint |
+| `npm test` | Test suite — transition rules, condition evaluation, history readers. Uses Node's built-in runner, so no test dependency. |
 
 > ⚠️ `npm run build` and `npm run dev` both write to `.next/`. The build wipes it, so running them together leaves the dev server serving stale artifacts and throwing `MODULE_NOT_FOUND`.
 

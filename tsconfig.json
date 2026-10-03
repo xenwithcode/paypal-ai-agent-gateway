@@ -6,6 +6,11 @@
     "skipLibCheck": true,
     "strict": true,
     "noEmit": true,
+    // The test suite runs under `node --experimental-strip-types`, whose ESM
+    // resolver requires the extension. Application code keeps importing
+    // without one — `moduleResolution: bundler` resolves those — so this only
+    // ever affects `tests/`.
+    "allowImportingTsExtensions": true,
     "esModuleInterop": true,
     "module": "esnext",
     "moduleResolution": "bundler",
