@@ -3,7 +3,7 @@
 
 import { useCallback, useEffect, useState } from "react";
 import Image from "next/image";
-import { X, ImageOff, SearchX } from "lucide-react";
+import { X, ImageOff, SearchX, Bot } from "lucide-react";
 import { STATUS, type HoldAction } from "@/lib/policy";
 import type { CatalogProduct } from "@/lib/commerce/catalog";
 import type { PolicyRow } from "../types";
@@ -32,6 +32,8 @@ type Evaluation = {
   conditionMet: boolean | null;
   conditionDetail: string;
   source: Source;
+  /** Cheaper in-stock options in the same category, when the match is over budget. */
+  alternatives: CatalogProduct[];
 };
 
 type Props = {
@@ -45,6 +47,12 @@ type Props = {
     row: PolicyRow,
     info: { orderId: string; authorizationId: string }
   ) => Promise<void> | void;
+  /** Take up an in-budget product the agent found instead. */
+  onUseAlternative: (row: PolicyRow, product: CatalogProduct) => void;
+  /** Change the ceiling — the operator's own rule, stated with its new number. */
+  onRaiseCeiling: (row: PolicyRow, limit: number) => void;
+  /** Drop the order entirely. */
+  onDiscard: (row: PolicyRow) => void;
 };
 
 function money(value: number, currency: string) {
@@ -71,6 +79,9 @@ export default function OrderPanel({
   onClose,
   onAction,
   onPaypalAuthorized,
+  onUseAlternative,
+  onRaiseCeiling,
+  onDiscard,
 }: Props) {
   const [evaluating, setEvaluating] = useState(true);
   const [result, setResult] = useState<Evaluation | null>(null);
@@ -110,6 +121,7 @@ export default function OrderPanel({
         conditionMet: data.conditionMet ?? null,
         conditionDetail: data.conditionDetail ?? row.conditionDetail,
         source: data.source ?? null,
+        alternatives: Array.isArray(data.alternatives) ? data.alternatives : [],
       });
       setImageFailed(false);
     } catch {
@@ -121,6 +133,7 @@ export default function OrderPanel({
         conditionMet: row.conditionMet,
         conditionDetail: row.conditionDetail,
         source: null,
+        alternatives: [],
       });
     } finally {
       setEvaluating(false);
@@ -165,6 +178,19 @@ export default function OrderPanel({
       setBusy(false);
     }
   };
+
+  /**
+   * The moment the agent has to say no: the product exists but costs more
+   * than the operator allowed. Only offered while nothing has been approved,
+   * and only when there really is a product to talk about. `overCeiling` is
+   * computed above and shared with the envelope, so the message and the
+   * number in the table can never disagree.
+   */
+  const alternatives = result?.alternatives ?? [];
+  const agentPrompt =
+    row.status === STATUS.pending && overCeiling && product
+      ? { product, alternatives, overBy: Number((price - row.limit).toFixed(2)) }
+      : null;
 
   return (
     <div
@@ -384,7 +410,81 @@ export default function OrderPanel({
 
           {/* ── Human authorization ──────────────────────────────── */}
           <section className="px-6 py-5">
-            {isDone ? (
+            {agentPrompt ? (
+              /* The agent refuses to offer a button that would break the
+                 ceiling, and offers what it can do instead. Every path keeps
+                 the rule intact: a different product, an operator who changes
+                 their own limit out loud, or nothing at all. */
+              <div className="space-y-4">
+                <div className="rounded-2xl border border-blue-200 bg-blue-50/70 p-4">
+                  <p className="flex items-center gap-2 text-[11px] font-bold uppercase tracking-wider text-blue-700">
+                    <Bot className="h-4 w-4" strokeWidth={1.75} aria-hidden="true" />
+                    The agent found a problem
+                  </p>
+                  <p className="mt-2 text-sm leading-relaxed text-slate-700">
+                    I could not find{" "}
+                    <span className="font-semibold text-slate-900">{row.what}</span> at or below{" "}
+                    <span className="font-mono font-semibold">{money(row.limit, row.currency)}</span>.
+                    The closest match is{" "}
+                    <span className="font-semibold text-slate-900">{agentPrompt.product.title}</span>{" "}
+                    at{" "}
+                    <span className="font-mono font-semibold">
+                      {money(agentPrompt.product.price, agentPrompt.product.currency)}
+                    </span>{" "}
+                    — <span className="font-semibold text-red-700">{money(agentPrompt.overBy, row.currency)}</span>{" "}
+                    over your ceiling.
+                  </p>
+                  {agentPrompt.alternatives[0] && (
+                    <p className="mt-2 text-sm leading-relaxed text-slate-700">
+                      There is{" "}
+                      <span className="font-semibold text-slate-900">
+                        {agentPrompt.alternatives[0].title}
+                      </span>{" "}
+                      at{" "}
+                      <span className="font-mono font-semibold text-emerald-700">
+                        {money(agentPrompt.alternatives[0].price, agentPrompt.alternatives[0].currency)}
+                      </span>{" "}
+                      in the same category — inside your budget.
+                    </p>
+                  )}
+                </div>
+
+                <div className="space-y-2">
+                  {agentPrompt.alternatives[0] && (
+                    <button
+                      type="button"
+                      disabled={busy}
+                      onClick={() => onUseAlternative(row, agentPrompt.alternatives[0])}
+                      className="w-full rounded-xl bg-gradient-to-r from-emerald-600 to-green-600 px-5 py-3 text-sm font-bold text-white shadow-sm transition hover:from-emerald-700 hover:to-green-700 disabled:opacity-60"
+                    >
+                      Buy {agentPrompt.alternatives[0].title} at{" "}
+                      {money(agentPrompt.alternatives[0].price, agentPrompt.alternatives[0].currency)}
+                    </button>
+                  )}
+                  <button
+                    type="button"
+                    disabled={busy}
+                    onClick={() => onRaiseCeiling(row, Number(agentPrompt.product.price.toFixed(2)))}
+                    className="w-full rounded-xl border border-slate-300 bg-white px-5 py-3 text-sm font-semibold text-slate-700 transition hover:bg-slate-50 disabled:opacity-60"
+                  >
+                    Raise the ceiling to{" "}
+                    {money(agentPrompt.product.price, agentPrompt.product.currency)}
+                  </button>
+                  <button
+                    type="button"
+                    disabled={busy}
+                    onClick={() => onDiscard(row)}
+                    className="w-full px-5 py-2 text-sm font-medium text-slate-400 transition hover:text-red-600 disabled:opacity-60"
+                  >
+                    Discard this order
+                  </button>
+                </div>
+
+                <p className="text-center text-[11px] leading-relaxed text-slate-400">
+                  Nothing is authorized until you choose a path and approve it with PayPal.
+                </p>
+              </div>
+            ) : isDone ? (
               <div className="flex items-center justify-between gap-4 rounded-xl border border-emerald-200 bg-emerald-50 px-4 py-3">
                 <p className="text-sm font-semibold text-emerald-800">
                   {row.status === STATUS.captured

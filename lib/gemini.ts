@@ -266,16 +266,38 @@ function subjectOf(prompt: string): string {
     " "
   );
 
-  const cut = withDeadlineRemoved.search(
-    /\b(?:only if|unless|if the|when the|at most|up to|no more than|maximum budget|max budget)\b/i
+  const cut = Math.min(
+    ...[
+      withDeadlineRemoved.search(
+        /\b(?:only if|unless|if the|when the|at most|up to|no more than|no greater than|not more than|maximum budget|max budget|no m[áa]s de|no mayor que|m[áa]ximo)\b/i
+      ),
+      // "under 900" / "below 80" cut only when a number follows, so a phrase
+      // like "under the table" is left alone.
+      withDeadlineRemoved.search(/\b(?:under|below|menor que|menos de)\s*[$]?\s*\d/i),
+    ].filter((index) => index > 0)
   );
-  const head = cut > 0 ? withDeadlineRemoved.slice(0, cut) : withDeadlineRemoved;
+  const head = Number.isFinite(cut) && cut > 0 ? withDeadlineRemoved.slice(0, cut) : withDeadlineRemoved;
+
+  // Strip the ask itself. "I want to buy a pair of white sneakers, size 42,
+  // for…" names a shopping request, not a product — and it is what the card
+  // shows as the order's title and what the catalogue gets searched with.
+  const withoutIntent = head
+    .replace(
+      /^(?:i\s+(?:want|need|would\s+like|'d\s+like)\s+(?:to\s+)?(?:buy|purchase|get|find|order|pick\s+up)|please\s+(?:buy|get|find|order)|(?:buy|purchase|order|get|find)(?:\s+me)?|quiero\s+(?:comprar|pedir|encontrar)|necesito\s+(?:comprar|compram?e)|compr(?:arme|ame)|b[uú]scame?|encu[eé]ntrame?)\b[\s,:-]*/i,
+      ""
+    )
+    // Articles and quantifiers read as filler once the ask is gone: "a laptop"
+    // and "a pair of white sneakers" search and display better without them.
+    .replace(/^(?:a\s+(?:pair|set|couple)\s+of|an?|the)\s+/i, "");
 
   return (
-    head
+    withoutIntent
       .replace(/\b\d[\d,.]*\s*(?:pyusd|usd|ves|dollars?)\b/gi, " ") // drop amounts
       .replace(/\s+/g, " ")
-      .replace(/[,;:.\s]+$/, "")
+      // A cut mid-sentence leaves the preposition that introduced what was
+      // cut: "…size 42, for no more than" becomes "…size 42, for".
+      .replace(/\s+\b(?:for|to|at|with|of|de|para|por|a|e)\s*$/i, "")
+      .replace(/[,;.]+\s*$/, "")
       .trim() || "Unnamed purchase"
   );
 }
@@ -294,8 +316,15 @@ function buildDemoPolicy(prompt: string, availableBalance: string): IntentionPol
   const limit = requested > 0 ? requested : Math.round(maxBalance * 0.25) || 100;
   const capped = maxBalance > 0 ? Math.min(limit, maxBalance) : limit;
 
-  // Anything phrased as "only if" / "unless" is a condition, not noise.
-  const conditional = /\b(only if|unless|si solo|solo si|cuando|when)\b/i.test(prompt);
+  // A spending cap phrased as a limit is a condition, not noise: "no more
+  // than $80" means buy only at or below 80, which is exactly what the
+  // condition column has to say for the hold to be judged at all. Without
+  // this the order read "spend now" while its ceiling said "exceeded".
+  const conditional =
+    /\b(only if|unless|no more than|no greater than|not more than|at most|up to|when)\b/i.test(prompt) ||
+    /\b(si solo|solo si|cuando|no m[áa]s de|no mayor que|m[áa]ximo)\b/i.test(prompt) ||
+    // "under 900" / "below 80" / "menor que 50" — a bound with a number after it.
+    /\b(?:under|below|menor que|menos de)\s*[$]?\s*\d/i.test(prompt);
 
   return {
     what: subjectOf(prompt).slice(0, 90),

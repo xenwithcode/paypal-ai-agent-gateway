@@ -123,6 +123,40 @@ export async function getProduct(id: number): Promise<CatalogProduct | null> {
 }
 
 /**
+ * Everything else in the category that fits the ceiling.
+ *
+ * The direct match is what was asked for; these are what else exists at the
+ * price the operator actually set. Offered only when the match is out of
+ * budget, so the agent can propose something rather than merely report a
+ * refusal — and every price here is the catalog's own, so nothing in the
+ * proposal is invented.
+ */
+export async function findWithinBudget(
+  product: CatalogProduct | null,
+  ceiling: number
+): Promise<CatalogProduct[]> {
+  if (!product || !product.category || !Number.isFinite(ceiling)) return [];
+
+  const payload = await getJson<{ products?: RawProduct[] }>(
+    `${BASE}/products/category/${encodeURIComponent(product.category)}?limit=20`
+  );
+  if (!payload?.products) return [];
+
+  return payload.products
+    .map(normalise)
+    .filter(
+      (p): p is CatalogProduct =>
+        p !== null &&
+        p.id !== product.id &&
+        p.price <= ceiling &&
+        // A sold-out product is not an option, however cheap.
+        p.stock > 0
+    )
+    .sort((a, b) => b.price - a.price)
+    .slice(0, 3);
+}
+
+/**
  * Search, then degrade.
  *
  * The demo catalogue ANDs its terms, so the natural phrase "white sneakers"

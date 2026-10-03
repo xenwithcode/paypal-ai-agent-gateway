@@ -24,7 +24,12 @@ import {
   statusAfterActivate,
   type HoldAction,
 } from "@/lib/policy";
-import { matchProduct, evaluateCondition, CATALOG_SOURCE } from "@/lib/commerce/catalog";
+import {
+  matchProduct,
+  evaluateCondition,
+  findWithinBudget,
+  CATALOG_SOURCE,
+} from "@/lib/commerce/catalog";
 import { captureAuthorization, voidAuthorization } from "@/lib/paypal";
 
 /** PayPal ids are a short alphanumeric run; anything else is not one. */
@@ -159,6 +164,15 @@ export async function POST(req: NextRequest) {
         `${policy.what} ${policy.merchant}`.trim()
       );
       const evaluation = evaluateCondition(policy.condition, product);
+
+      // Alternatives are worth fetching exactly when the match is out of
+      // budget — that is the only moment the agent has something to propose
+      // instead of a refusal.
+      const alternatives =
+        product && product.price > policy.limit
+          ? await findWithinBudget(product, policy.limit)
+          : [];
+
       return NextResponse.json({
         success: true,
         conditionMet: evaluation.met,
@@ -166,6 +180,7 @@ export async function POST(req: NextRequest) {
         // The full record the approval card renders: image, specs, lead time,
         // returns — read at the moment the operator is looking, not at draft.
         product,
+        alternatives,
         source: product ? CATALOG_SOURCE : null,
         conditionDetail: product
           ? `${evaluation.detail} · ${matchedBy} on ${CATALOG_SOURCE.name} (${CATALOG_SOURCE.kind})`
@@ -256,6 +271,21 @@ export async function POST(req: NextRequest) {
           conditionDetail: product
             ? `${evaluation.detail} · ${matchedBy} on ${CATALOG_SOURCE.name} (${CATALOG_SOURCE.kind})`
             : evaluation.detail,
+        },
+        { status: 409 }
+      );
+    }
+
+    // The ceiling is enforced whether or not the policy carried a condition.
+    // A policy with a limit of 80 and no condition still may not be settled
+    // for 119.99 — otherwise the one rule every order has would be the only
+    // one nothing checks.
+    const settledPrice = product ? product.price : null;
+    if (settledPrice !== null && settledPrice > policy.limit) {
+      return NextResponse.json(
+        {
+          success: false,
+          error: `The price is ${settledPrice.toFixed(2)} ${policy.currency}, above the ${policy.limit.toFixed(2)} ${policy.currency} ceiling.`,
         },
         { status: 409 }
       );

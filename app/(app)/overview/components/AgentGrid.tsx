@@ -37,6 +37,7 @@ import OrderPanel from "./OrderPanel";
 // Shared status/mode strings (also produced by the API routes on the server).
 import { STATUS, MODE, MODE_OPTIONS, isStatus, type HoldAction } from "@/lib/policy";
 import type { PolicyRow } from "../types";
+import type { CatalogProduct } from "@/lib/commerce/catalog";
 // Type-only, so it is erased before bundling: this file is client-side and
 // `lib/paypal.ts` constructs a network client at module scope, which must
 // never reach the browser. `isolatedModules` guarantees the `import type`
@@ -417,6 +418,70 @@ export default function AgentGrid({
     [addLog, handleHoldAction]
   );
 
+  /**
+   * Take up something that fits the ceiling instead of the product that was
+   * asked for. The order keeps every rule it has — ceiling, condition, mode —
+   * and only changes what it points at, which is why the panel re-reads the
+   * catalog right after.
+   */
+  const useAlternative = useCallback(
+    (row: PolicyRow, product: CatalogProduct) => {
+      setRowData((prev) =>
+        prev.map((r) =>
+          r.id === row.id
+            ? {
+                ...r,
+                what: product.title,
+                merchant: product.brand ?? r.merchant,
+                marketPrice: Number(product.price.toFixed(2)),
+                marketImage: product.thumbnail ?? null,
+              }
+            : r
+        )
+      );
+      addLog(
+        `🔁 [AGENT] Swapped to "${product.title}" at ${product.price.toFixed(2)} USD — inside your ${row.limit.toFixed(2)} ${row.currency} ceiling.`
+      );
+    },
+    [addLog]
+  );
+
+  /**
+   * The operator raises their own ceiling. The button says the new number
+   * because this is the moment the policy changes, and a policy changed
+   * without being read is not a policy anyone agreed to.
+   */
+  const raiseCeiling = useCallback(
+    (row: PolicyRow, limit: number) => {
+      setRowData((prev) =>
+        prev.map((r) =>
+          r.id === row.id
+            ? {
+                ...r,
+                limit,
+                // A condition written against the old ceiling would leave this
+                // order unfilable at the price just accepted.
+                condition: r.condition.replace(/(price\s*<=\s*)[\d.,]+/i, `$1${limit}`),
+              }
+            : r
+        )
+      );
+      addLog(
+        `📏 [AGENT] Ceiling raised to ${limit.toFixed(2)} ${row.currency} for "${row.what}" — you changed your own rule.`
+      );
+    },
+    [addLog]
+  );
+
+  /** Drop the order. Nothing is authorized, so nothing has to be undone. */
+  const discardOrder = useCallback(
+    (row: PolicyRow) => {
+      setRowData((prev) => prev.filter((r) => r.id !== row.id));
+      addLog(`🗑️ [AGENT] Discarded "${row.what}". Nothing was authorized.`);
+    },
+    [addLog]
+  );
+
   const triggerFraudSimulation = async () => {
     const target = rowData.find((row) => row.status === STATUS.enforced) ?? rowData[0];
     if (!target) {
@@ -749,12 +814,14 @@ export default function AgentGrid({
       </div>
 
       {/* AG Grid policy table */}
-      <div className="bg-white rounded-2xl border border-slate-200 p-4 shadow-sm">
+      <div className="bg-white rounded-2xl border border-slate-200 p-4 shadow-sm sm:p-6">
         {/* The ag-theme-quartz class is no longer required (the Theming API
             styles the grid through theme={themeQuartz}), but it is harmless and
             AG Grid tolerates it, so we keep it for compatibility. What actually
             broke the grid was importing ag-grid.css. */}
-        <div className="ag-theme-quartz" style={{ height: 200, width: "100%" }}>
+        {/* Grows with the viewport: 200px showed four rows and crowded every
+            column. Three steps, so a phone still gets a usable table. */}
+        <div className="ag-theme-quartz h-[360px] w-full sm:h-[460px] lg:h-[560px]">
           <AgGridReact
             ref={gridRef}
             rowData={rowData}
@@ -762,6 +829,8 @@ export default function AgentGrid({
             theme={themeQuartz}
             animateRows={true}
             context={{ onHoldAction: handleHoldAction }}
+            rowHeight={52}
+            headerHeight={44}
             onCellClicked={(event) => {
               // Editable cells keep their own behaviour: a click there is the
               // first half of "double-click to edit", and opening a dialog on
@@ -783,6 +852,9 @@ export default function AgentGrid({
           onClose={() => setSelectedId(null)}
           onAction={handleHoldAction}
           onPaypalAuthorized={handlePaypalAuthorized}
+          onUseAlternative={useAlternative}
+          onRaiseCeiling={raiseCeiling}
+          onDiscard={discardOrder}
         />
       )}
 

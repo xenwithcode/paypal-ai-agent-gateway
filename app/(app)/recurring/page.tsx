@@ -1,9 +1,13 @@
 // app/(app)/recurring/page.tsx
-import { CreditCard } from "lucide-react";
-import EmptyState from "../components/EmptyState";
+import RecurringView from "./RecurringView";
 
 export const metadata = { title: "Recurring payments · PayPal AI Agent Gateway" };
 
+/**
+ * The heading states the rule this section implements — add one once, runs
+ * until you remove it — and the view lists exactly the orders that follow it:
+ * active, with no condition left to satisfy.
+ */
 export default function RecurringPage() {
   return (
     <>
@@ -15,13 +19,9 @@ export default function RecurringPage() {
         </p>
       </header>
 
-      <EmptyState
-        icon={CreditCard}
-        title="No recurring payments yet"
-        description="Add a service and your agent covers each charge automatically, inside a monthly limit you set. Pause or remove any of them whenever you want."
-        action={{ label: "Add a payment", disabled: true }}
-        note="Adding and removing services arrives in the next iteration — the list and both actions belong here."
-      />
+      <div className="px-6 pt-6 md:px-8">
+        <RecurringView />
+      </div>
     </>
   );
 }
