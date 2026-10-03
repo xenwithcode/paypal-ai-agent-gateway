@@ -37,7 +37,7 @@ Approve **once**: *≤ 60 USD, this week, these merchants.* The agent then produ
 
 | Capability | What you see |
 | --- | --- |
-| **Intent → policy** | Type *"fly to Rio with LATAM, at most 900 PYUSD"* and get a structured policy: merchant, limit, currency, autonomy mode, expiry. |
+| **Intent → order** | Type *"white sneakers, size 10, by Friday, only if the price drops to 60 USD"* and get a structured order: what, ceiling, **condition**, valid until, mode. |
 | **Human-in-the-loop approval** | Every rule lands as `Awaiting approval`. Nothing is live until you click **Activate** in the AG Grid cell. |
 | **Autonomous vs. Copilot** | Routine spends run `Autonomous`. Large or one-off spends run `Copilot` and require a human. |
 | **Over-limit containment** | Charge 901 against a 900 limit → blocked, alarm fires, the event is logged. |
@@ -125,9 +125,15 @@ Open **http://localhost:3000**.
 
 ## Demo walkthrough
 
-1. **Create a policy.** In the intent bar:
-   `I want to fly to Rio with LATAM, spending at most 900 PYUSD`
-   → a row appears with `LATAM Airlines`, limit `900`, mode `Copilot`, status `Awaiting approval`.
+1. **Draft an order.** In the intent bar:
+   `white sneakers, size 10, by Friday, only if the price drops to 60 USD or less`
+   → press **Draft order**. A row appears: *What* `white sneakers, size 10…`,
+   *Ceiling* `60 USD`, *Condition* `price <= 60`, *Mode* `Autonomous`, status
+   `Awaiting approval`.
+
+   With a Gemini key configured the natural-language deadline (`by Friday`) is
+   parsed into *Valid until*. The no-key fallback does not resolve dates, so
+   that column reads `None`.
 
 2. **Approve it.** Click **Activate** → status becomes `Active`.
 
@@ -210,9 +216,12 @@ paypal-ai-agent/
 
 ### Next — the spine of the thesis
 
-1. **Widen the intent schema.** The current schema captures merchant, limit, currency, mode and expiry only. It cannot express a real purchase order: product, size, colour, deadline, delivery, optimization goal.
-2. **Conditional Holds.** `authorizeOrder` when the human approves → capture only when the condition holds → `voidPayment` when it does not. *Reserve ≠ spend* is the Purchase Order behaviour, and every API it needs is already in the SDK.
-3. **Route A — PYUSD to a PayPal account.** `createOrder` with `payee.emailAddress`, so money moves to another person with no conversion.
+1. **Conditional Holds.** `authorizeOrder` when the human approves → capture only when the condition holds → `voidPayment` when it does not. *Reserve ≠ spend* is the Purchase Order behaviour, and every API it needs is already in the SDK.
+2. **Route A — PYUSD to a PayPal account.** `createOrder` with `payee.emailAddress`, so money moves to another person with no conversion.
+
+### Done
+
+- **Widened intent schema** — `what`, `merchant`, `condition`, `expires` alongside the ceiling, with grid columns to match. The fallback prefers a currency-adjacent amount so a shoe size cannot become a budget.
 
 ### Then
 
