@@ -191,9 +191,17 @@ function normalise(policy: unknown, availableBalance: string): IntentionPolicy {
   };
 }
 
+/**
+ * Merchant names used by the deterministic fallback.
+ *
+ * These are company names, not product names: `hostify` turns each one into
+ * the allow-listed host (`Spotify` → api.spotify.com), so "Spotify Premium"
+ * would have produced a domain that does not exist and "LATAM Airlines" one
+ * LATAM has retired. Every entry here is checked for what it turns into.
+ */
 const KNOWN_MERCHANTS = [
-  "LATAM Airlines",
-  "Spotify Premium",
+  "LATAM",
+  "Spotify",
   "Netflix",
   "Amazon",
   "Airbnb",

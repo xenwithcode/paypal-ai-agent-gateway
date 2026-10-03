@@ -23,6 +23,13 @@ const nextConfig: NextConfig = {
         destination: "/overview",
         permanent: false,
       },
+      // Pago Móvil moved out of the FX section into Send money, where it sits
+      // beside the rail it was always paired with.
+      {
+        source: "/fx/pago-movil",
+        destination: "/send/bank",
+        permanent: false,
+      },
     ];
   },
 };

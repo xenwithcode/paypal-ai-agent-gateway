@@ -32,7 +32,6 @@ if (process.env.NODE_ENV !== "production") {
 // Child visual components
 import ActionBtnRenderer from "./ActionBtnRenderer";
 import WhatCellRenderer from "./WhatCellRenderer";
-import VEPagoMovilShield from "./VEPagoMovilShield";
 
 // Shared status/mode strings (also produced by the API routes on the server).
 import { STATUS, MODE, MODE_OPTIONS, isStatus, type HoldAction } from "@/lib/policy";
@@ -212,8 +211,9 @@ export default function AgentGrid({ initialBalance }: { initialBalance: string }
     }
   }, [rowData]);
 
-  // Single funnel that every panel writes to: Pago Móvil, the QR scanner and
-  // the fraud/deflation simulations all append their events to this console.
+  // Single funnel for this page: drafting, hold transitions and the two test
+  // buttons all append their events here. Pago Móvil reports next to its own
+  // form instead — a transfer's outcome belongs where the transfer is.
   //
   // Stable by construction — it only uses the functional form of setState —
   // so the handlers below can honestly list it as a dependency instead of
@@ -606,9 +606,6 @@ export default function AgentGrid({ initialBalance }: { initialBalance: string }
           />
         </div>
       </div>
-
-      {/* Venezuela Pago Móvil + QR panel */}
-      <VEPagoMovilShield addLog={addLog} />
 
       {/* Kernel event console */}
       <div className="bg-slate-950 text-slate-200 p-4 rounded-2xl border border-slate-800 shadow-inner font-mono text-xs space-y-2">

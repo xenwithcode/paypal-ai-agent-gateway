@@ -12,6 +12,7 @@ import {
   ScrollText,
   Coins,
   Smartphone,
+  Send,
 } from "lucide-react";
 import { useFxShield } from "../hooks/useFxShield";
 
@@ -26,6 +27,7 @@ type NavItem = {
 /** Sections every user sees. Global-first: spend governance is the core. */
 const PRIMARY_NAV: NavItem[] = [
   { href: "/overview", label: "Overview", icon: LayoutDashboard, hint: "Intents, policies and the live event console" },
+  { href: "/send", label: "Send money", icon: Send, hint: "Pay a person by PayPal, or settle into a local bank" },
   { href: "/recurring", label: "Recurring payments", icon: CreditCard, hint: "Spotify, Netflix, Prime Video and the rest" },
   { href: "/activity", label: "Activity", icon: Activity, hint: "Income, spending, blocked attempts and refunds" },
   { href: "/ucp", label: "UCP Commerce", icon: ScrollText, hint: "Structured commerce manifests" },
@@ -139,16 +141,18 @@ export default function Sidebar() {
           </button>
         </div>
 
-        {/* Revealed only once the user turns FX protection on. */}
+        {/* Revealed only once the user turns FX protection on. Points at the
+            same rail the Send money section holds — a shortcut, not a second
+            copy of it. */}
         {fxEnabled && (
           <NavLink
             item={{
-              href: "/fx/pago-movil",
+              href: "/send/bank",
               label: "Pago Móvil",
               icon: Smartphone,
               hint: "Send PYUSD and settle into a local bank account",
             }}
-            active={isActive("/fx/pago-movil")}
+            active={isActive("/send/bank")}
           />
         )}
       </nav>
