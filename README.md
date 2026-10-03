@@ -38,13 +38,16 @@ Approve **once**: *≤ 60 USD, this week, these merchants.* The agent then produ
 | Capability | What you see |
 | --- | --- |
 | **Intent → order** | Type *"white sneakers, size 10, by Friday, only if the price drops to 60 USD"* and get a structured order: what, ceiling, **condition**, valid until, mode. |
-| **Human-in-the-loop approval** | Every rule lands as `Awaiting approval`. Nothing is live until you click **Activate** in the AG Grid cell. |
+| **Human-in-the-loop approval** | Every rule lands as `Awaiting approval`. The card opens itself after a draft — nothing is live until you authorize. |
+| **Approval card** | Click the product and the order opens as a card: real image, stock, rating, returns and SKU, then **your envelope** — ceiling, condition verdict, the one host it may reach. The catalog is re-read when it opens, so the price being judged is the price now. |
+| **Conditional holds** | An order with a condition reserves its ceiling (`Reserved`), settles only through **Capture** while the condition holds, and returns the money through **Release**. The server re-judges the condition on every capture instead of trusting the verdict from draft time. |
+| **Charges judged on the server** | `/api/policy/check` compares an attempted charge against the ceiling, the endpoint allow-list and the policy's state, and reports every violation it finds — not just the first. |
 | **Autonomous vs. Copilot** | Routine spends run `Autonomous`. Large or one-off spends run `Copilot` and require a human. |
-| **Over-limit containment** | Charge 901 against a 900 limit → blocked, alarm fires, the event is logged. |
+| **Over-limit containment** | Attempt one unit over your ceiling, from a host the order does not allow → the server refuses it and reports every violation it found. The alarm carries the reason it gave. |
 | **Live FX rates** | BCV official and intervention rates, plus Solana and the PYUSD peg — fetched from publishers, never hardcoded, each shown with its source and publication date. |
 | **FX shield (VES → PYUSD)** | An incoming VES deposit is converted at the published BCV rate, and the response carries the rate it used. |
 | **Conversion shown before it happens** | The transfer form prints *recipient gets* / *you pay* / *the applied rate* above the button, and refuses to submit while no live rate exists. |
-| **Live event console** | Every agent decision, policy injection and blocked request, streamed. |
+| **Live event console** | Every draft, hold transition and charge verdict on this page, streamed. |
 
 **Sections scaffolded and empty:** Recurring payments · Activity · Agentic Commerce.
 
@@ -133,11 +136,23 @@ Open **http://localhost:3000**.
 
    With a Gemini key configured the natural-language deadline (`by Friday`) is
    parsed into *Valid until*. The no-key fallback does not resolve dates, so
-   that column reads `None`.
+   that column reads `No expiry`.
 
-2. **Approve it.** Click **Activate** → status becomes `Active`.
+   **The approval card opens by itself.** It shows the product the agent
+   found — image, price, stock, rating, returns — and underneath it the
+   envelope you are being asked to accept: ceiling, condition and its verdict,
+   and the single host this order may reach.
 
-3. **Trigger the over-limit attempt.** **💥 Simulate Fraud** → a 901 charge against your 900 limit is blocked and the alarm fires.
+2. **Authorize it.** **Authorize with PayPal AI Agent** → the ceiling is
+   reserved and the row becomes `Reserved`. It settles only when the condition
+   holds, so **Capture** is offered only while it does — set a ceiling below
+   the current price and the card explains why capture is unavailable rather
+   than letting you press it.
+
+3. **Trigger the over-limit attempt.** **💥 Simulate Fraud** → a charge one
+   unit over your ceiling, from a host the order does not allow, is sent to
+   the server and refused. The alarm fires with the reason the server
+   returned — no fixed delay, no scripted outcome.
 
 4. **Trigger the FX shield.** **🛡️ Simulate VES Payroll** → a 45,000 VES deposit is converted at the **published BCV rate** (about 51.65 PYUSD at 871 VES/USD, not a round fictional number), and the row shows `Protecting`.
 
@@ -163,10 +178,9 @@ Stated plainly, because a judge deserves to know exactly what they are looking a
 
 | Piece | Status |
 | --- | --- |
-| **Payment execution** | No order is created or captured yet. `authorizeOrder` / `captureOrder` / `payee` are the next build step. |
-| **Enforcement** | Mirrors OpenShell's *block + isolate* semantics as an in-process check. Real kernel isolation needs an OpenShell sandbox — Phase 2. |
-| **Transfers and QR** | End-to-end flow modelled with realistic references. The **conversion maths is real**; the settlement is not. |
-| **Policy persistence** | Policies live in memory and vanish on refresh. |
+| **Payment execution** | No order is created or captured yet. The holds record the decision without reserving anything, and the card says so; `authorizeOrder` / `captureOrder` / `payee` are the next build step. |
+| **Enforcement** | The charge check is real and runs on the server — ceiling, endpoint allow-list and policy state, all live. What is modelled is the *isolation*; real kernel isolation needs an OpenShell sandbox, Phase 2. |
+| **Transfers and QR** | The conversion maths is real against the live BCV rate. No funds move, and the panel labels itself a preview rather than reporting a settlement. |
 | **Recurring / Activity / Agentic Commerce** | Sections exist and are empty. |
 
 > Nothing in this README or the UI claims enforcement or settlement that does not exist.
@@ -216,18 +230,26 @@ paypal-ai-agent/
 
 ### Next — the spine of the thesis
 
-1. **Conditional Holds.** `authorizeOrder` when the human approves → capture only when the condition holds → `voidPayment` when it does not. *Reserve ≠ spend* is the Purchase Order behaviour, and every API it needs is already in the SDK.
-2. **Route A — PYUSD to a PayPal account.** `createOrder` with `payee.emailAddress`, so money moves to another person with no conversion.
+1. **Real money through the holds.** The lifecycle, the transitions and the
+   verdict are built and tested; `authorizeOrder` → `captureOrder` →
+   `voidPayment` still needs sandbox credentials to move actual funds. Until
+   then a hold records the decision without reserving anything, and says so.
+2. **Route A — PYUSD to a PayPal account.** `createOrder` with `payee.emailAddress`, so money moves to another person with no conversion. The section it belongs in already exists at `/send`.
 
 ### Done
 
+- **Conditional Holds** — `Reserved` / `Captured` / `Released`, with the transition rules shared between the server and the button that offers them. Capture is refused whenever the condition is unmet *or unverifiable*, and is re-judged on every attempt rather than trusted from draft time.
+- **Server-side enforcement** — `/api/policy/check` compares an attempted charge against the ceiling, the endpoint allow-list and the policy's state; `/api/holds` performs the transitions. The browser reports what it wants; it does not get to declare that its condition is satisfied.
+- **Approval card** — the product card ACP and UCP put in front of the human, plus the envelope neither of them carries. Re-read from the catalog each time it opens.
+- **Order persistence** — rows survive a reload, are validated on read, and are re-checked against the live catalog on mount.
+- **Send money** — the transfer rails moved out of the dashboard into their own section, with a PayPal tab and a Venezuelan bank tab behind the FX opt-in.
+- **Honest console** — the log reports which path produced a policy, labels its simulated inputs as simulated, and prints the server's verdict instead of narrating one.
 - **Widened intent schema** — `what`, `merchant`, `condition`, `expires` alongside the ceiling, with grid columns to match. The fallback prefers a currency-adjacent amount so a shoe size cannot become a budget.
 
 ### Then
 
 - Activity ledger from Transaction Search v1 (`searchTransactions`) — income, spend, refunds, and blocked attempts, which PayPal never sees and must be logged locally.
 - Recurring payments through `createSubscription` / `cancelSubscription`.
-- Policy persistence.
 
 ### Phase 2
 
