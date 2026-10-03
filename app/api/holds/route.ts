@@ -25,15 +25,28 @@ import {
   type HoldAction,
 } from "@/lib/policy";
 import { matchProduct, evaluateCondition, CATALOG_SOURCE } from "@/lib/commerce/catalog";
+import { captureAuthorization, voidAuthorization } from "@/lib/paypal";
+
+/** PayPal ids are a short alphanumeric run; anything else is not one. */
+const PAYPAL_ID = /^[A-Z0-9]{10,40}$/i;
 
 /**
- * Whether a hold is backed by a real PayPal `authorizeOrder`.
+ * How a settlement actually happened.
  *
- * Deliberately false until Step 2c wires that call in. Setting it true now
- * would let the UI say money is reserved when nothing has been authorized —
- * the plausible-but-false statement this project has been removing.
+ * Determined per request rather than by a flag: a hold carries an
+ * authorization id only when PayPal issued one, and saying `live` for one that
+ * has none would be the exact claim this project keeps removing.
  */
-const HOLD_IS_BACKED_BY_PAYPAL = false;
+type HoldMode = "live" | "demo";
+
+/**
+ * A hold settles through PayPal only when the payer approved one — which is
+ * exactly when the row carries an authorization id. Without it, the decision
+ * is still recorded and the log says plainly that no funds moved.
+ */
+function holdNote(mode: HoldMode, authorizationId: string, after: string): string {
+  return mode === "live" ? ` PayPal ${authorizationId} → ${after}.` : " No funds moved.";
+}
 
 /** Mirrors the maxLength on the grid's editable cells. */
 const MAX_TEXT = 200;
@@ -46,6 +59,8 @@ interface PolicyInput {
   limit: number;
   currency: string;
   status: string;
+  /** PayPal's authorization id, present only when the payer approved a hold. */
+  authorizationId: string;
 }
 
 /** How each action reads in the past tense, for refusal messages. */
@@ -86,6 +101,17 @@ function readPolicy(value: unknown): PolicyInput | string {
   }
   if (!isStatus(p.status)) return "policy.status is not a known status.";
 
+  // Optional: present only when PayPal issued one. Anything that is not an id
+  // is refused rather than passed through to a PayPal call.
+  const authorizationId = p.authorizationId;
+  if (
+    authorizationId !== undefined &&
+    (typeof authorizationId !== "string" ||
+      (authorizationId !== "" && !PAYPAL_ID.test(authorizationId)))
+  ) {
+    return "policy.authorizationId is not a PayPal id.";
+  }
+
   return {
     id: p.id,
     what: p.what,
@@ -94,6 +120,7 @@ function readPolicy(value: unknown): PolicyInput | string {
     limit: p.limit,
     currency: p.currency,
     status: p.status,
+    authorizationId: typeof authorizationId === "string" ? authorizationId : "",
   };
 }
 
@@ -174,10 +201,26 @@ export async function POST(req: NextRequest) {
 
     // ------------------------------------------------------------------ release
     if (action === "release") {
+      let mode: HoldMode = "demo";
+      let after = "";
+      if (policy.authorizationId) {
+        try {
+          const voided = await voidAuthorization(policy.authorizationId);
+          mode = "live";
+          after = `${policy.authorizationId} (${voided.status})`;
+        } catch (error) {
+          return NextResponse.json(
+            { success: false, error: error instanceof Error ? error.message : "PayPal refused to void the hold." },
+            { status: 502 }
+          );
+        }
+      }
+
       return NextResponse.json({
         success: true,
         status: STATUS.released,
-        log: `↩️ [HOLD] Released "${policy.what}" — ${policy.limit.toFixed(2)} ${policy.currency} returned to the balance.`,
+        holdMode: mode,
+        log: `↩️ [HOLD] Released "${policy.what}" — ${policy.limit.toFixed(2)} ${policy.currency} returned.${holdNote(mode, policy.authorizationId, after)}`,
       });
     }
 
@@ -218,6 +261,23 @@ export async function POST(req: NextRequest) {
       );
     }
 
+    // This is the moment money moves — and only if PayPal is holding any.
+    let mode: HoldMode = "demo";
+    let after = "";
+    if (policy.authorizationId) {
+      try {
+        const captured = await captureAuthorization(policy.authorizationId);
+        mode = "live";
+        after = `${captured.captureId || policy.authorizationId} (${captured.status})`;
+      } catch (error) {
+        // A capture PayPal refuses is a refusal, not a success to soften.
+        return NextResponse.json(
+          { success: false, error: error instanceof Error ? error.message : "PayPal refused the capture." },
+          { status: 502 }
+        );
+      }
+    }
+
     return NextResponse.json({
       success: true,
       status: STATUS.captured,
@@ -228,8 +288,8 @@ export async function POST(req: NextRequest) {
       conditionDetail: product
         ? `${evaluation.detail} · ${matchedBy} on ${CATALOG_SOURCE.name} (${CATALOG_SOURCE.kind})`
         : evaluation.detail,
-      holdMode: HOLD_IS_BACKED_BY_PAYPAL ? "live" : "demo",
-      log: `✅ [HOLD] Captured ${policy.limit.toFixed(2)} ${policy.currency} for "${policy.what}". ${evaluation.detail}`,
+      holdMode: mode,
+      log: `✅ [HOLD] Captured ${policy.limit.toFixed(2)} ${policy.currency} for "${policy.what}". ${evaluation.detail}${holdNote(mode, policy.authorizationId, after)}`,
     });
   } catch (error) {
     // Full detail to the server log only; the browser gets a generic message.

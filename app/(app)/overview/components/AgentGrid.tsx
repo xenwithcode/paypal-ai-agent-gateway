@@ -327,6 +327,9 @@ export default function AgentGrid({
               limit: row.limit,
               currency: row.currency,
               status: row.status,
+              // Present only when PayPal issued one. The server settles
+              // against it or says plainly that no funds moved.
+              authorizationId: row.authorizationId ?? "",
             },
           }),
         });
