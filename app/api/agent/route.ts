@@ -3,6 +3,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { getPYUSDBalance } from "@/lib/paypal";
 import { parseUserIntention } from "@/lib/gemini";
 import { STATUS } from "@/lib/policy";
+import { matchProduct, evaluateCondition, CATALOG_SOURCE } from "@/lib/commerce/catalog";
 // Isolated module that owns the Venezuela inflation-shield logic.
 import { processEmergencyDevaluationShield } from "@/lib/shields/InflationShield";
 
@@ -78,6 +79,14 @@ export async function POST(req: NextRequest) {
     const availableBalance = await getPYUSDBalance();
     const policy = await parseUserIntention(prompt, availableBalance);
 
+    // Resolve the policy against a catalog entry. Without this a price
+    // condition could only be stored, never judged — and an unjudged condition
+    // must not read as satisfied.
+    const { product, matchedBy } = await matchProduct(
+      `${policy.what} ${policy.merchant}`.trim()
+    );
+    const evaluation = evaluateCondition(policy.condition, product);
+
     return NextResponse.json({
       success: true,
       gridRow: {
@@ -90,6 +99,12 @@ export async function POST(req: NextRequest) {
         expires: policy.expires || "None",
         mode: policy.mode,
         status: STATUS.pending,
+        marketPrice: product ? Number(product.price.toFixed(2)) : null,
+        marketImage: product?.thumbnail ?? null,
+        conditionMet: evaluation.met,
+        conditionDetail: product
+          ? `${evaluation.detail} · matched ${matchedBy} on ${CATALOG_SOURCE.name} (${CATALOG_SOURCE.kind})`
+          : evaluation.detail,
       },
       openShellConfig: {
         sandboxName: `sb-${slugify(policy.merchant || policy.what)}`,

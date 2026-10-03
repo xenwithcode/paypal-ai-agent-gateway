@@ -232,6 +232,33 @@ function extractCeiling(prompt: string): number {
 }
 
 /**
+ * Reduce an intent sentence to the thing being bought.
+ *
+ * The raw prompt carries the condition and deadline too, and using all of it
+ * both uglyifies the grid cell and makes a catalogue search match nothing.
+ * "white sneakers, only if the price drops to 60 USD" → "white sneakers".
+ */
+function subjectOf(prompt: string): string {
+  const withDeadlineRemoved = prompt.replace(
+    /\bby\s+(?:monday|tuesday|wednesday|thursday|friday|saturday|sunday|tomorrow|next\s+\w+|\d{4}-\d{2}-\d{2})\b/gi,
+    " "
+  );
+
+  const cut = withDeadlineRemoved.search(
+    /\b(?:only if|unless|if the|when the|at most|up to|no more than|maximum budget|max budget)\b/i
+  );
+  const head = cut > 0 ? withDeadlineRemoved.slice(0, cut) : withDeadlineRemoved;
+
+  return (
+    head
+      .replace(/\b\d[\d,.]*\s*(?:pyusd|usd|ves|dollars?)\b/gi, " ") // drop amounts
+      .replace(/\s+/g, " ")
+      .replace(/[,;:.\s]+$/, "")
+      .trim() || "Unnamed purchase"
+  );
+}
+
+/**
  * Deterministic fallback used when there is no real API key. It never pretends
  * to have consulted the model — it announces itself in the server log.
  */
@@ -249,7 +276,7 @@ function buildDemoPolicy(prompt: string, availableBalance: string): IntentionPol
   const conditional = /\b(only if|unless|si solo|solo si|cuando|when)\b/i.test(prompt);
 
   return {
-    what: prompt.trim().slice(0, 90) || "Unnamed purchase",
+    what: subjectOf(prompt).slice(0, 90),
     merchant,
     limit: capped,
     currency: /pyusd/i.test(prompt) ? "PYUSD" : "USD",

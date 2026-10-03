@@ -31,6 +31,7 @@ if (process.env.NODE_ENV !== "production") {
 
 // Child visual components
 import ActionBtnRenderer from "./ActionBtnRenderer";
+import WhatCellRenderer from "./WhatCellRenderer";
 import VEPagoMovilShield from "./VEPagoMovilShield";
 
 // Shared status/mode strings (also produced by the API routes on the server).
@@ -49,6 +50,14 @@ interface PolicyRow {
   expires: string;
   mode: string;
   status: string;
+  /** Catalog price at draft time, null when nothing matched. */
+  marketPrice: number | null;
+  /** Catalog thumbnail, so the approver sees what they are approving. */
+  marketImage: string | null;
+  /** true = condition satisfied, false = violated, null = cannot be judged. */
+  conditionMet: boolean | null;
+  /** How the verdict was reached, including the catalog it came from. */
+  conditionDetail: string;
 }
 
 export default function AgentGrid({ initialBalance }: { initialBalance: string }) {
@@ -68,17 +77,27 @@ export default function AgentGrid({ initialBalance }: { initialBalance: string }
       expires: "None",
       mode: MODE.autonomous,
       status: STATUS.enforced,
+      marketPrice: null,
+      marketImage: null,
+      conditionMet: true,
+      conditionDetail: "No condition — executes immediately.",
     },
     {
       id: 2,
-      what: "LATAM flight to Rio de Janeiro",
-      merchant: "LATAM Airlines",
-      limit: 900,
-      currency: "PYUSD",
-      condition: "price <= 900",
+      what: "Sports Sneakers Off White & Red",
+      merchant: "",
+      limit: 100,
+      currency: "USD",
+      condition: "price <= 100",
       expires: "2026-10-31",
       mode: MODE.copilot,
       status: STATUS.pending,
+      marketPrice: 119.99,
+      marketImage:
+        "https://cdn.dummyjson.com/product-images/mens-shoes/sports-sneakers-off-white-&-red/thumbnail.webp",
+      conditionMet: false,
+      conditionDetail:
+        "Price is 119.99 USD, condition requires <= 100 · matched 1/2 terms matched on dummyjson (demo-catalog)",
     },
   ]);
 
@@ -158,7 +177,7 @@ export default function AgentGrid({ initialBalance }: { initialBalance: string }
   };
 
   const columnDefs = useMemo<ColDef<PolicyRow>[]>(() => [
-    { field: "what", headerName: "What", editable: true, flex: 1.6 },
+    { field: "what", headerName: "What", editable: true, flex: 1.6, cellRenderer: WhatCellRenderer },
     {
       field: "limit",
       headerName: "Ceiling",
@@ -168,13 +187,34 @@ export default function AgentGrid({ initialBalance }: { initialBalance: string }
       cellClass: "font-mono text-emerald-600 font-semibold text-right",
     },
     {
+      field: "marketPrice",
+      headerName: "Price now",
+      // Read-only: the price belongs to the catalog, not to the approver.
+      flex: 0.8,
+      valueFormatter: (p) =>
+        typeof p.value === "number" ? `${p.value.toFixed(2)} ${p.data?.currency ?? ""}`.trim() : "—",
+      cellClass: "font-mono tabular-nums text-right",
+    },
+    {
       field: "condition",
       headerName: "Condition",
       editable: true,
-      flex: 1.2,
-      // Empty means "spend now"; show that rather than a blank cell.
-      valueFormatter: (p) => (p.value ? String(p.value) : "— spend now"),
-      cellClass: (p) => (p.value ? "font-mono text-slate-700" : "italic text-slate-400"),
+      flex: 1.3,
+      // The verdict is spelled out in words; colour is only a secondary cue,
+      // never the sole carrier of whether a condition holds.
+      valueFormatter: (p) => {
+        const raw = p.value ? String(p.value) : "";
+        if (!raw) return "— spend now";
+        const met = p.data?.conditionMet;
+        const verdict = met === true ? "met" : met === false ? "NOT met" : "unverified";
+        return `${raw} · ${verdict}`;
+      },
+      cellClass: (p) => {
+        if (!p.value) return "italic text-slate-400";
+        if (p.data?.conditionMet === false) return "font-mono text-red-700";
+        if (p.data?.conditionMet === true) return "font-mono text-emerald-700";
+        return "font-mono text-slate-500";
+      },
     },
     { field: "expires", headerName: "Valid until", editable: true, flex: 0.8 },
     {
