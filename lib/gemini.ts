@@ -1,5 +1,10 @@
 // lib/gemini.ts
-// Turns free-form user text into a structured spend policy for AG Grid.
+// Turns free-form user text into a structured spend policy — the purchase
+// order the human will approve.
+//
+// The schema is deliberately the same shape as the AG Grid columns. If the
+// model can express it and the table can show it, an approver can judge it;
+// fields nobody can inspect do not belong in something a human signs off on.
 import { GoogleGenAI, Type, type Schema } from "@google/genai";
 import { MODE, isMode } from "./policy";
 
@@ -21,50 +26,69 @@ function getClient(): GoogleGenAI | null {
 const intentionSchema: Schema = {
   type: Type.OBJECT,
   properties: {
-    commerce: {
+    what: {
       type: Type.STRING,
-      description: "Name of the identified merchant or airline",
+      description:
+        "What to buy, with the attributes that identify it. e.g. 'white sneakers, size 10' or 'flight to Rio with LATAM'",
+    },
+    merchant: {
+      type: Type.STRING,
+      description:
+        "Named merchant or brand if the user gave one, otherwise an empty string. Used to decide which endpoint may be contacted.",
     },
     limit: {
       type: Type.NUMBER,
-      description: "Maximum amount of money authorized",
+      description: "The ceiling — the most that may be spent. Never a guess at the price.",
     },
     currency: {
       type: Type.STRING,
-      description: "Transaction currency, defaults to PYUSD",
+      description: "ISO 4217 currency of the ceiling, e.g. USD or PYUSD.",
     },
-    mode: {
+    condition: {
       type: Type.STRING,
-      description: "'Autonomous' or 'Copilot' depending on the size of the spend",
+      description:
+        "What must be true before any money moves, e.g. 'price <= 60'. Empty string when the purchase should execute immediately without waiting.",
     },
     expires: {
       type: Type.STRING,
-      description: "Estimated expiry window for this directive",
+      description: "ISO date (YYYY-MM-DD) after which this authority lapses. Empty if none.",
+    },
+    mode: {
+      type: Type.STRING,
+      description: "'Autonomous' for small routine spends, 'Copilot' when a human must confirm.",
     },
   },
-  required: ["commerce", "limit", "currency", "mode"],
+  required: ["what", "limit", "currency", "mode"],
 };
 
 export type IntentionPolicy = {
-  commerce: string;
+  what: string;
+  merchant: string;
   limit: number;
   currency: string;
-  mode: string;
+  condition: string;
   expires?: string;
+  mode: string;
 };
 
 export async function parseUserIntention(
   prompt: string,
   availableBalance: string
 ): Promise<IntentionPolicy> {
-  // The system prompt is deliberately in English: it keeps the model's output
-  // vocabulary aligned with the English UI and the AG Grid select editor.
+  // The system prompt is in English so the model's vocabulary lines up with
+  // the column headers it has to satisfy.
   const systemInstruction =
-    `You are the financial intent validator for PayPal AI Agent Gateway. ` +
-    `You translate plain text into strict spend rules. The user's available ` +
-    `balance is ${availableBalance} PYUSD. If the requested limit exceeds the ` +
-    `balance, silently reduce it to the available balance. Respond only with ` +
-    `JSON matching the provided schema. Use currency "PYUSD".`;
+    `You are the purchase-order author for PayPal AI Agent Gateway. ` +
+    `Turn the user's request into a strict spending policy. The user's ` +
+    `available balance is ${availableBalance}. If the requested ceiling ` +
+    `exceeds it, reduce the ceiling to the available balance. Respond only ` +
+    `with JSON matching the provided schema.\n` +
+    `Rules:\n` +
+    `- "condition" is what must hold before money moves. Leave it empty when ` +
+    `the user wants it to happen right away.\n` +
+    `- "expires" is a YYYY-MM-DD date, never a phrase.\n` +
+    `- Keep "what" human readable; fold the identifying attributes into it ` +
+    `rather than inventing extra fields.`;
 
   const ai = getClient();
 
@@ -117,6 +141,21 @@ function parseBalance(value: string): number {
   return Number.isFinite(n) ? n : 0;
 }
 
+function asString(value: unknown): string {
+  if (value === undefined || value === null) return "";
+  const text = String(value).trim();
+  return text;
+}
+
+/** ISO date or empty — never let a phrase reach a date field. */
+function asIsoDate(value: unknown): string {
+  const text = asString(value);
+  if (!text) return "";
+  const parsed = new Date(text);
+  if (Number.isNaN(parsed.getTime())) return "";
+  return parsed.toISOString().slice(0, 10);
+}
+
 /** Enforces the balance cap and the exact types the UI expects. */
 function normalise(policy: unknown, availableBalance: string): IntentionPolicy {
   const source: Record<string, unknown> =
@@ -127,19 +166,18 @@ function normalise(policy: unknown, availableBalance: string): IntentionPolicy {
   const limit = Number.isFinite(requested) ? requested : 0;
 
   return {
-    commerce:
-      source.commerce !== undefined && String(source.commerce).trim()
-        ? String(source.commerce)
-        : "Unnamed merchant",
+    what: asString(source.what) || "Unnamed purchase",
+    merchant: asString(source.merchant),
     limit: maxBalance > 0 ? Math.min(limit, maxBalance) : limit,
-    currency: source.currency !== undefined ? String(source.currency) : "PYUSD",
+    currency: asString(source.currency) || "USD",
+    condition: asString(source.condition),
+    expires: asIsoDate(source.expires),
     // Must match MODE exactly, or the AG Grid select editor shows an empty cell.
     mode: isMode(source.mode) ? source.mode : MODE.copilot,
-    expires: source.expires !== undefined ? String(source.expires) : "End of month",
   };
 }
 
-const KNOWN_COMMERCE = [
+const KNOWN_MERCHANTS = [
   "LATAM Airlines",
   "Spotify Premium",
   "Netflix",
@@ -151,6 +189,48 @@ const KNOWN_COMMERCE = [
   "Falabella",
 ];
 
+/** "1,200.50" → 1200.5. Dots are decimals here, never thousands separators. */
+function parseAmount(raw: string): number {
+  const n = Number(raw.replace(/,/g, ""));
+  return Number.isFinite(n) ? n : 0;
+}
+
+/**
+ * Find the ceiling in free text. Naively taking the first number picks up
+ * "size 10" and turns a shoe size into a budget, so the order matters:
+ * currency-adjacent beats keyword-adjacent beats the first untouched number.
+ */
+function extractCeiling(prompt: string): number {
+  // 1. Written next to a currency: "60 USD", "900 PYUSD", "1,200 VES".
+  const byCurrency = prompt.match(
+    /(\d[\d,]*(?:\.\d+)?)\s*(?:pyusd|usd|ves|dollars?|bol[ií]vares?)\b/i
+  );
+  if (byCurrency) {
+    const n = parseAmount(byCurrency[1]);
+    if (n > 0) return n;
+  }
+
+  // 2. Next to a spending keyword: "price ... 60", "at most ... 900".
+  const byKeyword = prompt.match(
+    /\b(?:price|cost|max|budget|at most|up to|spend|limit|ceiling)\b[^0-9]{0,16}(\d[\d,]*(?:\.\d+)?)/i
+  );
+  if (byKeyword) {
+    const n = parseAmount(byKeyword[1]);
+    if (n > 0) return n;
+  }
+
+  // 3. First number that is not a size or quantity.
+  for (const match of prompt.matchAll(/\b(\d[\d,]*(?:\.\d+)?)\b/g)) {
+    const index = match.index ?? 0;
+    const preceding = prompt.slice(Math.max(0, index - 12), index);
+    if (/\b(size|qty|quantity|talla)\b/i.test(preceding)) continue;
+    const n = parseAmount(match[1]);
+    if (n > 0) return n;
+  }
+
+  return 0;
+}
+
 /**
  * Deterministic fallback used when there is no real API key. It never pretends
  * to have consulted the model — it announces itself in the server log.
@@ -159,34 +239,22 @@ function buildDemoPolicy(prompt: string, availableBalance: string): IntentionPol
   const maxBalance = parseBalance(availableBalance);
   const lower = prompt.toLowerCase();
 
-  const commerce =
-    KNOWN_COMMERCE.find((c) => lower.includes(c.split(" ")[0].toLowerCase())) ??
-    extractCapitalised(prompt) ??
-    "Delegated merchant";
+  const merchant = KNOWN_MERCHANTS.find((m) => lower.includes(m.split(" ")[0].toLowerCase())) ?? "";
 
-  // First number in the text is treated as the limit (e.g. "900 PYUSD").
-  const amountMatch = prompt.replace(/\./g, "").match(/(\d[\d,]*)\s*(?:pyusd|usd)?/i);
-  const requested = amountMatch ? Number(amountMatch[1].replace(/,/g, "")) : 0;
-
+  const requested = extractCeiling(prompt);
   const limit = requested > 0 ? requested : Math.round(maxBalance * 0.25) || 100;
   const capped = maxBalance > 0 ? Math.min(limit, maxBalance) : limit;
 
-  return {
-    commerce,
-    limit: capped,
-    currency: "PYUSD",
-    mode: capped >= 500 ? MODE.copilot : MODE.autonomous,
-    expires: "End of month",
-  };
-}
+  // Anything phrased as "only if" / "unless" is a condition, not noise.
+  const conditional = /\b(only if|unless|si solo|solo si|cuando|when)\b/i.test(prompt);
 
-/** Last-resort merchant guess from the first capitalised phrase in the prompt. */
-function extractCapitalised(prompt: string): string | null {
-  const match = prompt.match(/\b([A-ZÁÉÍÓÚÑ][a-záéíóúñ]{2,}(?:\s+[A-ZÁÉÍÓÚÑ][a-záéíóúñ]{2,})?)\b/);
-  if (!match) return null;
-  const ignored = new Set([
-    "Quiero", "I", "Want", "To", "For", "With", "The", "A", "An",
-    "My", "This", "Next", "Month", "Pay", "Max", "Maximum",
-  ]);
-  return ignored.has(match[1]) ? null : match[1];
+  return {
+    what: prompt.trim().slice(0, 90) || "Unnamed purchase",
+    merchant,
+    limit: capped,
+    currency: /pyusd/i.test(prompt) ? "PYUSD" : "USD",
+    condition: conditional ? `price <= ${capped}` : "",
+    expires: "",
+    mode: capped >= 500 ? MODE.copilot : MODE.autonomous,
+  };
 }

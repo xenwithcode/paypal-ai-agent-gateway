@@ -44,13 +44,16 @@ export async function processEmergencyDevaluationShield(config: DevaluationShiel
     success: true,
     gridRow: {
       id: Date.now(),
-      commerce: `FX Shield (${config.localCurrency} ──► PYUSD)`,
+      what: `Convert incoming ${config.localCurrency} to PYUSD`,
+      merchant: "BCV",
       limit: Number(protectedAmountPYUSD.toFixed(2)),
       currency: "PYUSD",
+      // The conversion has a trigger: money arriving, not a price to wait for.
+      condition: "on deposit",
+      expires: "None",
       // Must match MODE exactly, or the AG Grid select editor will not
       // recognise the value and shows an empty cell.
       mode: MODE.autonomous,
-      expires: "Permanent",
       status: STATUS.protecting,
     },
     fx: {

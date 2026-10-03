@@ -65,11 +65,11 @@ export async function handleFlightCancellation(
 
 export function enforceOpenShellKernelPolicy(
   outboundRequest: OutboundPaymentPayload,
-  activeGridPolicy: { commerce: string; maxLimit: number }
+  activeGridPolicy: { what: string; maxLimit: number }
 ) {
   console.log(`🛡️ [Kernel]: Intercepting outbound request toward: ${outboundRequest.targetDomain}`);
   console.log(`🛡️ [Kernel]: Amount detected in header: ${outboundRequest.amountRequested} ${outboundRequest.tokenType}`);
-  console.log(`🛡️ [Kernel]: Active AG Grid policy: max ${activeGridPolicy.maxLimit} PYUSD`);
+  console.log(`🛡️ [Kernel]: Active order: "${activeGridPolicy.what}" — max ${activeGridPolicy.maxLimit} PYUSD`);
 
   // Formal check mirroring what the isolated container would execute.
   if (outboundRequest.amountRequested > activeGridPolicy.maxLimit) {

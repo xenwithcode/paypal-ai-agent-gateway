@@ -9,6 +9,16 @@ import { processEmergencyDevaluationShield } from "@/lib/shields/InflationShield
 /** Hard cap on the intent text. Mirrors the `maxLength` on the input field. */
 const MAX_PROMPT_LENGTH = 500;
 
+/** "LATAM Airlines" → "latam-airlines" */
+function slugify(value: string): string {
+  return value.toLowerCase().replace(/\s+/g, "-").replace(/[^a-z0-9-]/g, "") || "unnamed";
+}
+
+/** "LATAM Airlines" → "latamairlines" */
+function hostify(value: string): string {
+  return value.toLowerCase().replace(/\s+/g, "") || "agent";
+}
+
 /** Intents that should be routed to the FX shield instead of the LLM. */
 const INFLATION_KEYWORDS = [
   "bolívar", "bolivar",
@@ -72,17 +82,21 @@ export async function POST(req: NextRequest) {
       success: true,
       gridRow: {
         id: Date.now(),
-        commerce: policy.commerce,
+        what: policy.what,
+        merchant: policy.merchant,
         limit: policy.limit,
         currency: policy.currency,
+        condition: policy.condition,
+        expires: policy.expires || "None",
         mode: policy.mode,
-        expires: policy.expires ?? "End of month",
         status: STATUS.pending,
       },
       openShellConfig: {
-        sandboxName: `sb-${policy.commerce.toLowerCase().replace(/\s+/g, "-")}`,
+        sandboxName: `sb-${slugify(policy.merchant || policy.what)}`,
         networkPolicy: {
-          allowEndpoint: `api.${policy.commerce.toLowerCase().replace(/\s+/g, "")}.com`,
+          // Endpoint is derived from a named merchant only. Inferring a host
+          // from "white sneakers, size 10" would produce nonsense.
+          allowEndpoint: policy.merchant ? `api.${hostify(policy.merchant)}.com` : "",
           maxTransactionLimit: policy.limit,
           tokenTarget: "PYUSD_SOLANA_MAINNET",
         },

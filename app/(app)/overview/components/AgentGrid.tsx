@@ -38,11 +38,16 @@ import { STATUS, MODE, MODE_OPTIONS } from "@/lib/policy";
 
 interface PolicyRow {
   id: number;
-  commerce: string;
+  /** The purchase itself, with the attributes that identify it. */
+  what: string;
+  /** Named merchant when one was given. Drives endpoint derivation, not shown. */
+  merchant: string;
   limit: number;
   currency: string;
-  mode: string;
+  /** Must hold before money moves. Empty = execute immediately. */
+  condition: string;
   expires: string;
+  mode: string;
   status: string;
 }
 
@@ -53,8 +58,28 @@ export default function AgentGrid({ initialBalance }: { initialBalance: string }
   const [fraudAlert, setFraudAlert] = useState<{ active: boolean; msg: string }>({ active: false, msg: "" });
 
   const [rowData, setRowData] = useState<PolicyRow[]>([
-    { id: 1, commerce: "Spotify Premium", limit: 15, currency: "PYUSD", mode: MODE.autonomous, expires: "Recurring", status: STATUS.enforced },
-    { id: 2, commerce: "LATAM Airlines", limit: 900, currency: "PYUSD", mode: MODE.copilot, expires: "Oct 31, 2026", status: STATUS.pending }
+    {
+      id: 1,
+      what: "Spotify Premium, monthly",
+      merchant: "Spotify",
+      limit: 15,
+      currency: "PYUSD",
+      condition: "",
+      expires: "None",
+      mode: MODE.autonomous,
+      status: STATUS.enforced,
+    },
+    {
+      id: 2,
+      what: "LATAM flight to Rio de Janeiro",
+      merchant: "LATAM Airlines",
+      limit: 900,
+      currency: "PYUSD",
+      condition: "price <= 900",
+      expires: "2026-10-31",
+      mode: MODE.copilot,
+      status: STATUS.pending,
+    },
   ]);
 
   const [logs, setLogs] = useState<string[]>([
@@ -69,14 +94,14 @@ export default function AgentGrid({ initialBalance }: { initialBalance: string }
   };
 
   const onApprovePolicy = useCallback((rowToApprove: PolicyRow) => {
-    addLog(`🛡️ [GATEWAY] Enforcing immutable policy for ${rowToApprove.commerce}. Limit: ${rowToApprove.limit} PYUSD.`);
+    addLog(`🛡️ [GATEWAY] Enforcing immutable policy for "${rowToApprove.what}". Ceiling: ${rowToApprove.limit} ${rowToApprove.currency}.`);
     setRowData((prevRows) =>
       prevRows.map((row) =>
         row.id === rowToApprove.id ? { ...row, status: STATUS.enforced } : row
       )
     );
     setTimeout(() => {
-      addLog(`🟢 [GATEWAY] Sandbox 'sb-${rowToApprove.commerce.toLowerCase().replace(/\s+/g, "-")}' sealed and active.`);
+      addLog(`🟢 [GATEWAY] Sandbox 'sb-${(rowToApprove.merchant || rowToApprove.what).toLowerCase().replace(/\s+/g, "-")}' sealed and active.`);
     }, 600);
   }, []);
 
@@ -133,11 +158,34 @@ export default function AgentGrid({ initialBalance }: { initialBalance: string }
   };
 
   const columnDefs = useMemo<ColDef<PolicyRow>[]>(() => [
-    { field: "commerce", headerName: "Merchant / API Target", editable: true, flex: 1.3 },
-    { field: "limit", headerName: "Max Limit", editable: true, flex: 0.9, valueParser: (p) => Number(p.newValue), cellClass: "font-mono text-emerald-600 font-semibold text-right" },
-    { field: "mode", headerName: "Agent Mode", editable: true, flex: 0.9, cellEditor: "agSelectCellEditor", cellEditorParams: { values: MODE_OPTIONS } },
-    { field: "expires", headerName: "Expires", editable: true, flex: 0.9 },
-    { headerName: "Protection", flex: 1.4, cellRenderer: ActionBtnRenderer },
+    { field: "what", headerName: "What", editable: true, flex: 1.6 },
+    {
+      field: "limit",
+      headerName: "Ceiling",
+      editable: true,
+      flex: 0.8,
+      valueParser: (p) => Number(p.newValue),
+      cellClass: "font-mono text-emerald-600 font-semibold text-right",
+    },
+    {
+      field: "condition",
+      headerName: "Condition",
+      editable: true,
+      flex: 1.2,
+      // Empty means "spend now"; show that rather than a blank cell.
+      valueFormatter: (p) => (p.value ? String(p.value) : "— spend now"),
+      cellClass: (p) => (p.value ? "font-mono text-slate-700" : "italic text-slate-400"),
+    },
+    { field: "expires", headerName: "Valid until", editable: true, flex: 0.8 },
+    {
+      field: "mode",
+      headerName: "Mode",
+      editable: true,
+      flex: 0.8,
+      cellEditor: "agSelectCellEditor",
+      cellEditorParams: { values: MODE_OPTIONS },
+    },
+    { headerName: "Protection", flex: 1.3, cellRenderer: ActionBtnRenderer },
   ], []);
 
   const handleGeneratePolicy = async () => {
@@ -152,7 +200,7 @@ export default function AgentGrid({ initialBalance }: { initialBalance: string }
       });
       const data = await res.json();
       if (data.success) {
-        addLog(`📄 [UCP] Structured manifest created for ${data.gridRow.commerce}.`);
+        addLog(`📄 [UCP] Structured manifest created for "${data.gridRow.what}".`);
         setRowData(prev => [...prev, data.gridRow]);
         setPrompt("");
       } else {
@@ -202,18 +250,20 @@ export default function AgentGrid({ initialBalance }: { initialBalance: string }
 
       {/* Natural-language intent bar */}
       <div className="bg-white p-6 rounded-2xl border border-slate-200 shadow-sm space-y-3">
-        <label className="block text-sm font-semibold text-slate-700">🤖 What task or trip do you want to delegate to your agent today?</label>
+        <label className="block text-sm font-semibold text-slate-700">
+          What should your agent buy? Set a ceiling — and a condition before it may spend.
+        </label>
         <div className="flex gap-3">
           <input
             type="text"
             value={prompt}
             onChange={(e) => setPrompt(e.target.value)}
-            placeholder="e.g. I want to fly to Rio with LATAM, spending at most 900 PYUSD..."
+            placeholder="e.g. white sneakers, size 10, by Friday, only if the price drops to 60 USD or less"
             maxLength={500}
             className="flex-1 p-4 border border-slate-200 bg-slate-50 rounded-xl outline-none focus:bg-white focus:ring-2 focus:ring-blue-500 transition"
           />
           <button onClick={handleGeneratePolicy} disabled={loading} className="bg-blue-600 text-white px-6 py-4 rounded-xl font-medium transition hover:bg-blue-700 shadow-sm disabled:opacity-60">
-            {loading ? "Processing..." : "Analyze Intent"}
+            {loading ? "Drafting..." : "Draft order"}
           </button>
         </div>
       </div>
