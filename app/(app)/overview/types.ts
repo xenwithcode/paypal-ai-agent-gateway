@@ -25,6 +25,10 @@ export interface PolicyRow {
   conditionMet: boolean | null;
   /** How the verdict was reached, including the catalog it came from. */
   conditionDetail: string;
+  /** ISO instant the order was drafted. Absent on rows stored before it existed. */
+  createdAt?: string;
+  /** ISO instant the money moved, set when a hold is captured. */
+  capturedAt?: string;
   /**
    * The only host this order may reach, or empty when no merchant was named.
    * Shown so the approver can see the scope they are signing off on — a

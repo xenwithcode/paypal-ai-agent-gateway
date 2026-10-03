@@ -6,11 +6,14 @@ import Sidebar from "./components/Sidebar";
 
 export default function AppLayout({ children }: { children: React.ReactNode }) {
   return (
-    <div className="min-h-screen bg-slate-50/50">
+    // Print overrides mirror the screen ones: no sidebar, no offset, no page
+    // tint. The document a browser saves is a report, not a screenshot of the
+    // app around it.
+    <div className="min-h-screen bg-slate-50/50 print:bg-white">
       <Sidebar />
       {/* Content is offset only where the sidebar is fixed; on mobile the
           sidebar sits above the content instead. */}
-      <div className="md:pl-64">{children}</div>
+      <div className="md:pl-64 print:pl-0">{children}</div>
     </div>
   );
 }

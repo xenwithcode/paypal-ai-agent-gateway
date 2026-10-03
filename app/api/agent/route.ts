@@ -98,6 +98,10 @@ export async function POST(req: NextRequest) {
       source,
       gridRow: {
         id: Date.now(),
+        // Recorded here so the purchase history can date an order that was
+        // later captured; a row stored before this existed simply has no
+        // value rather than a wrong one.
+        createdAt: new Date().toISOString(),
         what: policy.what,
         merchant: policy.merchant,
         limit: policy.limit,

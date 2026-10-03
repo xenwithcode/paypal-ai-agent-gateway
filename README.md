@@ -48,8 +48,9 @@ Approve **once**: *≤ 60 USD, this week, these merchants.* The agent then produ
 | **FX shield (VES → PYUSD)** | An incoming VES deposit is converted at the published BCV rate, and the response carries the rate it used. |
 | **Conversion shown before it happens** | The transfer form prints *recipient gets* / *you pay* / *the applied rate* above the button, and refuses to submit while no live rate exists. |
 | **Live event console** | Every draft, hold transition and charge verdict on this page, streamed. |
+| **Purchase history + printable report** | Activity lists every order that settled — date, item, condition, endpoint, amount — beside the charges it refused, which are recorded nowhere else. Sample rows carry a `Sample` chip; **Print / save as PDF** produces the report. |
 
-**Sections scaffolded and empty:** Recurring payments · Activity · Agentic Commerce.
+**Sections scaffolded and empty:** Recurring payments · Agentic Commerce.
 
 ---
 
@@ -157,6 +158,11 @@ Open **http://localhost:3000**.
 4. **Trigger the FX shield.** **🛡️ Simulate VES Payroll** → a 45,000 VES deposit is converted at the **published BCV rate** (about 51.65 PYUSD at 871 VES/USD, not a round fictional number), and the row shows `Protecting`.
 
 5. **Open FX Shield** in the sidebar → live rate table with sources and dates, plus a converter that reports what the holding would be worth in 30 days.
+
+6. **Capture an order**, then **Open Activity** → it appears in the purchase history
+   unmarked, beside the seeded rows that are chipped `Sample`, with the charges it
+   refused below. **Print / save as PDF** gives the report — no sidebar, no app
+   chrome, just the table and its totals.
 
 ---
 

@@ -66,7 +66,7 @@ export default function Sidebar() {
   const isActive = (href: string) => pathname === href || pathname.startsWith(`${href}/`);
 
   return (
-    <aside className="border-b border-slate-200 bg-white md:fixed md:inset-y-0 md:left-0 md:z-20 md:flex md:w-64 md:flex-col md:border-b-0 md:border-r">
+    <aside className="border-b border-slate-200 bg-white md:fixed md:inset-y-0 md:left-0 md:z-20 md:flex md:w-64 md:flex-col md:border-b-0 md:border-r print:hidden">
       {/* Brand */}
       <div className="flex items-center gap-3 border-b border-slate-100 px-5 py-4 md:py-5">
         <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-slate-900 text-white">

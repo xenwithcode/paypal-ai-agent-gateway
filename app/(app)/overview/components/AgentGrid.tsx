@@ -37,14 +37,9 @@ import OrderPanel from "./OrderPanel";
 // Shared status/mode strings (also produced by the API routes on the server).
 import { STATUS, MODE, MODE_OPTIONS, isStatus, type HoldAction } from "@/lib/policy";
 import type { PolicyRow } from "../types";
-
-/**
- * Where the table is kept between reloads.
- *
- * Versioned so a future change to the row shape can write v2 and ignore
- * anything older, rather than rendering a half-understood row.
- */
-const STORAGE_KEY = "paypal-ai-agent.policies.v1";
+// One key, one module: Activity reads the same rows this component writes, so
+// neither side gets to invent a spelling of its own.
+import { POLICY_STORAGE_KEY as STORAGE_KEY, recordBlocked } from "@/lib/history";
 
 /**
  * Structural check for rows read back out of storage. Anything that does not
@@ -352,6 +347,12 @@ export default function AgentGrid({ initialBalance }: { initialBalance: string }
               ? {
                   ...r,
                   status: data.status,
+                  // Dated the moment it settles — that is the date the
+                  // purchase history prints, not the one it was drafted on.
+                  capturedAt:
+                    data.status === STATUS.captured
+                      ? new Date().toISOString()
+                      : r.capturedAt,
                   conditionMet:
                     typeof data.conditionMet !== "undefined" ? data.conditionMet : r.conditionMet,
                   conditionDetail: data.conditionDetail ?? r.conditionDetail,
@@ -427,6 +428,15 @@ export default function AgentGrid({ initialBalance }: { initialBalance: string }
       }
 
       addLog(`🚨 [BLOCKED] ${data.reason}`);
+      // A payment that was stopped never reaches PayPal, so nothing outside
+      // this app would ever record that it was attempted.
+      recordBlocked({
+        what: target.what,
+        amount: data.judged.amount,
+        currency: data.judged.currency,
+        endpoint: data.judged.endpoint,
+        reason: data.reason,
+      });
       setFraudAlert({
         active: true,
         msg: `Blocked a ${data.judged.amount.toFixed(2)} ${data.judged.currency} charge to ${data.judged.endpoint} against "${target.what}". ${data.reason}`,
