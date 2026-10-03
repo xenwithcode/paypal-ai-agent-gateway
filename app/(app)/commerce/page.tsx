@@ -1,6 +1,5 @@
 // app/(app)/commerce/page.tsx
-import { ScrollText } from "lucide-react";
-import EmptyState from "../components/EmptyState";
+import CommerceView from "./CommerceView";
 
 export const metadata = { title: "Agentic Commerce · PayPal AI Agent Gateway" };
 
@@ -26,13 +25,9 @@ export default function AgenticCommercePage() {
         </p>
       </header>
 
-      <EmptyState
-        icon={ScrollText}
-        title="No manifests yet"
-        description="Draft an order from the Overview and its manifest appears here for review — the ceiling, the endpoint it may reach, and the condition that releases the money, all read back before anything is authorised."
-        action={{ label: "Draft an order", href: "/overview" }}
-        note="What this section shows is still being specified."
-      />
+      <div className="px-6 pt-6 md:px-8">
+        <CommerceView />
+      </div>
     </>
   );
 }

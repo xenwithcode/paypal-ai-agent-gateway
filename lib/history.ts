@@ -89,7 +89,7 @@ function newId(): string {
  * is simply not a purchase, and a purchase history is the one place where an
  * unreadable record quietly looks like a real transaction.
  */
-type StoredRow = {
+export type StoredRow = {
   id?: number;
   status?: string;
   what?: string;
@@ -97,11 +97,60 @@ type StoredRow = {
   limit?: number;
   currency?: string;
   condition?: string;
+  expires?: string;
+  mode?: string;
   allowEndpoint?: string;
   marketImage?: string;
   capturedAt?: string;
   createdAt?: string;
 };
+
+/**
+ * A manifest, with the fields that give an order meaning guaranteed present.
+ *
+ * `StoredRow` is what storage hands back and cannot promise anything; this is
+ * what survives validation. The distinction is what lets the renderer print a
+ * ceiling without asking whether one exists.
+ */
+export type ManifestRow = StoredRow & {
+  what: string;
+  limit: number;
+  currency: string;
+  status: string;
+};
+
+/**
+ * Enough of a record to be called a manifest.
+ *
+ * Anything missing those fields is dropped rather than padded: a corrupt row
+ * rendered with a `0.00 USD` ceiling and a status it never had would be
+ * indistinguishable from a real one.
+ */
+function looksLikeManifest(value: unknown): value is ManifestRow {
+  if (!value || typeof value !== "object") return false;
+  const row = value as StoredRow;
+  return (
+    typeof row.what === "string" &&
+    row.what.trim() !== "" &&
+    typeof row.limit === "number" &&
+    Number.isFinite(row.limit) &&
+    typeof row.currency === "string" &&
+    typeof row.status === "string"
+  );
+}
+
+/**
+ * Every stored order — not only the settled ones.
+ *
+ * The purchase history only cares what finished; the manifest view needs the
+ * whole record, because the point of a manifest is what it constrains before
+ * anything has happened.
+ */
+export function readPolicyRows(): ManifestRow[] {
+  const stored = readJson(POLICY_STORAGE_KEY);
+  if (!Array.isArray(stored)) return [];
+  return stored.filter(looksLikeManifest);
+}
 
 /**
  * Five purchases to look at before any have happened.
