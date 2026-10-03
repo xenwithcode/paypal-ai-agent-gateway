@@ -1,8 +1,8 @@
-// app/agent-dashboard/components/VEPagoMovilShield.tsx
+// app/(app)/overview/components/VEPagoMovilShield.tsx
 "use client";
 
-import { useState } from "react";
-import { VES_PER_PYUSD, vesToPyusd } from "@/lib/shields/fx";
+import { useEffect, useState } from "react";
+import { convert, formatAsOf, formatSmart, type FxSnapshot } from "@/lib/fx/rates";
 
 export default function VEPagoMovilShield({ addLog }: { addLog: (msg: string) => void }) {
   const [phone, setPhone] = useState("");
@@ -12,19 +12,50 @@ export default function VEPagoMovilShield({ addLog }: { addLog: (msg: string) =>
   const [loading, setLoading] = useState(false);
   const [qrSimulated, setQrSimulated] = useState(false);
 
-  // Shared demo FX rate — identical to the one the inflation shield uses.
-  const currentRate = VES_PER_PYUSD;
+  // Live rates proxied through /api/fx (BCV + CoinGecko). Nothing here is
+  // hardcoded: if the feed is down we say so instead of inventing a number.
+  const [rates, setRates] = useState<FxSnapshot | null>(null);
+  const [ratesError, setRatesError] = useState<string | null>(null);
+
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      try {
+        const res = await fetch("/api/fx");
+        if (!res.ok) {
+          throw new Error(res.status === 503 ? "rate feed unavailable" : `HTTP ${res.status}`);
+        }
+        const data = (await res.json()) as FxSnapshot;
+        if (!cancelled) setRates(data);
+      } catch (error) {
+        if (!cancelled) setRatesError(error instanceof Error ? error.message : String(error));
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  /** VES → PYUSD at the published BCV rate, or null while we have no rate. */
+  const toPyusd = (ves: number): string | null =>
+    rates ? convert(ves, "VES", "PYUSD", rates).toFixed(2) : null;
 
   // 1. Manual Pago Móvil off-ramp (spend / cash out)
   const handlePagoMovilSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!phone || !amount || !cedula) return;
 
+    if (!rates) {
+      addLog(`❌ [FX] No live rate available${ratesError ? ` (${ratesError})` : ""}. Transfer not started.`);
+      return;
+    }
+
     setLoading(true);
     const amountVES = parseFloat(amount);
-    const equivalentPYUSD = vesToPyusd(amountVES).toFixed(2);
+    const equivalentPYUSD = convert(amountVES, "VES", "PYUSD", rates).toFixed(2);
 
     addLog(`🏦 [Pago Móvil Out] Request for ${amountVES} VES (${equivalentPYUSD} PYUSD).`);
+    addLog(`📊 [FX] Rate ${formatSmart(rates.vesPerUsd, "VES")} VES/USD · BCV ${formatAsOf(rates.vesPerUsdAsOf)}`);
     addLog(`⚡ [Solana] Opening instant PYUSD micro-settlement channel...`);
 
     setTimeout(() => {
@@ -42,8 +73,12 @@ export default function VEPagoMovilShield({ addLog }: { addLog: (msg: string) =>
     addLog("🔍 [UCP Parsing] Extracted data — Tax ID: J-4039281-0 | Bank: 0108 | Amount: 250.00 VES.");
 
     setTimeout(() => {
-      const pyusdCost = vesToPyusd(250).toFixed(2);
-      addLog(`🧠 [Agent] Spend evaluation: ${pyusdCost} PYUSD is within your daily budget.`);
+      const pyusdCost = toPyusd(250);
+      addLog(
+        pyusdCost
+          ? `🧠 [Agent] Spend evaluation: ${pyusdCost} PYUSD is within your daily budget.`
+          : `❌ [FX] No live rate available${ratesError ? ` (${ratesError})` : ""} — evaluation skipped.`
+      );
       addLog(`🛡️ [Gateway] Processing immediate charge over the Solana network...`);
     }, 1200);
 
@@ -64,8 +99,21 @@ export default function VEPagoMovilShield({ addLog }: { addLog: (msg: string) =>
           </h3>
           <p className="text-xs text-slate-500">Two-way settlement bridge in under 2 seconds (PYUSD ⇄ Solana ⇄ VES)</p>
         </div>
-        <div className="bg-blue-100 text-blue-800 text-xs font-mono font-bold px-3 py-1 rounded-md border border-blue-200">
-          Rate: {currentRate} VES/PYUSD
+        <div className="text-right">
+          {rates ? (
+            <>
+              <div className="bg-blue-100 text-blue-800 text-xs font-mono font-bold px-3 py-1 rounded-md border border-blue-200">
+                {formatSmart(rates.vesPerUsd, "VES")} VES/USD
+              </div>
+              <p className="mt-1 text-[10px] text-slate-400">
+                BCV · {formatAsOf(rates.vesPerUsdAsOf)}
+              </p>
+            </>
+          ) : (
+            <div className="bg-amber-100 text-amber-700 text-xs font-mono font-bold px-3 py-1 rounded-md border border-amber-200">
+              {ratesError ? "Rate unavailable" : "Loading rate…"}
+            </div>
+          )}
         </div>
       </div>
 

@@ -93,17 +93,43 @@ export default function AgentGrid({ initialBalance }: { initialBalance: string }
     }, 1200);
   };
 
-  const triggerDevaluationShieldSimulation = () => {
-    addLog("🏦 [VES BANK] Incoming deposit detected: +45,000 VES (payroll).");
+  const triggerDevaluationShieldSimulation = async () => {
+    const depositVES = 45_000;
+    addLog(`🏦 [VES BANK] Incoming deposit detected: +${depositVES.toLocaleString("en-US")} VES (payroll).`);
     addLog("⚠️ [ALERT] Inflation warning active. Bolívar expected to depreciate within the next 3 hours.");
-    setTimeout(() => {
+
+    try {
+      // Real call, real BCV rate. This console used to print a hardcoded
+      // conversion computed from an outdated rate; every figure below now comes
+      // back from the API instead of being narrated.
+      const res = await fetch("/api/agent", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ prompt: "protect my bolivares from devaluation" }),
+      });
+      const data = await res.json();
+
+      if (!data.success) {
+        addLog(`❌ [FX] ${data.error ?? "conversion unavailable"}`);
+        return;
+      }
+
       addLog("🧠 [Gemini] Automated action: starting full conversion to preserve value.");
+      addLog(
+        `📊 [FX] ${data.fx.appliedRate} VES/USD · ${data.fx.source}` +
+          ` · BCV ${data.fx.asOf}` +
+          (data.fx.changePct !== null ? ` · ${data.fx.changePct.toFixed(2)}%` : "")
+      );
       addLog("🛡️ [GATEWAY] Opening the sanctioned exchange ramp.");
-    }, 1000);
-    setTimeout(() => {
       addLog("🟢 [DONE] Funds successfully moved out of the inflationary market.");
-      addLog("💳 [PayPal PYUSD] +1,125.00 PYUSD credited to your secure vault. Assets protected in 2 seconds!");
-    }, 2500);
+      addLog(`💳 [PayPal PYUSD] +${Number(data.gridRow.limit).toFixed(2)} PYUSD credited to your secure vault.`);
+
+      // Land the real result in the policy table rather than only narrating it.
+      setRowData((prev) => [...prev, data.gridRow]);
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      addLog(`❌ [FX] Conversion failed: ${message}`);
+    }
   };
 
   const columnDefs = useMemo<ColDef<PolicyRow>[]>(() => [
