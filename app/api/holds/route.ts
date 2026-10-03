@@ -104,11 +104,16 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ success: false, error: "A JSON body is required." }, { status: 400 });
     }
 
-    const { action, policy: rawPolicy } = body as { action?: unknown; policy?: unknown };
+    const { action: rawAction, policy: rawPolicy } = body as { action?: unknown; policy?: unknown };
 
-    if (!isHoldAction(action)) {
+    // `evaluate` is the read-only one: re-resolve the catalog entry and report
+    // what the condition looks like now, without touching the hold.
+    const action: HoldAction | "evaluate" | null =
+      rawAction === "evaluate" ? "evaluate" : isHoldAction(rawAction) ? rawAction : null;
+
+    if (!action) {
       return NextResponse.json(
-        { success: false, error: "action must be activate, capture or release." },
+        { success: false, error: "action must be activate, capture, release or evaluate." },
         { status: 400 }
       );
     }
@@ -118,9 +123,28 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ success: false, error: policy }, { status: 400 });
     }
 
+    // ---------------------------------------------------------------- evaluate
+    // A row restored from storage still carries the verdict it had when it was
+    // last judged, and a price read at draft time is not still the price. This
+    // refreshes it without implying that anything was settled.
+    if (action === "evaluate") {
+      const { product, matchedBy } = await matchProduct(
+        `${policy.what} ${policy.merchant}`.trim()
+      );
+      const evaluation = evaluateCondition(policy.condition, product);
+      return NextResponse.json({
+        success: true,
+        conditionMet: evaluation.met,
+        marketPrice: product ? Number(product.price.toFixed(2)) : null,
+        conditionDetail: product
+          ? `${evaluation.detail} · ${matchedBy} on ${CATALOG_SOURCE.name} (${CATALOG_SOURCE.kind})`
+          : evaluation.detail,
+      });
+    }
+
     // Transition legality is shared with the renderer, so the button that
     // offered this action and the rule that accepts it cannot drift apart.
-    if (!canPerform(action as HoldAction, policy.status)) {
+    if (!canPerform(action, policy.status)) {
       return NextResponse.json(
         {
           success: false,

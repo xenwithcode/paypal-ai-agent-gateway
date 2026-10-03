@@ -94,122 +94,84 @@ function isPolicyRow(value: unknown): value is PolicyRow {
   );
 }
 
+/**
+ * What the table starts with: a standing allowance, a drafted order whose
+ * condition fails, and a held order whose condition holds. Between them they
+ * show every state the Protection column can offer an action for.
+ *
+ * The prices and thumbnails are the catalog's own values for these products,
+ * and they are re-read from the live feed on mount — a seed that has gone stale
+ * must not outlive it.
+ */
+const SEED_ROWS: PolicyRow[] = [
+  {
+    id: 1,
+    what: "Spotify Premium, monthly",
+    merchant: "Spotify",
+    limit: 15,
+    currency: "PYUSD",
+    condition: "",
+    expires: "",
+    mode: MODE.autonomous,
+    status: STATUS.enforced,
+    marketPrice: null,
+    marketImage: null,
+    conditionMet: true,
+    conditionDetail: "No condition — executes immediately.",
+    allowEndpoint: "api.spotify.com",
+  },
+  {
+    id: 2,
+    what: "Sports Sneakers Off White & Red",
+    merchant: "",
+    limit: 100,
+    currency: "USD",
+    condition: "price <= 100",
+    expires: "2026-10-31",
+    mode: MODE.copilot,
+    status: STATUS.pending,
+    marketPrice: 119.99,
+    marketImage:
+      "https://cdn.dummyjson.com/product-images/mens-shoes/sports-sneakers-off-white-&-red/thumbnail.webp",
+    conditionMet: false,
+    conditionDetail:
+      "Price is 119.99 USD, condition requires <= 100 · 2/2 terms matched (full query) on dummyjson (demo-catalog)",
+    // No merchant was named, so no host is restricted — which is itself
+    // worth showing rather than leaving to be inferred.
+    allowEndpoint: "",
+  },
+  // A held purchase order whose condition is satisfied right now: money is
+  // set aside and waiting for the operator to settle it. The price and
+  // thumbnail are the catalog's own values for this product.
+  {
+    id: 3,
+    what: "Apple AirPods Max Silver",
+    merchant: "Apple",
+    limit: 600,
+    currency: "USD",
+    condition: "price <= 600",
+    expires: "2026-10-31",
+    mode: MODE.autonomous,
+    status: STATUS.reserved,
+    marketPrice: 549.99,
+    marketImage:
+      "https://cdn.dummyjson.com/product-images/mobile-accessories/apple-airpods-max-silver/thumbnail.webp",
+    conditionMet: true,
+    conditionDetail:
+      "Price is 549.99 USD, condition requires <= 600 · 4/4 terms matched (full query) on dummyjson (demo-catalog)",
+    allowEndpoint: "api.apple.com",
+  },
+];
+
 export default function AgentGrid({ initialBalance }: { initialBalance: string }) {
   const gridRef = useRef<AgGridReact<PolicyRow>>(null);
   const [prompt, setPrompt] = useState("");
   const [loading, setLoading] = useState(false);
   const [fraudAlert, setFraudAlert] = useState<{ active: boolean; msg: string }>({ active: false, msg: "" });
 
-  const [rowData, setRowData] = useState<PolicyRow[]>([
-    {
-      id: 1,
-      what: "Spotify Premium, monthly",
-      merchant: "Spotify",
-      limit: 15,
-      currency: "PYUSD",
-      condition: "",
-      expires: "",
-      mode: MODE.autonomous,
-      status: STATUS.enforced,
-      marketPrice: null,
-      marketImage: null,
-      conditionMet: true,
-      conditionDetail: "No condition — executes immediately.",
-      allowEndpoint: "api.spotify.com",
-    },
-    {
-      id: 2,
-      what: "Sports Sneakers Off White & Red",
-      merchant: "",
-      limit: 100,
-      currency: "USD",
-      condition: "price <= 100",
-      expires: "2026-10-31",
-      mode: MODE.copilot,
-      status: STATUS.pending,
-      marketPrice: 119.99,
-      marketImage:
-        "https://cdn.dummyjson.com/product-images/mens-shoes/sports-sneakers-off-white-&-red/thumbnail.webp",
-      conditionMet: false,
-      conditionDetail:
-        "Price is 119.99 USD, condition requires <= 100 · 2/2 terms matched (full query) on dummyjson (demo-catalog)",
-      // No merchant was named, so no host is restricted — which is itself
-      // worth showing rather than leaving to be inferred.
-      allowEndpoint: "",
-    },
-    // A held purchase order whose condition is satisfied right now: money is
-    // set aside and waiting for the operator to settle it. The price and
-    // thumbnail are the catalog's own values for this product.
-    {
-      id: 3,
-      what: "Apple AirPods Max Silver",
-      merchant: "Apple",
-      limit: 600,
-      currency: "USD",
-      condition: "price <= 600",
-      expires: "2026-10-31",
-      mode: MODE.autonomous,
-      status: STATUS.reserved,
-      marketPrice: 549.99,
-      marketImage:
-        "https://cdn.dummyjson.com/product-images/mobile-accessories/apple-airpods-max-silver/thumbnail.webp",
-      conditionMet: true,
-      conditionDetail:
-        "Price is 549.99 USD, condition requires <= 600 · 4/4 terms matched (full query) on dummyjson (demo-catalog)",
-      allowEndpoint: "api.apple.com",
-    },
-  ]);
+  const [rowData, setRowData] = useState<PolicyRow[]>(SEED_ROWS);
 
   const [logs, setLogs] = useState<string[]>([]);
-
-  /**
-   * Rows live in this browser so a hold survives a reload — a reservation
-   * that vanishes when you press F5 is not a reservation.
-   *
-   * The read happens in an effect rather than in the useState initialiser:
-   * the initialiser runs while the page is being rendered on the server too,
-   * where localStorage does not exist, and the two renders would disagree.
-   */
-  useEffect(() => {
-    let restored = 0;
-    try {
-      const raw = window.localStorage.getItem(STORAGE_KEY);
-      if (raw) {
-        const stored: unknown = JSON.parse(raw);
-        // Only accept something shaped like rows. A corrupt or hand-edited
-        // value must not take the table down with it.
-        if (Array.isArray(stored) && stored.length > 0 && stored.every(isPolicyRow)) {
-          setRowData(stored);
-          restored = stored.length;
-        }
-      }
-    } catch {
-      // Private mode, disabled storage or unreadable JSON: the session keeps
-      // working, it just will not survive the next reload.
-    }
-
-    // The clock is read here rather than in the initialiser because the
-    // initialiser also runs on the server, where it would be a different time
-    // — and React reports any disagreement as a hydration mismatch.
-    setLogs([
-      `[${new Date().toLocaleTimeString()}] ${
-        restored
-          ? `🗂️ Restored ${restored} order${restored === 1 ? "" : "s"} from this browser.`
-          : "🗂️ Order table ready — rows are kept in this browser."
-      }`,
-    ]);
-  }, []);
-
-  // Written on every change. Declared after the read above on purpose — on the
-  // first commit both run, and the read has to observe the stored value before
-  // anything overwrites it with the seed rows.
-  useEffect(() => {
-    try {
-      window.localStorage.setItem(STORAGE_KEY, JSON.stringify(rowData));
-    } catch {
-      // Quota exceeded or storage disabled: same trade-off as above.
-    }
-  }, [rowData]);
 
   // Single funnel for this page: drafting, hold transitions and the two test
   // buttons all append their events here. Pago Móvil reports next to its own
@@ -222,6 +184,135 @@ export default function AgentGrid({ initialBalance }: { initialBalance: string }
     const time = new Date().toLocaleTimeString();
     setLogs((prev) => [`[${time}] ${message}`, ...prev]);
   }, []);
+
+  /**
+   * Re-read the catalog for every row whose verdict could have moved since it
+   * was last judged.
+   *
+   * Rows come back from storage carrying the price and verdict they had when
+   * they were written down. Without this the table shows a number that was
+   * true at some point rather than the one true now — and both the ceiling
+   * signal and the decision to capture depend on it being current.
+   *
+   * A row that cannot be re-read keeps what it already had. Stale is
+   * recoverable; reporting a guess as fresh is not.
+   */
+  const recheckOrders = useCallback(
+    async (rows: PolicyRow[]) => {
+      const targets = rows.filter((row) => row.condition.trim() || row.marketPrice !== null);
+      if (targets.length === 0) return;
+
+      const updates = await Promise.all(
+        targets.map(async (row) => {
+          try {
+            const res = await fetch("/api/holds", {
+              method: "POST",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({
+                action: "evaluate",
+                policy: {
+                  id: row.id,
+                  what: row.what,
+                  merchant: row.merchant,
+                  condition: row.condition,
+                  limit: row.limit,
+                  currency: row.currency,
+                  status: row.status,
+                },
+              }),
+            });
+            const data = await res.json();
+            if (!data.success) throw new Error(data.error ?? "re-check refused");
+            return { id: row.id as number, data: data as Partial<PolicyRow> };
+          } catch {
+            return null;
+          }
+        })
+      );
+
+      const fresh = new Map<number, Partial<PolicyRow>>();
+      for (const update of updates) {
+        if (update) fresh.set(update.id, update.data);
+      }
+      if (fresh.size === 0) return;
+
+      setRowData((prev) =>
+        prev.map((row) => {
+          const next = fresh.get(row.id);
+          if (!next) return row;
+          return {
+            ...row,
+            conditionMet: next.conditionMet !== undefined ? next.conditionMet : row.conditionMet,
+            conditionDetail: next.conditionDetail ?? row.conditionDetail,
+            marketPrice:
+              typeof next.marketPrice === "number" ? next.marketPrice : row.marketPrice,
+          };
+        })
+      );
+
+      addLog(
+        `🔄 Re-checked ${fresh.size} order${fresh.size === 1 ? "" : "s"} against the live catalog.`
+      );
+    },
+    [addLog]
+  );
+
+  /**
+   * Rows live in this browser so a hold survives a reload — a reservation
+   * that vanishes when you press F5 is not a reservation.
+   *
+   * The read happens in an effect rather than in the useState initialiser:
+   * the initialiser runs while the page is being rendered on the server too,
+   * where localStorage does not exist, and the two renders would disagree.
+   */
+  useEffect(() => {
+    let restored = 0;
+    let rows: PolicyRow[] | null = null;
+    try {
+      const raw = window.localStorage.getItem(STORAGE_KEY);
+      if (raw) {
+        const stored: unknown = JSON.parse(raw);
+        // Only accept something shaped like rows. A corrupt or hand-edited
+        // value must not take the table down with it.
+        if (Array.isArray(stored) && stored.length > 0 && stored.every(isPolicyRow)) {
+          rows = stored;
+          restored = stored.length;
+        }
+      }
+    } catch {
+      // Private mode, disabled storage or unreadable JSON: the session keeps
+      // working, it just will not survive the next reload.
+    }
+
+    const visible = rows ?? SEED_ROWS;
+    if (rows) setRowData(rows);
+
+    // The clock is read here rather than in the initialiser because the
+    // initialiser also runs on the server, where it would be a different time
+    // — and React reports any disagreement as a hydration mismatch.
+    setLogs([
+      `[${new Date().toLocaleTimeString()}] ${
+        restored
+          ? `🗂️ Restored ${restored} order${restored === 1 ? "" : "s"} from this browser.`
+          : "🗂️ Order table ready — rows are kept in this browser."
+      }`,
+    ]);
+
+    // Settle the prices before the operator is asked to act on them. Runs
+    // once: `recheckOrders` is memoised on a stable callback.
+    void recheckOrders(visible);
+  }, [recheckOrders]);
+
+  // Written on every change. Declared after the read above on purpose — on the
+  // first commit both run, and the read has to observe the stored value before
+  // anything overwrites it with the seed rows.
+  useEffect(() => {
+    try {
+      window.localStorage.setItem(STORAGE_KEY, JSON.stringify(rowData));
+    } catch {
+      // Quota exceeded or storage disabled: same trade-off as above.
+    }
+  }, [rowData]);
 
   /**
    * Ask the server to move a policy through its lifecycle.
