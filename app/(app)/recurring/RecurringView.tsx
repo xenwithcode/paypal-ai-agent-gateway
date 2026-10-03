@@ -3,8 +3,8 @@
 
 import { useEffect, useState } from "react";
 import Image from "next/image";
-import { CreditCard, Repeat, ImageOff } from "lucide-react";
-import { readPolicyRows, type ManifestRow } from "@/lib/history";
+import { CreditCard, Repeat, ImageOff, X } from "lucide-react";
+import { readPolicyRows, removePolicyRow, type ManifestRow } from "@/lib/history";
 import EmptyState from "../components/EmptyState";
 
 /**
@@ -14,6 +14,11 @@ import EmptyState from "../components/EmptyState";
  * autónomo" — so a row belongs here when it is active and carries no
  * condition to wait for. A conditional order is a purchase, not a
  * subscription: it resolves once and stops.
+ *
+ * The copy promises the commitment lasts "until you take it off", which only
+ * means something if taking it off is possible from here. Removal is
+ * two-step, because an allowance that stops being charged without the
+ * operator having meant to is a worse failure than an extra click.
  *
  * Read after mount for the same reason every other stored view is: the server
  * rendering this page has no browser storage to look in.
@@ -47,10 +52,35 @@ function RecurringThumb({ src, alt }: { src: string | null; alt: string }) {
 
 export default function RecurringView() {
   const [rows, setRows] = useState<ManifestRow[] | null>(null);
+  /** The row waiting for a second click. Nothing is removed on the first. */
+  const [confirming, setConfirming] = useState<number | null>(null);
+  const [notice, setNotice] = useState<string | null>(null);
 
   useEffect(() => {
     setRows(readPolicyRows().filter(isStandingOrder));
   }, []);
+
+  const remove = (row: ManifestRow) => {
+    if (typeof row.id !== "number") return;
+
+    if (confirming !== row.id) {
+      setConfirming(row.id);
+      setNotice(null);
+      return;
+    }
+
+    const removed = removePolicyRow(row.id);
+    setConfirming(null);
+    if (removed === 0) {
+      // Storage and the view disagreed — say so rather than pretend it went.
+      setNotice("That order was already gone. The list has been refreshed.");
+      setRows(readPolicyRows().filter(isStandingOrder));
+      return;
+    }
+
+    setRows((prev) => (prev ?? []).filter((r) => r.id !== row.id));
+    setNotice(`Removed "${row.what}". It will not be charged again.`);
+  };
 
   return (
     // Fixed height so the list arriving after mount cannot push the page.
@@ -61,7 +91,7 @@ export default function RecurringView() {
           title="No recurring payments yet"
           description="Approve a standing allowance from the Overview — one with no condition to wait for — and it appears here. You add it once; it runs until you take it off."
           action={{ label: "Approve an allowance", href: "/overview" }}
-          note="Adding and removing services directly from this page arrives in a later iteration."
+          note="Adding services from this page arrives in a later iteration; removing one works now."
         />
       ) : (
         <div className="space-y-3">
@@ -71,41 +101,73 @@ export default function RecurringView() {
             until you remove it.
           </p>
 
-          {rows.map((row) => (
-            <article
-              key={row.id ?? row.what}
-              className="flex flex-wrap items-center gap-4 rounded-2xl border border-slate-200 bg-white px-5 py-4 shadow-sm transition hover:border-slate-300"
+          {notice && (
+            <p
+              role="status"
+              className="rounded-xl border border-emerald-200 bg-emerald-50 px-3 py-2 text-xs font-medium text-emerald-800"
             >
-              <RecurringThumb src={row.marketImage ?? null} alt={row.what} />
+              {notice}
+            </p>
+          )}
 
-              <div className="min-w-0 flex-1">
-                <p className="truncate text-sm font-semibold text-slate-900">{row.what}</p>
-                <p className="truncate text-xs text-slate-400">
-                  {row.merchant || "no merchant named"}
-                  {row.allowEndpoint ? ` · ${row.allowEndpoint}` : ""}
-                </p>
-              </div>
-
-              <div className="text-right">
-                <p className="font-mono text-sm font-semibold tabular-nums text-emerald-700">
-                  {row.limit.toFixed(2)} {row.currency}
-                </p>
-                {/* No billing period is stored anywhere in the schema, so
-                    the cadence is not claimed here — only the ceiling and
-                    how much autonomy the agent has. */}
-                <p className="text-[11px] text-slate-400">
-                  ceiling · {row.mode}
-                </p>
-              </div>
-
-              <span
-                className="rounded-full border border-emerald-200 bg-emerald-50 px-2.5 py-1 text-[10px] font-bold uppercase tracking-wide text-emerald-700"
-                title="Approved once and running until you remove it."
+          {rows.map((row) => {
+            const isConfirming = confirming === row.id;
+            return (
+              <article
+                key={row.id ?? row.what}
+                className="flex flex-wrap items-center gap-4 rounded-2xl border border-slate-200 bg-white px-5 py-4 shadow-sm transition hover:border-slate-300"
               >
-                Active
-              </span>
-            </article>
-          ))}
+                <RecurringThumb src={row.marketImage ?? null} alt={row.what} />
+
+                <div className="min-w-0 flex-1">
+                  <p className="truncate text-sm font-semibold text-slate-900">{row.what}</p>
+                  <p className="truncate text-xs text-slate-400">
+                    {row.merchant || "no merchant named"}
+                    {row.allowEndpoint ? ` · ${row.allowEndpoint}` : ""}
+                  </p>
+                </div>
+
+                <div className="text-right">
+                  <p className="font-mono text-sm font-semibold tabular-nums text-emerald-700">
+                    {row.limit.toFixed(2)} {row.currency}
+                  </p>
+                  {/* No billing period is stored anywhere in the schema, so the
+                      cadence is not claimed — only the ceiling and how much
+                      autonomy the agent has. */}
+                  <p className="text-[11px] text-slate-400">ceiling · {row.mode}</p>
+                </div>
+
+                <div className="flex shrink-0 items-center gap-2">
+                  <span
+                    className="rounded-full border border-emerald-200 bg-emerald-50 px-2.5 py-1 text-[10px] font-bold uppercase tracking-wide text-emerald-700"
+                    title="Approved once and running until you remove it."
+                  >
+                    Active
+                  </span>
+
+                  <button
+                    type="button"
+                    onClick={() => remove(row)}
+                    onBlur={() => setConfirming((current) => (current === row.id ? null : current))}
+                    aria-label={isConfirming ? `Confirm removing ${row.what}` : `Remove ${row.what}`}
+                    className={`inline-flex items-center gap-1.5 rounded-full border px-3 py-1 text-[11px] font-bold transition ${
+                      isConfirming
+                        ? "border-red-300 bg-red-600 text-white"
+                        : "border-slate-300 bg-white text-slate-500 hover:border-red-300 hover:text-red-600"
+                    }`}
+                    title={
+                      isConfirming
+                        ? "Click again to remove this allowance for good."
+                        : "Stop this allowance. It will not be charged again."
+                    }
+                  >
+                    <X className="h-3 w-3" strokeWidth={2.5} aria-hidden="true" />
+                    {isConfirming ? "Confirm" : "Remove"}
+                  </button>
+                </div>
+              </article>
+            );
+          })}
         </div>
       )}
     </div>

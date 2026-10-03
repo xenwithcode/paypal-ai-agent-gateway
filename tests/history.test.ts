@@ -14,6 +14,7 @@ import {
   readPolicyRows,
   readPurchases,
   recordBlocked,
+  removePolicyRow,
   totalsByCurrency,
 } from "../lib/history.ts";
 
@@ -141,6 +142,35 @@ test("the ledger is bounded so it cannot grow without end", () => {
 });
 
 // ─── Manifests ─────────────────────────────────────────────────────────────
+
+test("removing an allowance takes it out of storage for good", () => {
+  writeRows([
+    { id: 1, what: "Spotify Premium, monthly", limit: 15, currency: "PYUSD", status: "Active" },
+    { id: 2, what: "Netflix", limit: 12, currency: "USD", status: "Active" },
+  ]);
+
+  assert.equal(removePolicyRow(1), 1, "one row removed");
+
+  const after = readPolicyRows();
+  assert.equal(after.length, 1, "the other allowance survives");
+  assert.equal(after[0].id, 2);
+  assert.equal(after[0].what, "Netflix");
+
+  // Written back, not just filtered in memory — otherwise the next page load
+  // would bring the removed allowance back.
+  const stored = JSON.parse(storage.getItem(POLICY_STORAGE_KEY) ?? "[]");
+  assert.equal(stored.length, 1, "storage itself was rewritten");
+});
+
+test("removing something that is not there reports zero rather than pretending", () => {
+  writeRows([{ id: 5, what: "Keep me", limit: 1, currency: "USD", status: "Active" }]);
+
+  assert.equal(removePolicyRow(99), 0, "no match is not a removal");
+  assert.equal(readPolicyRows().length, 1, "and nothing was touched");
+
+  store.clear();
+  assert.equal(removePolicyRow(1), 0, "empty storage is not an error either");
+});
 
 test("empty storage reads as an empty list, not an error", () => {
   assert.deepEqual(readPolicyRows(), []);

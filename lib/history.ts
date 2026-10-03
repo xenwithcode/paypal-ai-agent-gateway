@@ -310,6 +310,31 @@ export function readBlockedAttempts(): BlockedAttempt[] {
   return [...rows, ...SAMPLE_BLOCKED];
 }
 
+/**
+ * Remove an order for good.
+ *
+ * This is the "until you take it off" half of a standing allowance: taking it
+ * off is what stops it, and the row has to leave storage rather than merely
+ * look inactive, or the next page load would bring it back.
+ *
+ * Returns how many rows were actually removed, so a caller can tell the
+ * difference between a successful removal and one that matched nothing — a
+ * button that silently does nothing is the worst outcome.
+ */
+export function removePolicyRow(id: number): number {
+  const stored = readJson(POLICY_STORAGE_KEY);
+  if (!Array.isArray(stored)) return 0;
+
+  const remaining = stored.filter((row) => {
+    if (!row || typeof row !== "object") return true;
+    return (row as { id?: number }).id !== id;
+  });
+  if (remaining.length === stored.length) return 0;
+
+  writeJson(POLICY_STORAGE_KEY, remaining);
+  return stored.length - remaining.length;
+}
+
 /** Append a refusal the server actually made. */
 export function recordBlocked(
   attempt: Omit<BlockedAttempt, "id" | "when" | "sample">
