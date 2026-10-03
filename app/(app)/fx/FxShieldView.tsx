@@ -17,8 +17,10 @@ import {
 interface Props {
   /** Pre-formatted PYUSD balance, read server-side so the secret never reaches the browser. */
   initialBalance: string;
-  /** False while .env.local holds placeholders and the figure above is a demo value. */
+  /** True only when the figure above was actually returned by PayPal. */
   balanceIsLive: boolean;
+  /** Why it is a demo figure, shown to the operator rather than left in a log. */
+  balanceReason?: string | null;
 }
 
 /** "2,480.00" → 2480 */
@@ -47,7 +49,7 @@ function dailyChangePct(r: FxSnapshot): number | null {
   return r.vesChangePct / days;
 }
 
-export default function FxShieldView({ initialBalance, balanceIsLive }: Props) {
+export default function FxShieldView({ initialBalance, balanceIsLive, balanceReason }: Props) {
   const { enabled } = useFxShield();
   const [state, setState] = useState<LoadState>({ kind: "loading" });
 
@@ -303,7 +305,10 @@ export default function FxShieldView({ initialBalance, balanceIsLive }: Props) {
                   {initialBalance} PYUSD
                 </strong>
                 {!balanceIsLive && (
-                  <span className="ml-2 rounded bg-amber-100 px-1.5 py-0.5 font-medium text-amber-700">
+                  <span
+                    title={balanceReason ?? "Demo figure — no live data."}
+                    className="ml-2 rounded border border-amber-300 bg-amber-100 px-1.5 py-0.5 font-medium text-amber-700"
+                  >
                     demo
                   </span>
                 )}

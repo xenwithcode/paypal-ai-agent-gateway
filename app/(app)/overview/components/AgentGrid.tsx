@@ -37,6 +37,11 @@ import OrderPanel from "./OrderPanel";
 // Shared status/mode strings (also produced by the API routes on the server).
 import { STATUS, MODE, MODE_OPTIONS, isStatus, type HoldAction } from "@/lib/policy";
 import type { PolicyRow } from "../types";
+// Type-only, so it is erased before bundling: this file is client-side and
+// `lib/paypal.ts` constructs a network client at module scope, which must
+// never reach the browser. `isolatedModules` guarantees the `import type`
+// form is dropped rather than resolved at build time.
+import type { Balance } from "@/lib/paypal";
 // One key, one module: Activity reads the same rows this component writes, so
 // neither side gets to invent a spelling of its own.
 import { POLICY_STORAGE_KEY as STORAGE_KEY, recordBlocked } from "@/lib/history";
@@ -131,7 +136,7 @@ const SEED_ROWS: PolicyRow[] = [
   },
 ];
 
-export default function AgentGrid({ initialBalance }: { initialBalance: string }) {
+export default function AgentGrid({ balance }: { balance: Balance }) {
   const gridRef = useRef<AgGridReact<PolicyRow>>(null);
   const [prompt, setPrompt] = useState("");
   const [loading, setLoading] = useState(false);
@@ -666,8 +671,24 @@ export default function AgentGrid({ initialBalance }: { initialBalance: string }
           <p className="text-xs text-slate-400">Purchase orders an AI agent cannot break</p>
         </div>
         <div className="text-right">
-          <span className="text-xs text-slate-400 block mb-1">Account Balance</span>
-          <span className="text-2xl font-mono text-emerald-400 font-bold">{initialBalance} PYUSD</span>
+          <span className="text-xs text-slate-400 block mb-1">
+            Account Balance
+            {/* The figure without saying where it came from is a figure a
+                reader takes at face value, so the source travels with it. */}
+            {balance.source === "demo" && (
+              <span
+                title={balance.reason ?? "Demo figure — no live data."}
+                className="ml-2 rounded border border-amber-300 bg-amber-100 px-1.5 py-0.5 align-middle text-[9px] font-bold uppercase tracking-wide text-amber-800"
+              >
+                demo
+              </span>
+            )}
+          </span>
+          <span
+            className={`text-2xl font-mono font-bold ${balance.source === "live" ? "text-emerald-400" : "text-amber-300"}`}
+          >
+            {balance.value} PYUSD
+          </span>
         </div>
       </div>
 

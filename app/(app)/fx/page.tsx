@@ -1,8 +1,9 @@
 // app/(app)/fx/page.tsx
 // Server entry for the FX Shield section. It reads the PayPal balance here so
 // the credential-bearing module is never imported by client code; only the
-// formatted string and a boolean cross the boundary.
-import { getPYUSDBalance, hasRealPaypalCredentials } from "@/lib/paypal";
+// formatted string, where it came from, and why — never a credential — cross
+// the boundary.
+import { getBalance } from "@/lib/paypal";
 import FxShieldView from "./FxShieldView";
 
 export const metadata = {
@@ -10,7 +11,16 @@ export const metadata = {
 };
 
 export default async function FxShieldPage() {
-  const balance = await getPYUSDBalance();
+  const balance = await getBalance();
 
-  return <FxShieldView initialBalance={balance} balanceIsLive={hasRealPaypalCredentials()} />;
+  return (
+    <FxShieldView
+      initialBalance={balance.value}
+      // Not "are credentials configured" — "did this figure actually come
+      // from PayPal". Credentials present with a refused request still show
+      // the demo number, and labelling that as live would assert the opposite.
+      balanceIsLive={balance.source === "live"}
+      balanceReason={balance.reason}
+    />
+  );
 }
