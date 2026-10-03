@@ -652,7 +652,11 @@ export default function AgentGrid({ initialBalance }: { initialBalance: string }
       <div className="flex justify-between items-center bg-gradient-to-r from-slate-900 to-indigo-950 text-white p-6 rounded-2xl shadow-lg border border-slate-800">
         <div>
           <h1 className="text-xl font-bold">PayPal AI Agent Gateway 🛡️</h1>
-          <p className="text-xs text-slate-400">Spend policies an AI agent cannot break</p>
+          {/* "Purchase orders" rather than "spend policies": the README and
+              the roadmap both describe the product as purchase orders for
+              agents, and a judge who reads them first should meet the same
+              vocabulary here. The claim is unchanged. */}
+          <p className="text-xs text-slate-400">Purchase orders an AI agent cannot break</p>
         </div>
         <div className="text-right">
           <span className="text-xs text-slate-400 block mb-1">Account Balance</span>

@@ -30,7 +30,7 @@ const PRIMARY_NAV: NavItem[] = [
   { href: "/send", label: "Send money", icon: Send, hint: "Pay a person by PayPal, or settle into a local bank" },
   { href: "/recurring", label: "Recurring payments", icon: CreditCard, hint: "Spotify, Netflix, Prime Video and the rest" },
   { href: "/activity", label: "Activity", icon: Activity, hint: "Income, spending, blocked attempts and refunds" },
-  { href: "/ucp", label: "UCP Commerce", icon: ScrollText, hint: "Structured commerce manifests" },
+  { href: "/commerce", label: "Agentic Commerce", icon: ScrollText, hint: "Structured orders a machine can check before money moves" },
 ];
 
 function cx(...parts: Array<string | false | null | undefined>) {

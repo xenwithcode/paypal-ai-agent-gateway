@@ -46,7 +46,7 @@ Approve **once**: *≤ 60 USD, this week, these merchants.* The agent then produ
 | **Conversion shown before it happens** | The transfer form prints *recipient gets* / *you pay* / *the applied rate* above the button, and refuses to submit while no live rate exists. |
 | **Live event console** | Every agent decision, policy injection and blocked request, streamed. |
 
-**Sections scaffolded and empty:** Recurring payments · Activity · UCP Commerce.
+**Sections scaffolded and empty:** Recurring payments · Activity · Agentic Commerce.
 
 ---
 
@@ -167,7 +167,7 @@ Stated plainly, because a judge deserves to know exactly what they are looking a
 | **Enforcement** | Mirrors OpenShell's *block + isolate* semantics as an in-process check. Real kernel isolation needs an OpenShell sandbox — Phase 2. |
 | **Transfers and QR** | End-to-end flow modelled with realistic references. The **conversion maths is real**; the settlement is not. |
 | **Policy persistence** | Policies live in memory and vanish on refresh. |
-| **Recurring / Activity / UCP Commerce** | Sections exist and are empty. |
+| **Recurring / Activity / Agentic Commerce** | Sections exist and are empty. |
 
 > Nothing in this README or the UI claims enforcement or settlement that does not exist.
 

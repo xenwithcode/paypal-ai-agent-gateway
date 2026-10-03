@@ -30,6 +30,13 @@ const nextConfig: NextConfig = {
         destination: "/send/bank",
         permanent: false,
       },
+      // The section outgrew its protocol name: ACP and UCP are both live and
+      // neither is ours to endorse.
+      {
+        source: "/ucp",
+        destination: "/commerce",
+        permanent: false,
+      },
     ];
   },
 };
