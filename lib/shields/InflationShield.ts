@@ -50,11 +50,19 @@ export async function processEmergencyDevaluationShield(config: DevaluationShiel
       currency: "PYUSD",
       // The conversion has a trigger: money arriving, not a price to wait for.
       condition: "on deposit",
-      expires: "None",
+      // No expiry: this shield stays armed until it is switched off.
+      expires: "",
       // Must match MODE exactly, or the AG Grid select editor will not
       // recognise the value and shows an empty cell.
       mode: MODE.autonomous,
       status: STATUS.protecting,
+      // Not a purchasable product, so there is no catalog price or image to
+      // attach — and no unverifiable condition to imply otherwise.
+      marketPrice: null,
+      marketImage: null,
+      conditionMet: true,
+      conditionDetail: "Triggered by the incoming deposit — not a price condition.",
+      allowEndpoint: "api.bcv.org.ve",
     },
     fx: {
       appliedRate: rates.vesPerUsd,

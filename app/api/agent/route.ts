@@ -77,7 +77,7 @@ export async function POST(req: NextRequest) {
 
     // Normal flow: international purchases, trips, subscriptions, etc.
     const availableBalance = await getPYUSDBalance();
-    const policy = await parseUserIntention(prompt, availableBalance);
+    const { policy, source } = await parseUserIntention(prompt, availableBalance);
 
     // Resolve the policy against a catalog entry. Without this a price
     // condition could only be stored, never judged — and an unjudged condition
@@ -87,8 +87,15 @@ export async function POST(req: NextRequest) {
     );
     const evaluation = evaluateCondition(policy.condition, product);
 
+    // Computed once: the network scope shown to the approver and the one sent
+    // to the sandbox config must never be two different strings.
+    const allowEndpoint = policy.merchant ? `api.${hostify(policy.merchant)}.com` : "";
+
     return NextResponse.json({
       success: true,
+      // Which path produced this policy: the model, or the deterministic
+      // fallback. The console reports it verbatim rather than assuming.
+      source,
       gridRow: {
         id: Date.now(),
         what: policy.what,
@@ -96,7 +103,9 @@ export async function POST(req: NextRequest) {
         limit: policy.limit,
         currency: policy.currency,
         condition: policy.condition,
-        expires: policy.expires || "None",
+        // Empty means no expiry. Printing "None" here used to read like a
+        // value rather than an absence.
+        expires: policy.expires || "",
         mode: policy.mode,
         status: STATUS.pending,
         marketPrice: product ? Number(product.price.toFixed(2)) : null,
@@ -105,13 +114,14 @@ export async function POST(req: NextRequest) {
         conditionDetail: product
           ? `${evaluation.detail} · ${matchedBy} on ${CATALOG_SOURCE.name} (${CATALOG_SOURCE.kind})`
           : evaluation.detail,
+        allowEndpoint,
       },
       openShellConfig: {
         sandboxName: `sb-${slugify(policy.merchant || policy.what)}`,
         networkPolicy: {
           // Endpoint is derived from a named merchant only. Inferring a host
           // from "white sneakers, size 10" would produce nonsense.
-          allowEndpoint: policy.merchant ? `api.${hostify(policy.merchant)}.com` : "",
+          allowEndpoint,
           maxTransactionLimit: policy.limit,
           tokenTarget: "PYUSD_SOLANA_MAINNET",
         },

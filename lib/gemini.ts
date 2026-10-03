@@ -71,10 +71,22 @@ export type IntentionPolicy = {
   mode: string;
 };
 
+/**
+ * Where a policy came from.
+ *
+ * Surfaced all the way to the UI because the console used to announce
+ * "Gemini analyzing" while no model call had happened at all. Saying which
+ * path ran is the difference between a log and a claim.
+ */
+export type IntentionResult = {
+  policy: IntentionPolicy;
+  source: "model" | "fallback";
+};
+
 export async function parseUserIntention(
   prompt: string,
   availableBalance: string
-): Promise<IntentionPolicy> {
+): Promise<IntentionResult> {
   // The system prompt is in English so the model's vocabulary lines up with
   // the column headers it has to satisfy.
   const systemInstruction =
@@ -94,7 +106,7 @@ export async function parseUserIntention(
 
   if (!ai) {
     warnDemo("GEMINI_API_KEY missing or still the env.example placeholder");
-    return buildDemoPolicy(prompt, availableBalance);
+    return { policy: buildDemoPolicy(prompt, availableBalance), source: "fallback" };
   }
 
   try {
@@ -111,11 +123,13 @@ export async function parseUserIntention(
     const raw = response.text;
     if (!raw) throw new Error("Gemini returned an empty response");
 
-    return normalise(JSON.parse(raw), availableBalance);
+    return { policy: normalise(JSON.parse(raw), availableBalance), source: "model" };
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);
     warnDemo(`Gemini call failed (${message})`);
-    return buildDemoPolicy(prompt, availableBalance);
+    // The model did not produce this policy, so it must not be reported as
+    // though it did — even though the shape coming back is identical.
+    return { policy: buildDemoPolicy(prompt, availableBalance), source: "fallback" };
   }
 }
 

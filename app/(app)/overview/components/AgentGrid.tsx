@@ -1,7 +1,7 @@
 // app/agent-dashboard/components/AgentGrid.tsx
 "use client";
 
-import { useState, useMemo, useCallback, useRef } from "react";
+import { useState, useEffect, useMemo, useCallback, useRef } from "react";
 import { AgGridReact } from "ag-grid-react";
 import {
   AllCommunityModule,
@@ -35,7 +35,7 @@ import WhatCellRenderer from "./WhatCellRenderer";
 import VEPagoMovilShield from "./VEPagoMovilShield";
 
 // Shared status/mode strings (also produced by the API routes on the server).
-import { STATUS, MODE, MODE_OPTIONS, type HoldAction } from "@/lib/policy";
+import { STATUS, MODE, MODE_OPTIONS, isStatus, type HoldAction } from "@/lib/policy";
 
 interface PolicyRow {
   id: number;
@@ -58,6 +58,41 @@ interface PolicyRow {
   conditionMet: boolean | null;
   /** How the verdict was reached, including the catalog it came from. */
   conditionDetail: string;
+  /**
+   * The only host this order may reach, or empty when no merchant was named.
+   * Shown under the purchase so the approver can see the scope they are
+   * signing off on — a ceiling with no endpoint is half a permission.
+   */
+  allowEndpoint: string;
+}
+
+/**
+ * Where the table is kept between reloads.
+ *
+ * Versioned so a future change to the row shape can write v2 and ignore
+ * anything older, rather than rendering a half-understood row.
+ */
+const STORAGE_KEY = "paypal-ai-agent.policies.v1";
+
+/**
+ * Structural check for rows read back out of storage. Anything that does not
+ * look like a policy — a truncated write, a value another tab left behind, a
+ * row written by a previous version — is dropped instead of handed to a grid
+ * that would render it without complaint.
+ */
+function isPolicyRow(value: unknown): value is PolicyRow {
+  if (!value || typeof value !== "object" || Array.isArray(value)) return false;
+  const row = value as Record<string, unknown>;
+  return (
+    typeof row.id === "number" &&
+    Number.isFinite(row.id) &&
+    typeof row.what === "string" &&
+    typeof row.limit === "number" &&
+    Number.isFinite(row.limit) &&
+    typeof row.currency === "string" &&
+    typeof row.status === "string" &&
+    isStatus(row.status)
+  );
 }
 
 export default function AgentGrid({ initialBalance }: { initialBalance: string }) {
@@ -74,13 +109,14 @@ export default function AgentGrid({ initialBalance }: { initialBalance: string }
       limit: 15,
       currency: "PYUSD",
       condition: "",
-      expires: "None",
+      expires: "",
       mode: MODE.autonomous,
       status: STATUS.enforced,
       marketPrice: null,
       marketImage: null,
       conditionMet: true,
       conditionDetail: "No condition — executes immediately.",
+      allowEndpoint: "api.spotify.com",
     },
     {
       id: 2,
@@ -98,6 +134,9 @@ export default function AgentGrid({ initialBalance }: { initialBalance: string }
       conditionMet: false,
       conditionDetail:
         "Price is 119.99 USD, condition requires <= 100 · 2/2 terms matched (full query) on dummyjson (demo-catalog)",
+      // No merchant was named, so no host is restricted — which is itself
+      // worth showing rather than leaving to be inferred.
+      allowEndpoint: "",
     },
     // A held purchase order whose condition is satisfied right now: money is
     // set aside and waiting for the operator to settle it. The price and
@@ -118,12 +157,60 @@ export default function AgentGrid({ initialBalance }: { initialBalance: string }
       conditionMet: true,
       conditionDetail:
         "Price is 549.99 USD, condition requires <= 600 · 4/4 terms matched (full query) on dummyjson (demo-catalog)",
+      allowEndpoint: "api.apple.com",
     },
   ]);
 
-  const [logs, setLogs] = useState<string[]>([
-    "[10:28:00] 🛡️ OpenShell governance runtime initialized."
-  ]);
+  const [logs, setLogs] = useState<string[]>([]);
+
+  /**
+   * Rows live in this browser so a hold survives a reload — a reservation
+   * that vanishes when you press F5 is not a reservation.
+   *
+   * The read happens in an effect rather than in the useState initialiser:
+   * the initialiser runs while the page is being rendered on the server too,
+   * where localStorage does not exist, and the two renders would disagree.
+   */
+  useEffect(() => {
+    let restored = 0;
+    try {
+      const raw = window.localStorage.getItem(STORAGE_KEY);
+      if (raw) {
+        const stored: unknown = JSON.parse(raw);
+        // Only accept something shaped like rows. A corrupt or hand-edited
+        // value must not take the table down with it.
+        if (Array.isArray(stored) && stored.length > 0 && stored.every(isPolicyRow)) {
+          setRowData(stored);
+          restored = stored.length;
+        }
+      }
+    } catch {
+      // Private mode, disabled storage or unreadable JSON: the session keeps
+      // working, it just will not survive the next reload.
+    }
+
+    // The clock is read here rather than in the initialiser because the
+    // initialiser also runs on the server, where it would be a different time
+    // — and React reports any disagreement as a hydration mismatch.
+    setLogs([
+      `[${new Date().toLocaleTimeString()}] ${
+        restored
+          ? `🗂️ Restored ${restored} order${restored === 1 ? "" : "s"} from this browser.`
+          : "🗂️ Order table ready — rows are kept in this browser."
+      }`,
+    ]);
+  }, []);
+
+  // Written on every change. Declared after the read above on purpose — on the
+  // first commit both run, and the read has to observe the stored value before
+  // anything overwrites it with the seed rows.
+  useEffect(() => {
+    try {
+      window.localStorage.setItem(STORAGE_KEY, JSON.stringify(rowData));
+    } catch {
+      // Quota exceeded or storage disabled: same trade-off as above.
+    }
+  }, [rowData]);
 
   // Single funnel that every panel writes to: Pago Móvil, the QR scanner and
   // the fraud/deflation simulations all append their events to this console.
@@ -209,23 +296,84 @@ export default function AgentGrid({ initialBalance }: { initialBalance: string }
     [addLog]
   );
 
-  const triggerFraudSimulation = () => {
-    addLog("⚠️ [ALERT] Incoming charge attempt detected from an external gateway...");
-    addLog("🔍 [UCP] Inbound request: 'LATAM Checkout' attempts to debit 901.00 PYUSD.");
-    setTimeout(() => {
-      addLog("🚨 [POLICY PANIC] AG Grid limit violation detected (901 > 900).");
-      addLog("🔒 [BLOCKED] Network connection severed. Payment credentials isolated in the enclave.");
+  /**
+   * Fire a charge attempt at the server and report whatever it decides.
+   *
+   * This used to be a setTimeout that announced a block after a fixed delay
+   * no matter what the table said — a scripted outcome wearing the costume of
+   * enforcement. The attempt is now built from a real row, the server compares
+   * it against that row's ceiling and endpoint scope, and the console prints
+   * the reason the server returned. If the policy had allowed it, the log
+   * would say allowed.
+   */
+  const triggerFraudSimulation = async () => {
+    const target = rowData.find((row) => row.status === STATUS.enforced) ?? rowData[0];
+    if (!target) {
+      addLog("❌ [CHECK] No policy to test against — draft and activate one first.");
+      return;
+    }
+
+    // One unit over the ceiling, from a host this order does not allow: both
+    // rules are exercised when the order has a scope, and only the ceiling
+    // fires when it does not. Derived from the row rather than scripted, so
+    // the verdict is about something the operator actually approved.
+    const attempted = Number((target.limit + 1).toFixed(2));
+    const endpoint = target.allowEndpoint
+      ? target.allowEndpoint.replace(/^api\./, "api.unapproved-")
+      : "api.unnamed-merchant.com";
+
+    addLog(`⚠️ [ALERT] Incoming charge: ${attempted.toFixed(2)} ${target.currency} → ${endpoint}...`);
+
+    try {
+      const res = await fetch("/api/policy/check", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          charge: { amount: attempted, currency: target.currency, endpoint },
+          policy: {
+            limit: target.limit,
+            currency: target.currency,
+            allowEndpoint: target.allowEndpoint,
+            what: target.what,
+            status: target.status,
+          },
+        }),
+      });
+      const data = await res.json();
+
+      if (!data.success) {
+        addLog(`❌ [CHECK] ${data.error ?? "The policy check could not run."}`);
+        return;
+      }
+
+      if (data.allowed) {
+        // Reported as-is. The whole point of a check that can pass is that it
+        // does not have to pretend otherwise.
+        addLog(`✅ [CHECK] ${data.reason}`);
+        return;
+      }
+
+      addLog(`🚨 [BLOCKED] ${data.reason}`);
       setFraudAlert({
         active: true,
-        msg: "POLICY PANIC: blocked a 901 PYUSD fraud attempt on LATAM Airlines. The external merchant exceeded your hard limit."
+        msg: `Blocked a ${data.judged.amount.toFixed(2)} ${data.judged.currency} charge to ${data.judged.endpoint} against "${target.what}". ${data.reason}`,
       });
-    }, 1200);
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      addLog(`❌ [CHECK] Could not reach the policy check: ${message}`);
+    }
   };
 
   const triggerDevaluationShieldSimulation = async () => {
     const depositVES = 45_000;
-    addLog(`🏦 [VES BANK] Incoming deposit detected: +${depositVES.toLocaleString("en-US")} VES (payroll).`);
-    addLog("⚠️ [ALERT] Inflation warning active. Bolívar expected to depreciate within the next 3 hours.");
+    // Labelled as a test input. Nothing here is connected to a bank, and the
+    // text it replaces asserted both a detected deposit and a depreciation
+    // forecast several hours out — neither of which this app is in a position
+    // to know.
+    addLog(
+      `🏦 [TEST INPUT] Simulated payroll deposit of ${depositVES.toLocaleString("en-US")} VES — no bank is connected.`
+    );
+    addLog("🔎 [FX SHIELD] Reading the live rate before touching anything.");
 
     try {
       // Real call, real BCV rate. This console used to print a hardcoded
@@ -243,15 +391,17 @@ export default function AgentGrid({ initialBalance }: { initialBalance: string }
         return;
       }
 
-      addLog("🧠 [Gemini] Automated action: starting full conversion to preserve value.");
       addLog(
         `📊 [FX] ${data.fx.appliedRate} VES/USD · ${data.fx.source}` +
           ` · BCV ${data.fx.asOf}` +
-          (data.fx.changePct !== null ? ` · ${data.fx.changePct.toFixed(2)}%` : "")
+          (data.fx.changePct !== null ? ` · ${data.fx.changePct.toFixed(2)}% vs previous reading` : "")
       );
-      addLog("🛡️ [GATEWAY] Opening the sanctioned exchange ramp.");
-      addLog("🟢 [DONE] Funds successfully moved out of the inflationary market.");
-      addLog(`💳 [PayPal PYUSD] +${Number(data.gridRow.limit).toFixed(2)} PYUSD credited to your secure vault.`);
+      addLog(
+        `🛡️ [FX SHIELD] ${depositVES.toLocaleString("en-US")} VES → ${Number(data.gridRow.limit).toFixed(2)} PYUSD at that rate.`
+      );
+      addLog(
+        "⚠️ [DEMO] No PayPal credentials configured — no funds were moved. The figure above is what the live rate would yield."
+      );
 
       // Land the real result in the policy table rather than only narrating it.
       setRowData((prev) => [...prev, data.gridRow]);
@@ -267,9 +417,30 @@ export default function AgentGrid({ initialBalance }: { initialBalance: string }
       field: "limit",
       headerName: "Ceiling",
       editable: true,
-      flex: 0.8,
+      flex: 1.0,
       valueParser: (p) => Number(p.newValue),
-      cellClass: "font-mono text-emerald-600 font-semibold text-right",
+      // A ceiling the current price already passes is the one fact an approver
+      // cannot be left to spot on their own — and it is exactly the case the
+      // Condition column never flags, because a policy can carry no condition
+      // at all and still be impossible to fill.
+      valueFormatter: (p) => {
+        const ceiling = Number(p.value);
+        if (!Number.isFinite(ceiling)) return String(p.value ?? "");
+        const base = `${ceiling.toFixed(2)} ${p.data?.currency ?? ""}`.trim();
+        const price = p.data?.marketPrice;
+        const over = typeof price === "number" && price > ceiling;
+        return over ? `${base} · exceeded` : base;
+      },
+      // Red is a secondary cue only: the word "exceeded" carries the meaning
+      // for anyone who cannot read it.
+      cellClass: (p) => {
+        const ceiling = Number(p.value);
+        const price = p.data?.marketPrice;
+        const over = Number.isFinite(ceiling) && typeof price === "number" && price > ceiling;
+        return over
+          ? "font-mono text-red-700 font-semibold text-right"
+          : "font-mono text-emerald-600 font-semibold text-right";
+      },
     },
     {
       field: "marketPrice",
@@ -301,7 +472,20 @@ export default function AgentGrid({ initialBalance }: { initialBalance: string }
         return "font-mono text-slate-500";
       },
     },
-    { field: "expires", headerName: "Valid until", editable: true, flex: 0.8 },
+    {
+      field: "expires",
+      headerName: "Valid until",
+      editable: true,
+      flex: 0.8,
+      // "None" was being printed as though it were a value the operator had
+      // entered. An empty cell means the date was never set, so it should
+      // read as absent — and look like it.
+      valueFormatter: (p) => {
+        const raw = String(p.value ?? "").trim();
+        return raw ? raw : "No expiry";
+      },
+      cellClass: (p) => (String(p.value ?? "").trim() ? "" : "italic text-slate-400"),
+    },
     {
       field: "mode",
       headerName: "Mode",
@@ -316,7 +500,7 @@ export default function AgentGrid({ initialBalance }: { initialBalance: string }
   const handleGeneratePolicy = async () => {
     if (!prompt.trim()) return;
     setLoading(true);
-    addLog(`🧠 [Gemini] Analyzing user intent: "${prompt}"`);
+    addLog(`📨 Drafting an order from: "${prompt}"`);
     try {
       const res = await fetch("/api/agent", {
         method: "POST",
@@ -325,7 +509,19 @@ export default function AgentGrid({ initialBalance }: { initialBalance: string }
       });
       const data = await res.json();
       if (data.success) {
-        addLog(`📄 [UCP] Structured manifest created for "${data.gridRow.what}".`);
+        // The console used to announce "Gemini analyzing" before any request
+        // had been made — and kept announcing it when no key existed, so no
+        // model call had happened at all. It now repeats what the server
+        // reported, because a log is only useful if it describes events.
+        addLog(
+          data.source === "model"
+            ? `🧠 [Gemini] Parsed the intent into an order for "${data.gridRow.what}".`
+            : "⚙️ [LOCAL] No GEMINI_API_KEY — the intent was parsed without calling a model."
+        );
+        addLog(
+          `📄 [ORDER] Created "${data.gridRow.what}" · ceiling ${data.gridRow.limit} ${data.gridRow.currency}` +
+            `${data.gridRow.condition ? ` · condition ${data.gridRow.condition}` : ""}.`
+        );
         setRowData(prev => [...prev, data.gridRow]);
         setPrompt("");
       } else {

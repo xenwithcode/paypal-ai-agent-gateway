@@ -6,18 +6,29 @@ import Image from "next/image";
 import { ImageOff } from "lucide-react";
 import type { CustomCellRendererProps } from "ag-grid-react";
 
+type RowData = {
+  marketImage?: string | null;
+  /** Host this order may reach; empty when no merchant was named. */
+  allowEndpoint?: string;
+};
+
 /**
- * The "What" cell: the product the agent actually found, next to its name.
+ * The "What" cell: the product the agent found, its name, and the one host it
+ * is allowed to talk to.
  *
- * Approving a purchase you cannot see is not approval, so the image belongs in
- * the row the human signs off on rather than behind a click. A broken or
- * missing image degrades to a labelled placeholder — never a browser's broken
- * image glyph.
+ * The image belongs here rather than behind a click because approving a
+ * purchase you cannot see is not approval. The endpoint belongs here for the
+ * same reason — a ceiling without a destination is only half a permission, and
+ * it is the half the operator is least likely to ask about unaided.
+ *
+ * A broken or missing image degrades to a labelled placeholder, never a
+ * browser's broken image glyph.
  */
 export default function WhatCellRenderer(params: CustomCellRendererProps) {
   const text = String(params.value ?? "");
-  const data = params.data as { marketImage?: string | null } | undefined;
-  const image = data?.marketImage ?? null;
+  const data = (params.data ?? {}) as RowData;
+  const image = data.marketImage ?? null;
+  const endpoint = (data.allowEndpoint ?? "").trim();
 
   const [failed, setFailed] = useState(false);
   const showImage = Boolean(image) && !failed;
@@ -44,7 +55,19 @@ export default function WhatCellRenderer(params: CustomCellRendererProps) {
           <ImageOff className="h-4 w-4" strokeWidth={1.75} aria-hidden="true" />
         </span>
       )}
-      <span className="min-w-0 truncate">{text}</span>
+      <span className="min-w-0">
+        <span className="block truncate text-[13px] text-slate-800">{text}</span>
+        <span
+          className="block truncate text-[10px] leading-tight text-slate-400"
+          title={
+            endpoint
+              ? `This order may only reach ${endpoint}.`
+              : "No merchant was named, so no host is restricted for this order."
+          }
+        >
+          {endpoint ? `only → ${endpoint}` : "no endpoint set"}
+        </span>
+      </span>
     </span>
   );
 }
