@@ -2,7 +2,7 @@
 // UNIFIED FILE: financial contingency handling and kernel-style enforcement.
 //
 // NOTE: PayPal access lives in lib/paypal.ts, which exposes a single shared
-// `paypalClient` and `getPYUSDBalance()` for the whole project.
+// `paypalClient` and `getBalance()` for the whole project.
 //
 // NOTE 2: `enforceOpenShellKernelPolicy()` is currently a pure in-process
 // simulation of OpenShell's network interception. Real kernel-level

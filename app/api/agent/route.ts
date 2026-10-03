@@ -1,6 +1,6 @@
 // app/api/agent/route.ts
 import { NextRequest, NextResponse } from "next/server";
-import { getPYUSDBalance } from "@/lib/paypal";
+import { getBalance } from "@/lib/paypal";
 import { parseUserIntention } from "@/lib/gemini";
 import { STATUS } from "@/lib/policy";
 import { matchProduct, evaluateCondition, CATALOG_SOURCE } from "@/lib/commerce/catalog";
@@ -76,7 +76,9 @@ export async function POST(req: NextRequest) {
     }
 
     // Normal flow: international purchases, trips, subscriptions, etc.
-    const availableBalance = await getPYUSDBalance();
+    // The number only — but obtained through getBalance(), so taking it
+    // means acknowledging where it came from rather than it being unmarked.
+    const availableBalance = (await getBalance()).value;
     const { policy, source } = await parseUserIntention(prompt, availableBalance);
 
     // Resolve the policy against a catalog entry. Without this a price

@@ -687,7 +687,11 @@ export default function AgentGrid({ balance }: { balance: Balance }) {
           <span
             className={`text-2xl font-mono font-bold ${balance.source === "live" ? "text-emerald-400" : "text-amber-300"}`}
           >
-            {balance.value} PYUSD
+            {/* The currency PayPal actually reported. This account holds USD,
+                and asking the endpoint for PYUSD answers 400 — so there is no
+                PYUSD figure to show, and printing one would be an invention
+                rather than a shorthand. */}
+            {balance.value} {balance.currency}
           </span>
         </div>
       </div>

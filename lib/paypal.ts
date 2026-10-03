@@ -1,7 +1,8 @@
 // lib/paypal.ts
 // Single facade over the PayPal Server SDK.
-// Exposes the shared `paypalClient`, `getBalance()` — which reports whether
-// the figure is live — and `getPYUSDBalance()` for callers that only print it.
+// Exposes the shared `paypalClient` and `getBalance()`, which returns the
+// figure together with its currency and whether PayPal actually produced it.
+// There is no accessor that hands back the number alone.
 //
 // SECURITY: this module reads PAYPAL_CLIENT_ID / PAYPAL_CLIENT_SECRET and must
 // only ever be imported from server-side code (route handlers, server
@@ -88,6 +89,7 @@ function describePaypalError(error: unknown): string {
 /** Where a balance figure came from. Carried with it, never implied. */
 export type Balance = {
   value: string;
+  currency: string;
   source: "live" | "demo";
   /** Why it is a demo figure, so the screen can say so. Null when live. */
   reason: string | null;
@@ -99,53 +101,89 @@ export type Balance = {
  * Never throws: if PayPal is unconfigured or refuses, it falls back to the
  * demo figure — and reports which one it is, because a number with no
  * provenance is a number a reader will take at face value.
+ *
+ * There is deliberately no way to get the figure without its provenance: the
+ * callers that only need a number take `.value`, but they have to acknowledge
+ * what they are holding first.
  */
 export async function getBalance(): Promise<Balance> {
   if (!hasRealPaypalCredentials()) {
     warnOnce("PayPal credentials are missing or still README placeholders.");
-    return { value: DEMO_BALANCE, source: "demo", reason: "No PayPal credentials configured." };
+    return {
+      value: DEMO_BALANCE,
+      currency: "PYUSD",
+      source: "demo",
+      reason: "No PayPal credentials configured.",
+    };
   }
 
   try {
     const controller = new TransactionSearchController(paypalClient);
     // No currencyCode: list every balance and pick the relevant one below.
+    // Asking for PYUSD specifically is not an option — this endpoint answers
+    // 400 for it, so an account holding only USD reports USD.
     const { result } = await controller.searchBalances({});
-    const formatted = pickBalance(result);
+    const picked = pickBalance(result);
 
-    if (formatted === null) {
+    if (picked === null) {
       warnOnce("PayPal returned no usable balance.");
-      return { value: DEMO_BALANCE, source: "demo", reason: "PayPal returned no usable balance." };
+      return {
+        value: DEMO_BALANCE,
+        currency: "PYUSD",
+        source: "demo",
+        reason: "PayPal returned no usable balance.",
+      };
     }
-    return { value: formatted, source: "live", reason: null };
+    return { value: picked.value, currency: picked.currency, source: "live", reason: null };
   } catch (error) {
     const why = describePaypalError(error);
     warnOnce(`the PayPal API call failed (${why}).`);
-    return { value: DEMO_BALANCE, source: "demo", reason: `PayPal: ${why}` };
+    return {
+      value: DEMO_BALANCE,
+      currency: "PYUSD",
+      source: "demo",
+      reason: `PayPal: ${why}`,
+    };
   }
 }
 
 /**
- * The formatted figure only, for callers that print it and nothing else.
- * Anything showing it to a person should use `getBalance()` instead.
+ * The amount held by one balance entry.
+ *
+ * The wire format is snake_case (`total_balance`); the SDK deserializes it
+ * into the camelCase its `BalancesResponse` type declares, and that is what
+ * reaches here. Both spellings are read because they sit one refactor apart —
+ * and because missing the number does not throw, it comes back as "no usable
+ * balance", the one failure nobody can diagnose from its message.
  */
-export async function getPYUSDBalance(): Promise<string> {
-  return (await getBalance()).value;
+function entryAmount(entry: Record<string, unknown>): string | null {
+  const money =
+    (entry.available_balance as { value?: string } | undefined) ??
+    (entry.total_balance as { value?: string } | undefined) ??
+    (entry.availableBalance as { value?: string } | undefined) ??
+    (entry.totalBalance as { value?: string } | undefined);
+  return money?.value ?? null;
 }
 
-/** Extracts and formats the PYUSD (or else primary) balance from the response. */
-function pickBalance(response: BalancesResponse): string | null {
-  const balances = response.balances;
-  if (!balances || balances.length === 0) return null;
+/**
+ * Choose the balance to report: PYUSD if the account holds any, else its
+ * primary currency. Returns the currency with the figure because labelling
+ * a USD balance as PYUSD is the kind of error this project keeps removing.
+ */
+export function pickBalance(response: BalancesResponse): { value: string; currency: string } | null {
+  const entries = (response.balances ?? []) as unknown as Array<Record<string, unknown>>;
+  if (entries.length === 0) return null;
 
-  const preferred =
-    balances.find((b) => b.currency.toUpperCase() === "PYUSD") ??
-    balances.find((b) => b.primary) ??
-    balances[0];
+  const chosen =
+    entries.find((e) => String(e.currency ?? "").toUpperCase() === "PYUSD") ??
+    entries.find((e) => e.primary === true) ??
+    entries[0];
 
-  const money = preferred.availableBalance ?? preferred.totalBalance;
-  if (!money?.value) return null;
+  const currency = typeof chosen.currency === "string" ? chosen.currency.toUpperCase() : "";
+  const value = entryAmount(chosen);
+  if (!currency || value === null) return null;
 
-  return formatAmount(money.value);
+  return { value: formatAmount(value), currency };
 }
 
 /** "2480" / "2480.0000" → "2,480.00" for display. */

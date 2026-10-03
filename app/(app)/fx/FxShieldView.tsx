@@ -17,6 +17,8 @@ import {
 interface Props {
   /** Pre-formatted PYUSD balance, read server-side so the secret never reaches the browser. */
   initialBalance: string;
+  /** The currency that balance is actually held in. */
+  balanceCurrency: string;
   /** True only when the figure above was actually returned by PayPal. */
   balanceIsLive: boolean;
   /** Why it is a demo figure, shown to the operator rather than left in a log. */
@@ -24,7 +26,7 @@ interface Props {
 }
 
 /** "2,480.00" → 2480 */
-function parsePyusd(formatted: string): number {
+function parseAmount(formatted: string): number {
   const n = Number(String(formatted).replace(/,/g, ""));
   return Number.isFinite(n) ? n : 0;
 }
@@ -49,7 +51,12 @@ function dailyChangePct(r: FxSnapshot): number | null {
   return r.vesChangePct / days;
 }
 
-export default function FxShieldView({ initialBalance, balanceIsLive, balanceReason }: Props) {
+export default function FxShieldView({
+  initialBalance,
+  balanceCurrency,
+  balanceIsLive,
+  balanceReason,
+}: Props) {
   const { enabled } = useFxShield();
   const [state, setState] = useState<LoadState>({ kind: "loading" });
 
@@ -77,14 +84,24 @@ export default function FxShieldView({ initialBalance, balanceIsLive, balanceRea
 
   const rates = state.kind === "ready" ? state.data : null;
 
-  // Balance context. PayPal only custodies PYUSD: VES sits in a bank account
-  // and SOL would need a wallet, so a quote from either cannot be executed
-  // against anything we track. Saying so beats silently implying a swap.
-  const availablePyusd = parsePyusd(initialBalance);
+  // Balance context. VES sits in a bank account and SOL would need a wallet,
+  // so a quote from either cannot be executed against anything we track.
+  // Saying so beats silently implying a swap.
+  //
+  // The balance is only comparable when it is held in the currency being
+  // spent. That is not a hypothetical: PayPal's own reporting endpoint
+  // answers 400 for `currency_code=PYUSD`, so an account holding USD is what
+  // this screen actually receives — checking a PYUSD amount against it would
+  // be arithmetic across two different things.
+  const availableAmount = parseAmount(initialBalance);
   const amountNumber = Number(amount);
   const fromIsTracked = from === "PYUSD";
+  const balanceIsPyusd = balanceCurrency === "PYUSD";
   const exceedsBalance =
-    fromIsTracked && Number.isFinite(amountNumber) && amountNumber > availablePyusd;
+    fromIsTracked &&
+    balanceIsPyusd &&
+    Number.isFinite(amountNumber) &&
+    amountNumber > availableAmount;
 
   const quote = useMemo(() => {
     if (!rates) return null;
@@ -302,7 +319,7 @@ export default function FxShieldView({ initialBalance, balanceIsLive, balanceRea
               <span className="text-slate-500">
                 Your balance:{" "}
                 <strong className="font-mono tabular-nums text-slate-900">
-                  {initialBalance} PYUSD
+                  {initialBalance} {balanceCurrency}
                 </strong>
                 {!balanceIsLive && (
                   <span
@@ -330,7 +347,7 @@ export default function FxShieldView({ initialBalance, balanceIsLive, balanceRea
                 className="mt-2 rounded-xl border border-red-200 bg-red-50 px-3 py-2 text-xs font-medium text-red-700"
               >
                 Exceeds your available balance by{" "}
-                {formatSmart(amountNumber - availablePyusd, "PYUSD")} PYUSD.
+                {formatSmart(amountNumber - availableAmount, "PYUSD")} PYUSD.
               </p>
             )}
 

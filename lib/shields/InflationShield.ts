@@ -1,5 +1,5 @@
 // lib/shields/InflationShield.ts
-import { getPYUSDBalance } from "../paypal";
+import { getBalance } from "../paypal";
 import { fetchFxSnapshot } from "../fx/providers";
 import { convert, formatSmart, type FxSnapshot } from "../fx/rates";
 import { STATUS, MODE } from "../policy";
@@ -35,7 +35,7 @@ export async function processEmergencyDevaluationShield(config: DevaluationShiel
   );
 
   // 3. Control balance read through the PayPal Server SDK.
-  const currentBalance = await getPYUSDBalance();
+  const currentBalance = (await getBalance()).value;
   console.log(`💰 [Inflation Shield]: Balance before conversion: ${currentBalance} PYUSD`);
 
   // 4. Return the structured policy plus the rate provenance, so the UI can

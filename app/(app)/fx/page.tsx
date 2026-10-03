@@ -16,6 +16,7 @@ export default async function FxShieldPage() {
   return (
     <FxShieldView
       initialBalance={balance.value}
+      balanceCurrency={balance.currency}
       // Not "are credentials configured" — "did this figure actually come
       // from PayPal". Credentials present with a refused request still show
       // the demo number, and labelling that as live would assert the opposite.
