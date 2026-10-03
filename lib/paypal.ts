@@ -11,7 +11,10 @@
 // whatever it touches.
 import {
   Client,
+  CheckoutPaymentIntent,
   Environment,
+  OrdersController,
+  PaymentsController,
   TransactionSearchController,
   type BalancesResponse,
 } from "@paypal/paypal-server-sdk";
@@ -194,4 +197,165 @@ function formatAmount(value: string): string {
     minimumFractionDigits: 2,
     maximumFractionDigits: 2,
   });
+}
+
+// ─── The hold lifecycle, in PayPal's terms ─────────────────────────────────
+//
+// Our states map onto PayPal's authorize model one for one:
+//
+//   activate  → createOrder(intent: AUTHORIZE) → payer approves → authorizeOrder
+//   capture   → captureAuthorizedPayment(authorizationId)
+//   release   → voidAuthorization(authorizationId)
+//
+// PayPal's own guidance on this shape is worth keeping close: "inform
+// customers that their payment is authorized, but not yet charged" — which is
+// what the Reserved state says. The hold is real for 29 days, with the best
+// success inside a 3-day honor period.
+
+/** Money as PayPal accepts it: a positive decimal string, not a number. */
+export function toMoneyString(amount: number): string | null {
+  if (!Number.isFinite(amount) || amount <= 0) return null;
+  return amount.toFixed(2);
+}
+
+/** True when the app can reach PayPal at all. */
+export function canTalkToPaypal(): boolean {
+  return hasRealPaypalCredentials();
+}
+
+function orders() {
+  return new OrdersController(paypalClient);
+}
+
+function payments() {
+  return new PaymentsController(paypalClient);
+}
+
+/** Translate an SDK failure into something a person can act on. */
+function fail(operation: string, error: unknown): never {
+  const reason = describePaypalError(error);
+  console.error(`[/paypal] ${operation} failed: ${reason}`);
+  throw new Error(`${operation} failed: ${reason}`);
+}
+
+export type CreatedOrder = {
+  orderId: string;
+  /** Where the payer approves — the sandbox checkout page. */
+  approveUrl: string | null;
+  status: string;
+};
+
+/**
+ * Create an order that reserves funds rather than taking them.
+ *
+ * `intent: AUTHORIZE` is the whole point: without it there is nothing for a
+ * condition to gate, because the money would already have moved.
+ */
+export async function createAuthorizeOrder(input: {
+  amount: string;
+  currency: string;
+  description: string;
+  customId?: string;
+}): Promise<CreatedOrder> {
+  if (!hasRealPaypalCredentials()) {
+    throw new Error("PayPal credentials are not configured.");
+  }
+
+  try {
+    const { result } = await orders().createOrder({
+      body: {
+        intent: CheckoutPaymentIntent.Authorize,
+        purchaseUnits: [
+          {
+            amount: { currencyCode: input.currency, value: input.amount },
+            description: input.description.slice(0, 120),
+            ...(input.customId ? { customId: input.customId.slice(0, 127) } : {}),
+          },
+        ],
+        applicationContext: {
+          brandName: "PayPal AI Agent Gateway",
+          // The SDK v6 flow approves in-page and never navigates away, but
+          // PayPal requires both URLs to be present to accept the order.
+          returnUrl: process.env.PAYPAL_RETURN_URL ?? "http://localhost:3001/paypal/return",
+          cancelUrl: process.env.PAYPAL_CANCEL_URL ?? "http://localhost:3001/paypal/cancel",
+        },
+      },
+    });
+
+    const approve = (result.links ?? []).find((link) => link.rel === "approve");
+    if (!result.id) throw new Error("PayPal returned no order id.");
+
+    return { orderId: result.id, approveUrl: approve?.href ?? null, status: result.status ?? "CREATED" };
+  } catch (error) {
+    fail("createAuthorizeOrder", error);
+  }
+}
+
+/**
+ * Complete the approval the payer just gave, producing the hold.
+ *
+ * The authorization id lives at `purchase_units[0].payments.authorizations[0].id`
+ * in PayPal's response; everything after this point refers to it by name.
+ */
+export async function authorizeApprovedOrder(orderId: string): Promise<{
+  authorizationId: string;
+  status: string;
+}> {
+  if (!orderId.trim()) throw new Error("An order id is required.");
+  if (!hasRealPaypalCredentials()) {
+    throw new Error("PayPal credentials are not configured.");
+  }
+
+  try {
+    const { result } = await orders().authorizeOrder({ id: orderId });
+
+    // PayPal's response shape, per its own docs: the authorization id sits at
+    // purchase_units[0].payments.authorizations[0]. Everything after this
+    // point — capture, void, reauthorize — refers to it by that name.
+    const authorization = result.purchaseUnits?.[0]?.payments?.authorizations?.[0];
+    const authorizationId = authorization?.id ?? "";
+
+    if (!authorizationId) {
+      throw new Error("PayPal returned no authorization — the order may not be approved yet.");
+    }
+    return { authorizationId, status: result.status ?? "APPROVED" };
+  } catch (error) {
+    fail("authorizeApprovedOrder", error);
+  }
+}
+
+/** Settle the hold: this is when money actually moves. */
+export async function captureAuthorization(authorizationId: string): Promise<{
+  captureId: string;
+  status: string;
+}> {
+  if (!authorizationId.trim()) throw new Error("An authorization id is required.");
+  if (!hasRealPaypalCredentials()) {
+    throw new Error("PayPal credentials are not configured.");
+  }
+
+  try {
+    const { result } = await payments().captureAuthorizedPayment({ authorizationId });
+    return {
+      captureId: (result as { id?: string })?.id ?? "",
+      status: (result as { status?: string })?.status ?? "COMPLETED",
+    };
+  } catch (error) {
+    fail("captureAuthorization", error);
+  }
+}
+
+/** Cancel the hold: the funds are released back to the payer. */
+export async function voidAuthorization(authorizationId: string): Promise<{ status: string }> {
+  if (!authorizationId.trim()) throw new Error("An authorization id is required.");
+  if (!hasRealPaypalCredentials()) {
+    throw new Error("PayPal credentials are not configured.");
+  }
+
+  try {
+    const { result } = await payments().voidPayment({ authorizationId });
+    return { status: (result as { status?: string })?.status ?? "VOIDED" };
+  } catch (error) {
+    fail("voidAuthorization", error);
+  }
 }

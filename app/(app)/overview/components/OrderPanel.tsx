@@ -7,6 +7,7 @@ import { X, ImageOff, SearchX } from "lucide-react";
 import { STATUS, type HoldAction } from "@/lib/policy";
 import type { CatalogProduct } from "@/lib/commerce/catalog";
 import type { PolicyRow } from "../types";
+import PayPalAuthorizeButton from "./PayPalAuthorizeButton";
 
 /**
  * The approval card.
@@ -35,8 +36,15 @@ type Evaluation = {
 
 type Props = {
   row: PolicyRow;
+  /** Public PayPal client id. Empty means the app has no credentials. */
+  paypalClientId: string;
   onClose: () => void;
   onAction: (action: HoldAction, row: PolicyRow) => Promise<void> | void;
+  /** Called once PayPal has approved and the hold is authorized for real. */
+  onPaypalAuthorized: (
+    row: PolicyRow,
+    info: { orderId: string; authorizationId: string }
+  ) => Promise<void> | void;
 };
 
 function money(value: number, currency: string) {
@@ -57,11 +65,23 @@ function Field({ label, value, tone = "" }: { label: string; value: string; tone
   );
 }
 
-export default function OrderPanel({ row, onClose, onAction }: Props) {
+export default function OrderPanel({
+  row,
+  paypalClientId,
+  onClose,
+  onAction,
+  onPaypalAuthorized,
+}: Props) {
   const [evaluating, setEvaluating] = useState(true);
   const [result, setResult] = useState<Evaluation | null>(null);
   const [imageFailed, setImageFailed] = useState(false);
   const [busy, setBusy] = useState(false);
+  /**
+   * Why PayPal's own approval could not run, when it could not. Switching to
+   * the plain button without saying why would turn a real failure into a
+   * silent demo hold.
+   */
+  const [paypalNote, setPaypalNote] = useState<string | null>(null);
 
   const evaluate = useCallback(async () => {
     setEvaluating(true);
@@ -379,23 +399,48 @@ export default function OrderPanel({ row, onClose, onAction }: Props) {
                 </p>
               </div>
             ) : row.status === STATUS.pending ? (
-              <div className="space-y-3">
-                <button
-                  type="button"
-                  disabled={busy}
-                  onClick={() => void run("activate")}
-                  className="w-full rounded-xl bg-gradient-to-r from-blue-600 to-indigo-600 px-5 py-3.5 text-sm font-bold text-white shadow-sm transition hover:from-blue-700 hover:to-indigo-700 disabled:opacity-60"
-                >
-                  {conditionText
-                    ? `Authorize with PayPal AI Agent — hold ${money(row.limit, row.currency)}`
-                    : "Authorize with PayPal AI Agent"}
-                </button>
-                <p className="text-center text-[11px] leading-relaxed text-slate-400">
-                  {conditionText
-                    ? "The ceiling is reserved now. Money only moves once the condition is met and you capture it."
-                    : "Turns this allowance on. The agent may spend up to the ceiling and no further."}
-                </p>
-              </div>
+              (() => {
+                // PayPal is only offered for orders that actually hold money.
+                // A standing allowance reserves nothing, so there is nothing
+                // for a payer to approve.
+                const usePaypal = Boolean(conditionText && paypalClientId && !paypalNote);
+                const note = !conditionText
+                  ? "Turns this allowance on. The agent may spend up to the ceiling and no further."
+                  : usePaypal
+                    ? "PayPal asks you to approve the hold. The ceiling is reserved, not taken — money only moves once the condition is met and you capture it."
+                    : paypalNote
+                      ? `PayPal approval is unavailable (${paypalNote}). Activating records your decision without reserving anything.`
+                      : "No PayPal credentials configured — activating records your decision without reserving anything.";
+
+                return (
+                  <div className="space-y-3">
+                    {usePaypal ? (
+                      <PayPalAuthorizeButton
+                        clientId={paypalClientId}
+                        amount={row.limit.toFixed(2)}
+                        currency={row.currency}
+                        description={row.what}
+                        customId={`order-${row.id}`}
+                        disabled={busy}
+                        onAuthorized={(info) => onPaypalAuthorized(row, info)}
+                        onUnavailable={(reason) => setPaypalNote(reason)}
+                      />
+                    ) : (
+                      <button
+                        type="button"
+                        disabled={busy}
+                        onClick={() => void run("activate")}
+                        className="w-full rounded-xl bg-gradient-to-r from-blue-600 to-indigo-600 px-5 py-3.5 text-sm font-bold text-white shadow-sm transition hover:from-blue-700 hover:to-indigo-700 disabled:opacity-60"
+                      >
+                        {conditionText
+                          ? `Authorize with PayPal AI Agent — hold ${money(row.limit, row.currency)}`
+                          : "Authorize with PayPal AI Agent"}
+                      </button>
+                    )}
+                    <p className="text-center text-[11px] leading-relaxed text-slate-400">{note}</p>
+                  </div>
+                );
+              })()
             ) : isReserved && metNow ? (
               <div className="space-y-3">
                 <button

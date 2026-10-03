@@ -11,10 +11,14 @@ export default async function OverviewPage() {
   // when it is showing a demo number instead of quietly presenting one.
   const balance = await getBalance();
 
+  // Only the client id crosses over: PayPal documents it as safe to expose,
+  // and the secret stays behind with everything else in this module.
+  const paypalClientId = process.env.PAYPAL_CLIENT_ID ?? "";
+
   // Padding only: the (app) layout owns the page background and the sidebar offset.
   return (
     <main className="py-8">
-      <AgentGrid balance={balance} />
+      <AgentGrid balance={balance} paypalClientId={paypalClientId} />
     </main>
   );
 }

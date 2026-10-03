@@ -136,7 +136,13 @@ const SEED_ROWS: PolicyRow[] = [
   },
 ];
 
-export default function AgentGrid({ balance }: { balance: Balance }) {
+export default function AgentGrid({
+  balance,
+  paypalClientId,
+}: {
+  balance: Balance;
+  paypalClientId: string;
+}) {
   const gridRef = useRef<AgGridReact<PolicyRow>>(null);
   const [prompt, setPrompt] = useState("");
   const [loading, setLoading] = useState(false);
@@ -385,6 +391,29 @@ export default function AgentGrid({ balance }: { balance: Balance }) {
    * the reason the server returned. If the policy had allowed it, the log
    * would say allowed.
    */
+  /**
+   * The payer approved in PayPal's own UI. Record what PayPal issued, then
+   * run the same transition any other path would — the ids are stored first
+   * because a hold without its authorization id can only ever be a demo hold,
+   * and this is the one moment that stops being true.
+   */
+  const handlePaypalAuthorized = useCallback(
+    async (row: PolicyRow, info: { orderId: string; authorizationId: string }) => {
+      setRowData((prev) =>
+        prev.map((r) =>
+          r.id === row.id
+            ? { ...r, paypalOrderId: info.orderId, authorizationId: info.authorizationId }
+            : r
+        )
+      );
+      addLog(
+        `🔐 [PAYPAL] Approved and authorized — hold ${info.authorizationId} on order ${info.orderId}.`
+      );
+      await handleHoldAction("activate", row);
+    },
+    [addLog, handleHoldAction]
+  );
+
   const triggerFraudSimulation = async () => {
     const target = rowData.find((row) => row.status === STATUS.enforced) ?? rowData[0];
     if (!target) {
@@ -747,8 +776,10 @@ export default function AgentGrid({ balance }: { balance: Balance }) {
       {selectedRow && (
         <OrderPanel
           row={selectedRow}
+          paypalClientId={paypalClientId}
           onClose={() => setSelectedId(null)}
           onAction={handleHoldAction}
+          onPaypalAuthorized={handlePaypalAuthorized}
         />
       )}
 

@@ -29,6 +29,14 @@ export interface PolicyRow {
   createdAt?: string;
   /** ISO instant the money moved, set when a hold is captured. */
   capturedAt?: string;
+  /** PayPal's order id, set when the payer is asked to approve a hold. */
+  paypalOrderId?: string;
+  /**
+   * The authorization PayPal issued once the payer approved. Capture and void
+   * both refer to it by name, so a hold without one can only be released as a
+   * demo decision — which the card says rather than implies.
+   */
+  authorizationId?: string;
   /**
    * The only host this order may reach, or empty when no merchant was named.
    * Shown so the approver can see the scope they are signing off on — a
