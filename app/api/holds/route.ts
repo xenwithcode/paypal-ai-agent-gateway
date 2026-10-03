@@ -136,6 +136,10 @@ export async function POST(req: NextRequest) {
         success: true,
         conditionMet: evaluation.met,
         marketPrice: product ? Number(product.price.toFixed(2)) : null,
+        // The full record the approval card renders: image, specs, lead time,
+        // returns — read at the moment the operator is looking, not at draft.
+        product,
+        source: product ? CATALOG_SOURCE : null,
         conditionDetail: product
           ? `${evaluation.detail} · ${matchedBy} on ${CATALOG_SOURCE.name} (${CATALOG_SOURCE.kind})`
           : evaluation.detail,

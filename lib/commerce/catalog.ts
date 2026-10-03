@@ -10,26 +10,50 @@
 const BASE = "https://dummyjson.com";
 const REVALIDATE_SECONDS = 60;
 
+/**
+ * A product as the approval card shows it.
+ *
+ * Everything here is a field the catalog actually returns. Shipping *cost*
+ * and taxes are deliberately absent: this catalog publishes a lead time
+ * ("Ships in 3-5 business days") but no price for either, and inventing one
+ * would put a fabricated number next to real ones.
+ */
 export interface CatalogProduct {
   id: number;
   title: string;
+  description: string;
   price: number;
   currency: "USD";
+  discountPercentage: number;
+  rating: number;
+  reviewCount: number;
   stock: number;
   availabilityStatus: string;
   category: string;
   brand?: string;
+  sku: string;
+  shippingInformation: string;
+  returnPolicy: string;
+  warrantyInformation: string;
   thumbnail?: string;
 }
 
 interface RawProduct {
   id?: number;
   title?: string;
+  description?: string;
   price?: number;
+  discountPercentage?: number;
+  rating?: number;
+  reviews?: unknown[];
   stock?: number;
   availabilityStatus?: string;
   category?: string;
   brand?: string;
+  sku?: string;
+  shippingInformation?: string;
+  returnPolicy?: string;
+  warrantyInformation?: string;
   thumbnail?: string;
 }
 
@@ -43,15 +67,26 @@ export const CATALOG_SOURCE = {
 
 function normalise(raw: RawProduct | null | undefined): CatalogProduct | null {
   if (!raw || typeof raw.id !== "number" || typeof raw.price !== "number") return null;
+  const numberOr = (value: number | undefined, fallback: number) =>
+    typeof value === "number" && Number.isFinite(value) ? value : fallback;
+
   return {
     id: raw.id,
     title: raw.title ?? "Unnamed product",
+    description: raw.description ?? "",
     price: raw.price,
     currency: "USD",
-    stock: typeof raw.stock === "number" ? raw.stock : 0,
+    discountPercentage: numberOr(raw.discountPercentage, 0),
+    rating: numberOr(raw.rating, 0),
+    reviewCount: Array.isArray(raw.reviews) ? raw.reviews.length : 0,
+    stock: numberOr(raw.stock, 0),
     availabilityStatus: raw.availabilityStatus ?? "Unknown",
     category: raw.category ?? "",
     brand: raw.brand,
+    sku: raw.sku ?? "",
+    shippingInformation: raw.shippingInformation ?? "",
+    returnPolicy: raw.returnPolicy ?? "",
+    warrantyInformation: raw.warrantyInformation ?? "",
     thumbnail: raw.thumbnail,
   };
 }

@@ -32,38 +32,11 @@ if (process.env.NODE_ENV !== "production") {
 // Child visual components
 import ActionBtnRenderer from "./ActionBtnRenderer";
 import WhatCellRenderer from "./WhatCellRenderer";
+import OrderPanel from "./OrderPanel";
 
 // Shared status/mode strings (also produced by the API routes on the server).
 import { STATUS, MODE, MODE_OPTIONS, isStatus, type HoldAction } from "@/lib/policy";
-
-interface PolicyRow {
-  id: number;
-  /** The purchase itself, with the attributes that identify it. */
-  what: string;
-  /** Named merchant when one was given. Drives endpoint derivation, not shown. */
-  merchant: string;
-  limit: number;
-  currency: string;
-  /** Must hold before money moves. Empty = execute immediately. */
-  condition: string;
-  expires: string;
-  mode: string;
-  status: string;
-  /** Catalog price at draft time, null when nothing matched. */
-  marketPrice: number | null;
-  /** Catalog thumbnail, so the approver sees what they are approving. */
-  marketImage: string | null;
-  /** true = condition satisfied, false = violated, null = cannot be judged. */
-  conditionMet: boolean | null;
-  /** How the verdict was reached, including the catalog it came from. */
-  conditionDetail: string;
-  /**
-   * The only host this order may reach, or empty when no merchant was named.
-   * Shown under the purchase so the approver can see the scope they are
-   * signing off on — a ceiling with no endpoint is half a permission.
-   */
-  allowEndpoint: string;
-}
+import type { PolicyRow } from "../types";
 
 /**
  * Where the table is kept between reloads.
@@ -170,6 +143,15 @@ export default function AgentGrid({ initialBalance }: { initialBalance: string }
   const [fraudAlert, setFraudAlert] = useState<{ active: boolean; msg: string }>({ active: false, msg: "" });
 
   const [rowData, setRowData] = useState<PolicyRow[]>(SEED_ROWS);
+
+  /**
+   * Which row the approval panel is open for — an id rather than the row
+   * itself, so the panel keeps following the live row as the server's answer
+   * comes back and the status underneath it changes.
+   */
+  const [selectedId, setSelectedId] = useState<number | null>(null);
+  const selectedRow =
+    selectedId === null ? null : (rowData.find((row) => row.id === selectedId) ?? null);
 
   const [logs, setLogs] = useState<string[]>([]);
 
@@ -503,7 +485,19 @@ export default function AgentGrid({ initialBalance }: { initialBalance: string }
   };
 
   const columnDefs = useMemo<ColDef<PolicyRow>[]>(() => [
-    { field: "what", headerName: "What", editable: true, flex: 1.6, cellRenderer: WhatCellRenderer },
+    {
+      field: "what",
+      headerName: "What",
+      // Deliberately not editable: this cell is what the agent matched against
+      // the catalog, and rewriting it would leave the verdict sitting beside a
+      // product that is no longer the one described. It opens the approval
+      // panel instead — clicking the product to look at it is the natural
+      // gesture, and it leaves every editable column free to keep editing on
+      // double-click.
+      flex: 1.6,
+      cellRenderer: WhatCellRenderer,
+      cellClass: "cursor-pointer",
+    },
     {
       field: "limit",
       headerName: "Ceiling",
@@ -540,7 +534,7 @@ export default function AgentGrid({ initialBalance }: { initialBalance: string }
       flex: 0.8,
       valueFormatter: (p) =>
         typeof p.value === "number" ? `${p.value.toFixed(2)} ${p.data?.currency ?? ""}`.trim() : "—",
-      cellClass: "font-mono tabular-nums text-right",
+      cellClass: "font-mono tabular-nums text-right cursor-pointer",
     },
     {
       field: "condition",
@@ -615,6 +609,9 @@ export default function AgentGrid({ initialBalance }: { initialBalance: string }
         );
         setRowData(prev => [...prev, data.gridRow]);
         setPrompt("");
+        // The card is the moment the human is actually being asked something,
+        // so it opens itself rather than waiting to be found in the table.
+        setSelectedId(data.gridRow.id);
       } else {
         addLog(`❌ [API] ${data.error ?? "The agent rejected the request."}`);
       }
@@ -698,9 +695,27 @@ export default function AgentGrid({ initialBalance }: { initialBalance: string }
             theme={themeQuartz}
             animateRows={true}
             context={{ onHoldAction: handleHoldAction }}
+            onCellClicked={(event) => {
+              // Editable cells keep their own behaviour: a click there is the
+              // first half of "double-click to edit", and opening a dialog on
+              // it would swallow the second click. The read-only cells — the
+              // product and its price — are the ones that mean "look closer".
+              if (event.colDef.editable) return;
+              const id = (event.data as PolicyRow | undefined)?.id;
+              if (typeof id === "number") setSelectedId(id);
+            }}
           />
         </div>
       </div>
+
+      {/* The card the human decides from: product, envelope, authorization. */}
+      {selectedRow && (
+        <OrderPanel
+          row={selectedRow}
+          onClose={() => setSelectedId(null)}
+          onAction={handleHoldAction}
+        />
+      )}
 
       {/* Kernel event console */}
       <div className="bg-slate-950 text-slate-200 p-4 rounded-2xl border border-slate-800 shadow-inner font-mono text-xs space-y-2">
