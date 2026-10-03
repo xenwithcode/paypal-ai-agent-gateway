@@ -97,7 +97,10 @@ export default function VEPagoMovilShield({ addLog }: { addLog: (msg: string) =>
           <h3 className="text-lg font-bold text-slate-900 flex items-center gap-2">
             🇻🇪 FX Shield & Pago Móvil On/Off-Ramp
           </h3>
-          <p className="text-xs text-slate-500">Two-way settlement bridge in under 2 seconds (PYUSD ⇄ Solana ⇄ VES)</p>
+          <p className="text-xs text-slate-500">
+            Converts PYUSD in your PayPal balance into Bolívares in a Venezuelan bank account —
+            and back the other way. Pago&nbsp;Móvil is the local rail; the conversion happens here.
+          </p>
         </div>
         <div className="text-right">
           {rates ? (
@@ -149,8 +152,32 @@ export default function VEPagoMovilShield({ addLog }: { addLog: (msg: string) =>
             </div>
           </div>
 
-          <button type="submit" disabled={loading} className="w-full bg-slate-900 hover:bg-slate-800 text-white py-3 rounded-xl text-xs font-bold transition shadow-sm disabled:opacity-60">
-            {loading ? "Settling on Solana..." : "Run Instant Pago Móvil"}
+          {/* The conversion is the whole point of this rail, so it is shown
+              before the button rather than only reported in the log after. */}
+          <div className="rounded-xl border border-slate-200 bg-slate-50 px-3 py-2.5 text-xs">
+            <div className="flex items-center justify-between">
+              <span className="text-slate-500">Recipient gets</span>
+              <span className="font-mono font-semibold tabular-nums text-slate-900">
+                {amount ? Number(amount).toLocaleString("en-US") : "0.00"} VES
+              </span>
+            </div>
+            <div className="mt-1 flex items-center justify-between">
+              <span className="text-slate-500">You pay</span>
+              <span className="font-mono font-semibold tabular-nums text-slate-900">
+                {toPyusd(Number(amount) || 0) ?? "—"} PYUSD
+              </span>
+            </div>
+            <p className="mt-1.5 border-t border-slate-200 pt-1.5 text-[11px] text-slate-400">
+              {rates
+                ? `at ${formatSmart(rates.vesPerUsd, "VES")} VES/USD · BCV ${formatAsOf(rates.vesPerUsdAsOf)}`
+                : ratesError
+                  ? "No live rate — transfer is blocked until one is available"
+                  : "Waiting for a live rate…"}
+            </p>
+          </div>
+
+          <button type="submit" disabled={loading || !rates} className="w-full bg-slate-900 hover:bg-slate-800 text-white py-3 rounded-xl text-xs font-bold transition shadow-sm disabled:opacity-60">
+            {loading ? "Converting and settling…" : "Run Instant Pago Móvil"}
           </button>
         </form>
 
