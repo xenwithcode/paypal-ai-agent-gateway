@@ -49,8 +49,8 @@ Approve **once**: *≤ 60 USD, this week, these merchants.* The agent then produ
 | **Conversion shown before it happens** | The transfer form prints *recipient gets* / *you pay* / *the applied rate* above the button, and refuses to submit while no live rate exists. |
 | **Live event console** | Every draft, hold transition and charge verdict on this page, streamed. |
 | **Purchase history + printable report** | Activity lists every order that settled — date, item, condition, endpoint, amount — beside the charges it refused, which are recorded nowhere else. Sample rows carry a `Sample` chip; **Print / save as PDF** produces the report. |
-
-**Sections scaffolded and empty:** Recurring payments · Agentic Commerce.
+| **Standing allowances** | Recurring lists the orders that are `Active` with no condition to wait for — the ones that run until you take them off. Removing one needs a deliberate second click. |
+| **Manifest reader** | Agentic Commerce shows the machine-readable record behind each order — ceiling, endpoint, condition, expiry, mode — with absent fields marked absent, and **View as JSON**. |
 
 ---
 
@@ -188,10 +188,10 @@ Stated plainly, because a judge deserves to know exactly what they are looking a
 
 | Piece | Status |
 | --- | --- |
-| **Payment execution** | No order is created or captured yet. The holds record the decision without reserving anything, and the card says so; `authorizeOrder` / `captureOrder` / `payee` are the next build step. |
+| **Payment execution** | The sandbox chain is wired end to end — `createOrder` (intent `AUTHORIZE`) → `authorizeOrder` → `captureOrder` / `voidPayment` through `@paypal/paypal-server-sdk`. A hold reports `live` only when it actually carries an `authorizationId`; without one it reports `demo` and says no funds moved. What is still unproven is the payer's own approval in the browser — that click is the one step only the operator can perform. Route A (`createOrder` with `payee`) is not built. |
 | **Enforcement** | The charge check is real and runs on the server — ceiling, endpoint allow-list and policy state, all live. What is modelled is the *isolation*; real kernel isolation needs an OpenShell sandbox, Phase 2. |
 | **Transfers and QR** | The conversion maths is real against the live BCV rate. No funds move, and the panel labels itself a preview rather than reporting a settlement. |
-| **Recurring / Activity / Agentic Commerce** | Sections exist and are empty. |
+| **Recurring / Activity / Agentic Commerce** | All three are built and read real stored records. What is local is the *source*: no `createSubscription` yet, the ledger is this browser's storage rather than Transaction Search, and the manifests are rendered from policy rows rather than exchanged with a counterparty. |
 
 > Nothing in this README or the UI claims enforcement or settlement that does not exist.
 
@@ -206,21 +206,28 @@ paypal-ai-agent/
 │   │   ├── layout.tsx              # fixed sidebar, stacked on mobile
 │   │   ├── components/Sidebar.tsx  # nav, FX switch, active state
 │   │   ├── hooks/useFxShield.ts    # shared opt-in state
-│   │   ├── overview/               # dashboard: intent bar, AG Grid, console
-│   │   ├── recurring/  activity/  ucp/     # scaffolded, empty states
-│   │   └── fx/                     # live rates, converter, Pago Móvil page
+│   │   ├── overview/               # dashboard: intent bar, AG Grid, approval card, console
+│   │   ├── recurring/  activity/  commerce/  send/   # allowances · ledger · manifests · transfers
+│   │   └── fx/                     # live rates, converter
 │   ├── api/agent/route.ts          # intent → policy, validated
+│   ├── api/holds/route.ts          # activate · capture · release · evaluate
+│   ├── api/policy/check/route.ts   # ceiling + allow-list + state, every violation
+│   ├── api/catalog/route.ts        # demo-catalog lookup proxy
+│   ├── api/paypal/orders/route.ts  # create · authorize
 │   ├── api/fx/route.ts             # cached live FX proxy
 │   ├── layout.tsx  page.tsx  globals.css
 ├── lib/
-│   ├── policy.ts                   # shared STATUS / MODE constants
+│   ├── policy.ts                   # shared STATUS / MODE constants + transition rules
 │   ├── gemini.ts                   # structured-output LLM call
-│   ├── paypal.ts                   # server-only client + balance
+│   ├── paypal.ts                   # server-only client, balance, order lifecycle
+│   ├── history.ts                  # the two storage keys: ledger and policy rows
 │   ├── contingency.ts              # refunds + enforcement check
+│   ├── commerce/catalog.ts         # demo-catalog search + condition evaluation
 │   ├── fx/{rates,providers}.ts     # conversion math + live feeds
 │   └── shields/                    # InflationShield, PagoMovilEngine
+├── tests/                          # 38 tests on node:test — transitions, conditions, ledger
 ├── docs/architecture/              # Archify diagram + spec
-├── PRODUCT.md  DESIGN.md  TRABAJO-PARA-LA-PROXIMA-SESION.md
+├── PRODUCT.md  DESIGN.md  TRABAJO-PROXIMA-SESION.md
 ├── env.example  LICENSE
 ```
 
@@ -240,10 +247,12 @@ paypal-ai-agent/
 
 ### Next — the spine of the thesis
 
-1. **Real money through the holds.** The lifecycle, the transitions and the
-   verdict are built and tested; `authorizeOrder` → `captureOrder` →
-   `voidPayment` still needs sandbox credentials to move actual funds. Until
-   then a hold records the decision without reserving anything, and says so.
+1. **The payer's own approval, run once for real.** The chain is built against
+   the sandbox — `createOrder` (intent `AUTHORIZE`) → `authorizeOrder` →
+   `captureOrder` → `voidPayment` — and a hold reports `live` only when it
+   carries an `authorizationId`. The step nobody but the operator can perform
+   is clicking PayPal's own button in a browser; until that happens every hold
+   reports `demo` and says so.
 2. **Route A — PYUSD to a PayPal account.** `createOrder` with `payee.emailAddress`, so money moves to another person with no conversion. The section it belongs in already exists at `/send`.
 
 ### Done
@@ -263,7 +272,7 @@ paypal-ai-agent/
 
 ### Phase 2
 
-Tracked in [`TRABAJO-PARA-LA-PROXIMA-SESION.md`](./TRABAJO-PARA-LA-PROXIMA-SESION.md).
+Tracked in [`TRABAJO-PROXIMA-SESION.md`](./TRABAJO-PROXIMA-SESION.md).
 
 - **Cryptographic consent** — produce an AP2-style signature over the approved policy instead of a UI click.
 - **Real NVIDIA OpenShell integration** — run the agent in a sandbox, declare the approved endpoints as a network policy, inject credentials only for those.
