@@ -86,7 +86,7 @@ Two supporting mechanisms differentiate it further:
 - `DESIGN.md` — full style reference with tokens, type scale, components, and do/don't rules.
 - `README.md` — English project description including an explicit "what is real and what is simulated" section.
 - `ucp-manifest.json` — one example commerce manifest.
-- `TRABAJO-PARA-LA-PROXIMA-SESION.md` — session log, backlog, and phase-2 notes.
+- `TRABAJO-PROXIMA-SESION.md` — session log, backlog, and phase-2 notes.
 - Working Next.js app: dashboard, AG Grid policy table, event console, FX/Pago Móvil panel, `/api/agent`.
 
 **Absent — future work must not fabricate these**
