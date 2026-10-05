@@ -192,6 +192,25 @@ export default function OrderPanel({
       ? { product, alternatives, overBy: Number((price - row.limit).toFixed(2)) }
       : null;
 
+  /**
+   * Whether this row may be thrown away at all.
+   *
+   * Offered only where nothing is at stake: an order nobody approved, a hold
+   * that was already cancelled, an allowance being switched off. Withheld
+   * from a live reservation, because discarding that would strand an
+   * authorization PayPal still holds without voiding it — and from a settled
+   * order, because this row *is* the purchase record Activity reads, so
+   * deleting it would erase a completed transaction from the history.
+   *
+   * The button used to exist only inside the over-ceiling branch, which left
+   * every other row — Released above all, a terminal state — with no way out
+   * of the table.
+   */
+  const canDiscard =
+    row.status === STATUS.pending ||
+    row.status === STATUS.released ||
+    row.status === STATUS.enforced;
+
   return (
     <div
       className="fixed inset-0 z-50 flex items-start justify-center overflow-y-auto bg-slate-900/50 p-4 py-10 backdrop-blur-sm sm:p-8"
@@ -590,10 +609,36 @@ export default function OrderPanel({
               </div>
             ) : null}
 
-            <p className="mt-4 text-center text-[10px] leading-relaxed text-slate-400">
-              No PayPal credentials are configured, so authorizing records the decision without
-              moving money. Real capture arrives with the sandbox keys.
-            </p>
+            {/* Throwing the row away. Offered here rather than only inside the
+                over-ceiling branch, which is where it used to live — every
+                other state, Released above all, had no way out of the table.
+                The `!agentPrompt` guard keeps it from appearing twice when the
+                agent's own three paths are on screen, one of which is discard. */}
+            {canDiscard && !agentPrompt && (
+              <div className="mt-4 text-center">
+                <button
+                  type="button"
+                  disabled={busy}
+                  onClick={() => onDiscard(row)}
+                  className="text-sm font-medium text-slate-400 transition hover:text-red-600 disabled:opacity-60"
+                >
+                  Discard this order
+                </button>
+              </div>
+            )}
+
+            {/* Only when there genuinely are no credentials. It used to print
+                for every row and every status, asserting a configuration the
+                card cannot see — false for anyone who had keys, and nonsense
+                beside a settled order. The line above already says what
+                authorizing does, so there is nothing to add when the keys are
+                there. */}
+            {!paypalClientId && (
+              <p className="mt-4 text-center text-[10px] leading-relaxed text-slate-400">
+                No PayPal credentials are configured, so authorizing records the decision
+                without moving money.
+              </p>
+            )}
           </section>
         </div>
       </div>
