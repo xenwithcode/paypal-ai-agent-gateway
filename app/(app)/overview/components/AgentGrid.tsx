@@ -838,6 +838,17 @@ export default function AgentGrid({
 
       {/* AG Grid policy table */}
       <div className="bg-white rounded-2xl border border-slate-200 p-4 shadow-sm sm:p-6">
+        {/* The table was the only region on this page with no name. A heading
+            is what tells someone landing here that this is where the orders
+            live, and the line under it states the one gesture that is not
+            obvious — clicking a row is what opens it. Every other section
+            headings its blocks; the product's central one did not. */}
+        <div className="mb-3">
+          <h2 className="text-base font-semibold text-slate-900">Purchase orders</h2>
+          <p className="mt-0.5 text-xs text-slate-500">
+            Awaiting approval, reserved, settled or refused. Select a row to open it.
+          </p>
+        </div>
         {/* The ag-theme-quartz class is no longer required (the Theming API
             styles the grid through theme={themeQuartz}), but it is harmless and
             AG Grid tolerates it, so we keep it for compatibility. What actually
@@ -884,7 +895,10 @@ export default function AgentGrid({
       {/* Kernel event console */}
       <div className="bg-slate-950 text-slate-200 p-4 rounded-2xl border border-slate-800 shadow-inner font-mono text-xs space-y-2">
         <div className="flex justify-between items-center border-b border-slate-800 pb-2 mb-2 text-slate-400">
-          <span>🖥️ Agentic Event Console (UCP & Gateway stream)</span>
+          {/* A heading, not a span: the region had visible text but no name
+              a screen reader could navigate to. Tailwind's preflight resets
+              the h2's own margins and weight, so this renders identically. */}
+          <h2 className="text-xs font-normal">🖥️ Agentic Event Console (UCP &amp; Gateway stream)</h2>
           <div className="flex gap-2">
             {/* VES only, and only when the operator opted into the FX module —
                 the same gate every other Pago Móvil surface uses. */}
