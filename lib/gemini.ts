@@ -10,15 +10,53 @@ import { MODE, isMode } from "./policy";
 
 const MODEL = process.env.GEMINI_MODEL ?? "gemini-3.8-flash";
 
-// Lazily constructed client: if no API key is configured the module can still
-// be imported without crashing at server startup.
+/** Serves every model this app uses; only the region of the request. */
+const DEFAULT_LOCATION = "us-central1";
+
+/**
+ * How this server authenticates, decided by what is in .env.local.
+ *
+ * Two routes, and which one is taken matters: on Vertex the call is billed to
+ * the GCP project — the account holding the hackathon credits — while an API
+ * key bills to a Gemini API account of its own.
+ *
+ * - `vertex` → `GCP_PROJECT` is set. Auth comes from Application Default
+ *   Credentials (the file `gcloud auth application-default login` wrote, or
+ *   the service account GOOGLE_APPLICATION_CREDENTIALS points at), so no
+ *   secret is copied into .env.local at all.
+ * - `key` → `GEMINI_API_KEY` is set and is not still the env.example
+ *   placeholder.
+ */
+type Auth = { kind: "vertex"; project: string } | { kind: "key"; apiKey: string };
+
+function configuredAuth(): Auth | null {
+  const project = process.env.GCP_PROJECT?.trim();
+  if (project) return { kind: "vertex", project };
+
+  const apiKey = process.env.GEMINI_API_KEY?.trim();
+  // Empty, or still the README placeholder from env.example.
+  if (apiKey && !/^Tu[_-]/i.test(apiKey)) return { kind: "key", apiKey };
+
+  return null;
+}
+
+// Lazily constructed client: if no credentials are configured the module can
+// still be imported without crashing at server startup.
 let client: GoogleGenAI | null = null;
 
 function getClient(): GoogleGenAI | null {
-  const apiKey = process.env.GEMINI_API_KEY?.trim();
-  // Empty, or still the README placeholder from env.example.
-  if (!apiKey || /^Tu[_-]/i.test(apiKey)) return null;
-  if (!client) client = new GoogleGenAI({ apiKey });
+  const auth = configuredAuth();
+  if (!auth) return null;
+  if (!client) {
+    client =
+      auth.kind === "vertex"
+        ? new GoogleGenAI({
+            vertexai: true,
+            project: auth.project,
+            location: process.env.GCP_LOCATION?.trim() || DEFAULT_LOCATION,
+          })
+        : new GoogleGenAI({ apiKey: auth.apiKey });
+  }
   return client;
 }
 
@@ -81,6 +119,17 @@ export type IntentionPolicy = {
 export type IntentionResult = {
   policy: IntentionPolicy;
   source: "model" | "fallback";
+  /**
+   * Why no model produced this policy. Empty when one did.
+   *
+   * The console used to print "No GEMINI_API_KEY" for every `fallback`, but
+   * `fallback` also covers a call that went out and came back failed — and
+   * with Vertex it will no longer be about a key at all. The UI cannot see
+   * the configuration, so guessing at it there is the same lie the console
+   * and the approval card were each caught telling; the reason travels with
+   * the verdict instead.
+   */
+  reason?: string;
 };
 
 export async function parseUserIntention(
@@ -105,8 +154,13 @@ export async function parseUserIntention(
   const ai = getClient();
 
   if (!ai) {
-    warnDemo("GEMINI_API_KEY missing or still the env.example placeholder");
-    return { policy: buildDemoPolicy(prompt, availableBalance), source: "fallback" };
+    warnDemo("no credentials configured");
+    return {
+      policy: buildDemoPolicy(prompt, availableBalance),
+      source: "fallback",
+      reason:
+        "No credentials configured — set GCP_PROJECT for Vertex AI, or GEMINI_API_KEY for the Gemini API, in .env.local.",
+    };
   }
 
   try {
@@ -126,10 +180,17 @@ export async function parseUserIntention(
     return { policy: normalise(JSON.parse(raw), availableBalance), source: "model" };
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);
-    warnDemo(`Gemini call failed (${message})`);
+    warnDemo(`model call failed (${message})`);
     // The model did not produce this policy, so it must not be reported as
-    // though it did — even though the shape coming back is identical.
-    return { policy: buildDemoPolicy(prompt, availableBalance), source: "fallback" };
+    // though it did — even though the shape coming back is identical. The
+    // message is passed on rather than swallowed: the operator's only other
+    // view of a failed call is the server console, and "nothing happened" is
+    // the least useful thing this row could say.
+    return {
+      policy: buildDemoPolicy(prompt, availableBalance),
+      source: "fallback",
+      reason: `The model call failed: ${message}`,
+    };
   }
 }
 
@@ -145,7 +206,8 @@ function warnDemo(reason: string) {
   console.warn(
     `\n⚠️  [Gemini] parseUserIntention() is running in DEMO MODE: ${reason}.\n` +
       `    A deterministic policy will be produced instead of calling the model.\n` +
-      `    Set GEMINI_API_KEY in .env.local to enable real Gemini inference.\n`
+      `    Set GCP_PROJECT in .env.local for Vertex AI (auth via ADC), or\n` +
+      `    GEMINI_API_KEY for the Gemini API — see env.example.\n`
   );
 }
 

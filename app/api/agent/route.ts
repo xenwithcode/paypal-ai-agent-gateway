@@ -79,7 +79,7 @@ export async function POST(req: NextRequest) {
     // The number only — but obtained through getBalance(), so taking it
     // means acknowledging where it came from rather than it being unmarked.
     const availableBalance = (await getBalance()).value;
-    const { policy, source } = await parseUserIntention(prompt, availableBalance);
+    const { policy, source, reason } = await parseUserIntention(prompt, availableBalance);
 
     // Resolve the policy against a catalog entry. Without this a price
     // condition could only be stored, never judged — and an unjudged condition
@@ -103,6 +103,9 @@ export async function POST(req: NextRequest) {
       // Which path produced this policy: the model, or the deterministic
       // fallback. The console reports it verbatim rather than assuming.
       source,
+      // And why, when it was the fallback — the console has no way to see the
+      // server's configuration, so it must not describe it from here.
+      reason,
       gridRow: {
         id: Date.now(),
         // Recorded here so the purchase history can date an order that was

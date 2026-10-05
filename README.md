@@ -94,7 +94,9 @@ Approve **once**: *≤ 60 USD, this week, these merchants.* The agent then produ
 
 ## Quick start
 
-**Requirements:** Node.js ≥ 20.9 · a [PayPal developer account](https://developer.paypal.com) · a [Google AI Studio](https://aistudio.google.com) key
+**Requirements:** Node.js ≥ 20.9 · a [PayPal developer account](https://developer.paypal.com) · Google Gemini credentials — one of:
+- **Vertex AI** *(recommended)* — a [Google Cloud](https://console.cloud.google.com) project with the **Vertex AI API** enabled. Billed to that project, so hackathon credits cover it, and no key is stored anywhere.
+- **Gemini API** — a [Google AI Studio](https://aistudio.google.com) key. Separate billing from GCP credits.
 
 ```bash
 git clone <your-repo-url>
@@ -106,9 +108,20 @@ cp env.example .env.local
 ```env
 PAYPAL_CLIENT_ID=your_sandbox_client_id
 PAYPAL_CLIENT_SECRET=your_sandbox_client_secret
-GEMINI_API_KEY=your_google_ai_studio_key
 # optional — anything other than "Production" runs against the sandbox
 PAYPAL_ENVIRONMENT=Sandbox
+
+# Pick ONE below. GCP_PROJECT wins if both are set.
+
+# ── A) Vertex AI ────────────────────────────────────────────────────────
+# Auth is Application Default Credentials, so nothing secret lands here.
+# Run this once — it opens a browser and writes a credential file:
+#   bash <(curl -sSL https://storage.googleapis.com/cloud-samples-data/adc/setup_adc.sh)
+GCP_PROJECT=your_gcp_project_id
+GCP_LOCATION=us-central1
+
+# ── B) Gemini API (Google AI Studio) ────────────────────────────────────
+GEMINI_API_KEY=your_gemini_api_key
 ```
 
 ```bash
@@ -236,7 +249,7 @@ paypal-ai-agent/
 
 ## Security notes
 
-- **Secrets stay server-side.** `PAYPAL_*` and `GEMINI_API_KEY` carry no `NEXT_PUBLIC_` prefix and are imported only by server modules. `.env.local` is git-ignored and was verified with `git check-ignore` before the first commit.
+- **Secrets stay server-side.** `PAYPAL_*` and `GEMINI_API_KEY` carry no `NEXT_PUBLIC_` prefix and are imported only by server modules. `.env.local` is git-ignored and was verified with `git check-ignore` before the first commit. On the **Vertex AI** path there is no key to leak at all — authentication comes from Application Default Credentials read off the machine, and only the project id (not a secret) appears in `.env.local`.
 - **Input validation.** `/api/agent` rejects malformed JSON, non-string or empty intents, and anything over 500 characters before a model call can happen.
 - **No internal error leakage.** Production returns a generic message; detail goes to the server log only.
 - **A rate is never guessed.** If the BCV feed is unreachable the FX path raises instead of converting at a plausible-but-wrong number.

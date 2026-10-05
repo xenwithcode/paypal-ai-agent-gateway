@@ -847,7 +847,12 @@ export default function AgentGrid({
         addLog(
           data.source === "model"
             ? `🧠 [Gemini] Parsed the intent into an order for "${data.gridRow.what}".`
-            : "⚙️ [LOCAL] No GEMINI_API_KEY — the intent was parsed without calling a model."
+            // The reason comes from the server, which is the only place that
+            // can see the configuration. Guessing at it here is what this
+            // line used to do: it claimed "No GEMINI_API_KEY" even when a call
+            // had gone out and failed — and it would be wrong twice over on
+            // Vertex, where no key is involved.
+            : `⚙️ [FALLBACK] ${data.reason ?? "No model produced this policy."}`
         );
 
         setPrompt("");
