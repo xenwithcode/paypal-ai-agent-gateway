@@ -3,7 +3,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { getBalance } from "@/lib/paypal";
 import { parseUserIntention } from "@/lib/gemini";
 import { STATUS } from "@/lib/policy";
-import { matchProduct, evaluateCondition, CATALOG_SOURCE } from "@/lib/commerce/catalog";
+import { searchCandidates, evaluateCondition, CATALOG_SOURCE } from "@/lib/commerce/catalog";
 // Isolated module that owns the Venezuela inflation-shield logic.
 import { processEmergencyDevaluationShield } from "@/lib/shields/InflationShield";
 
@@ -84,9 +84,14 @@ export async function POST(req: NextRequest) {
     // Resolve the policy against a catalog entry. Without this a price
     // condition could only be stored, never judged — and an unjudged condition
     // must not read as satisfied.
-    const { product, matchedBy } = await matchProduct(
-      `${policy.what} ${policy.merchant}`.trim()
-    );
+    //
+    // One search rather than two: `candidates[0]` is exactly what
+    // `matchProduct` would have picked, so asking for the list answers both
+    // questions and the strip and the card can never disagree about the
+    // winner.
+    const query = `${policy.what} ${policy.merchant}`.trim();
+    const { candidates, matchedBy } = await searchCandidates(query);
+    const product = candidates[0] ?? null;
     const evaluation = evaluateCondition(policy.condition, product);
 
     // Computed once: the network scope shown to the approver and the one sent
@@ -122,6 +127,13 @@ export async function POST(req: NextRequest) {
           : evaluation.detail,
         allowEndpoint,
       },
+      // What else the search found. The agent used to keep its ranking to
+      // itself — the operator saw the product it preferred and never the ones
+      // it passed over, so the choice was invisible exactly where a human is
+      // meant to make it.
+      candidates,
+      /** Which candidate the agent would have taken, so the strip can mark it. */
+      matchedId: product?.id ?? null,
       openShellConfig: {
         sandboxName: `sb-${slugify(policy.merchant || policy.what)}`,
         networkPolicy: {

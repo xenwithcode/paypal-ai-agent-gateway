@@ -33,6 +33,7 @@ if (process.env.NODE_ENV !== "production") {
 import ActionBtnRenderer from "./ActionBtnRenderer";
 import WhatCellRenderer from "./WhatCellRenderer";
 import OrderPanel from "./OrderPanel";
+import CandidatePicker from "./CandidatePicker";
 
 // Shared status/mode strings (also produced by the API routes on the server).
 import { STATUS, MODE, MODE_OPTIONS, isStatus, type HoldAction } from "@/lib/policy";
@@ -162,6 +163,19 @@ export default function AgentGrid({
   const [selectedId, setSelectedId] = useState<number | null>(null);
   const selectedRow =
     selectedId === null ? null : (rowData.find((row) => row.id === selectedId) ?? null);
+
+  /**
+   * What the last search found, waiting for a decision.
+   *
+   * The row is deliberately NOT in the table yet while this is set. Creating
+   * it before anyone chose would make "all candidates rejected" a lie — a
+   * rejected search that leaves an order behind has drafted something after
+   * all. So the order lands at the moment of choosing, already pointing at
+   * the product that was chosen.
+   */
+  const [candidates, setCandidates] = useState<CatalogProduct[]>([]);
+  const [matchedId, setMatchedId] = useState<number | null>(null);
+  const [pendingRow, setPendingRow] = useState<PolicyRow | null>(null);
 
   const [logs, setLogs] = useState<string[]>([]);
 
@@ -428,20 +442,77 @@ export default function AgentGrid({
   );
 
   /**
+   * Ask the server what an order means now that it points at another product.
+   *
+   * The browser reports the swap; it does not get to declare what the swap
+   * does to the condition — the same split the rest of this app keeps. It was
+   * the gap in `useAlternative`: the row changed product while the verdict
+   * beside it kept describing the old one, and that verdict is what unlocks
+   * Capture.
+   *
+   * Failures are swallowed deliberately. The swap has already landed and the
+   * approval card re-reads the catalog when it opens, so a verdict that lags
+   * a moment is the cheap failure here; losing the swap would not be.
+   */
+  const rejudge = useCallback(
+    async (row: PolicyRow, overrides: { what: string; merchant: string }) => {
+      try {
+        const res = await fetch("/api/holds", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            action: "evaluate",
+            policy: {
+              id: row.id,
+              what: overrides.what,
+              merchant: overrides.merchant,
+              condition: row.condition,
+              limit: row.limit,
+              currency: row.currency,
+              status: row.status,
+            },
+          }),
+        });
+        const data = await res.json();
+        if (!data.success) return;
+
+        setRowData((prev) =>
+          prev.map((r) =>
+            r.id === row.id
+              ? {
+                  ...r,
+                  marketPrice:
+                    typeof data.marketPrice === "number" ? data.marketPrice : r.marketPrice,
+                  conditionMet: data.conditionMet ?? null,
+                  conditionDetail: data.conditionDetail ?? r.conditionDetail,
+                }
+              : r
+          )
+        );
+      } catch {
+        // See the note above: the card re-reads on open, so this is not
+        // unrecoverable — it is only slower to become true.
+      }
+    },
+    []
+  );
+
+  /**
    * Take up something that fits the ceiling instead of the product that was
    * asked for. The order keeps every rule it has — ceiling, condition, mode —
-   * and only changes what it points at, which is why the panel re-reads the
-   * catalog right after.
+   * and only changes what it points at, which is why the catalog is read
+   * again straight afterwards.
    */
   const useAlternative = useCallback(
-    (row: PolicyRow, product: CatalogProduct) => {
+    async (row: PolicyRow, product: CatalogProduct) => {
+      const merchant = product.brand ?? row.merchant;
       setRowData((prev) =>
         prev.map((r) =>
           r.id === row.id
             ? {
                 ...r,
                 what: product.title,
-                merchant: product.brand ?? r.merchant,
+                merchant,
                 marketPrice: Number(product.price.toFixed(2)),
                 marketImage: product.thumbnail ?? null,
               }
@@ -451,8 +522,48 @@ export default function AgentGrid({
       addLog(
         `🔁 [AGENT] Swapped to "${product.title}" at ${product.price.toFixed(2)} USD — inside your ${row.limit.toFixed(2)} ${row.currency} ceiling.`
       );
+      await rejudge(row, { what: product.title, merchant });
     },
-    [addLog]
+    [addLog, rejudge]
+  );
+
+  /**
+   * The operator picks a candidate: the order lands in the table already
+   * pointing at that product, is re-judged against it, and only then does the
+   * approval card open — on the thing they chose rather than on the one the
+   * agent had picked in silence.
+   */
+  const handleChoose = useCallback(
+    async (product: CatalogProduct) => {
+      if (!pendingRow) return;
+
+      const merchant = product.brand ?? pendingRow.merchant;
+      const chosen: PolicyRow = {
+        ...pendingRow,
+        what: product.title,
+        merchant,
+        marketPrice: Number(product.price.toFixed(2)),
+        // The grid cell is 36px, so the thumbnail is the right asset there.
+        // The picker and the approval card use `images[0]`, which is the only
+        // one big enough to judge a product by.
+        marketImage: product.thumbnail ?? null,
+      };
+
+      setRowData((prev) => [...prev, chosen]);
+      addLog(
+        `📄 [ORDER] Created "${chosen.what}" · ceiling ${chosen.limit} ${chosen.currency}` +
+          `${chosen.condition ? ` · condition ${chosen.condition}` : ""}` +
+          ` — chosen from ${candidates.length} candidate${candidates.length === 1 ? "" : "s"}.`
+      );
+
+      setPendingRow(null);
+      setCandidates([]);
+      setMatchedId(null);
+      setSelectedId(chosen.id);
+
+      await rejudge(chosen, { what: chosen.what, merchant });
+    },
+    [pendingRow, candidates.length, addLog, rejudge]
   );
 
   /**
@@ -738,15 +849,40 @@ export default function AgentGrid({
             ? `🧠 [Gemini] Parsed the intent into an order for "${data.gridRow.what}".`
             : "⚙️ [LOCAL] No GEMINI_API_KEY — the intent was parsed without calling a model."
         );
-        addLog(
-          `📄 [ORDER] Created "${data.gridRow.what}" · ceiling ${data.gridRow.limit} ${data.gridRow.currency}` +
-            `${data.gridRow.condition ? ` · condition ${data.gridRow.condition}` : ""}.`
-        );
-        setRowData(prev => [...prev, data.gridRow]);
+
         setPrompt("");
-        // The card is the moment the human is actually being asked something,
-        // so it opens itself rather than waiting to be found in the table.
-        setSelectedId(data.gridRow.id);
+
+        // The strip answers "which of these?" before the card answers "do you
+        // approve it?" — approving a product before choosing between
+        // products is the wrong way round. So when there is something to
+        // choose, the order waits outside the table and the card waits with
+        // it. When there is nothing to choose there is no decision to make
+        // first, so both go straight in, exactly as before.
+        const found: CatalogProduct[] = Array.isArray(data.candidates) ? data.candidates : [];
+
+        if (found.length > 0) {
+          setPendingRow(data.gridRow);
+          setCandidates(found);
+          setMatchedId(typeof data.matchedId === "number" ? data.matchedId : null);
+          setSelectedId(null);
+          addLog(
+            `🖼️ [SEARCH] ${found.length} candidate${found.length === 1 ? "" : "s"} for "${data.gridRow.what}" — choose one to draft the order.`
+          );
+        } else {
+          // Nothing to choose, so any strip from a previous search is now
+          // about a different order and must not outlive it.
+          setCandidates([]);
+          setPendingRow(null);
+          setMatchedId(null);
+          addLog(
+            `📄 [ORDER] Created "${data.gridRow.what}" · ceiling ${data.gridRow.limit} ${data.gridRow.currency}` +
+              `${data.gridRow.condition ? ` · condition ${data.gridRow.condition}` : ""}.`
+          );
+          setRowData(prev => [...prev, data.gridRow]);
+          // The card is the moment the human is actually being asked something,
+          // so it opens itself rather than waiting to be found in the table.
+          setSelectedId(data.gridRow.id);
+        }
       } else {
         addLog(`❌ [API] ${data.error ?? "The agent rejected the request."}`);
       }
@@ -835,6 +971,20 @@ export default function AgentGrid({
           </button>
         </div>
       </div>
+
+      {/* What the search found. It sits between the intent bar and the table
+          on purpose: this is the decision the agent used to make in silence,
+          so it is shown where the request was made, before any order exists
+          rather than after. The approval card opens only once a choice does. */}
+      {pendingRow && candidates.length > 0 && (
+        <CandidatePicker
+          candidates={candidates}
+          matchedId={matchedId}
+          ceiling={pendingRow.limit}
+          currency={pendingRow.currency}
+          onChoose={(product) => void handleChoose(product)}
+        />
+      )}
 
       {/* AG Grid policy table */}
       <div className="bg-white rounded-2xl border border-slate-200 p-4 shadow-sm sm:p-6">

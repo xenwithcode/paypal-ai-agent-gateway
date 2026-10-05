@@ -26,6 +26,7 @@ function product(overrides: Partial<CatalogProduct> = {}): CatalogProduct {
     returnPolicy: "30 days return policy",
     warrantyInformation: "1 week warranty",
     thumbnail: "https://cdn.dummyjson.com/x/thumbnail.webp",
+    images: [],
     ...overrides,
   };
 }

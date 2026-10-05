@@ -36,6 +36,16 @@ export interface CatalogProduct {
   returnPolicy: string;
   warrantyInformation: string;
   thumbnail?: string;
+  /**
+   * Every image the catalog published for this product, largest first.
+   *
+   * `thumbnail` is a ~200px asset — fine inside a 36px grid cell, far too
+   * small to judge a product by, which is the whole point of showing the
+   * candidate at all. Empty when the catalog sent none; never filled from
+   * `thumbnail`, because a picker that silently promotes a tiny image is a
+   * picker that looks fine and shows nothing.
+   */
+  images: string[];
 }
 
 interface RawProduct {
@@ -55,6 +65,7 @@ interface RawProduct {
   returnPolicy?: string;
   warrantyInformation?: string;
   thumbnail?: string;
+  images?: unknown;
 }
 
 /** Marks the value as coming from a demo catalog, so the UI never implies otherwise. */
@@ -88,6 +99,12 @@ function normalise(raw: RawProduct | null | undefined): CatalogProduct | null {
     returnPolicy: raw.returnPolicy ?? "",
     warrantyInformation: raw.warrantyInformation ?? "",
     thumbnail: raw.thumbnail,
+    // `images` is typed `unknown` in the raw shape because the catalog is an
+    // external feed: anything could arrive under that key, and a string array
+    // has to be proved rather than assumed.
+    images: Array.isArray(raw.images)
+      ? raw.images.filter((value): value is string => typeof value === "string" && value !== "")
+      : [],
   };
 }
 
@@ -191,6 +208,40 @@ async function searchResilient(query: string): Promise<{ found: CatalogProduct[]
 }
 
 /**
+ * Terms considered when scoring a candidate against what was asked for.
+ *
+ * Short words are dropped because "size 42" and "for the" match everything,
+ * and the handful of filter words are ones that appear in a request without
+ * describing its subject.
+ */
+function intentTerms(wanted: string): string[] {
+  return wanted
+    .toLowerCase()
+    .split(/[^a-z0-9]+/)
+    .filter((w) => w.length > 3 && !["with", "that", "from", "only", "size"].includes(w));
+}
+
+type ScoredCandidate = { product: CatalogProduct; hits: number; terms: number };
+
+/**
+ * Rank candidates by how much of the request each one actually mentions.
+ *
+ * Extracted because the picker and the single match must agree on what
+ * "better" means: two rankings would let the strip offer a product the
+ * approval card then refuses to describe.
+ */
+function scoreCandidates(wanted: string, found: CatalogProduct[]): ScoredCandidate[] {
+  const words = intentTerms(wanted);
+  return found
+    .map((product) => {
+      const haystack = `${product.title} ${product.brand ?? ""} ${product.category}`.toLowerCase();
+      const hits = words.filter((w) => haystack.includes(w)).length;
+      return { product, hits, terms: words.length };
+    })
+    .sort((a, b) => b.hits - a.hits);
+}
+
+/**
  * Pick the catalog entry the policy refers to. Reports how the match was
  * reached so the UI never implies a precision that did not happen.
  */
@@ -200,20 +251,7 @@ export async function matchProduct(
   const { found, via } = await searchResilient(wanted);
   if (found.length === 0) return { product: null, matchedBy: null };
 
-  const words = wanted
-    .toLowerCase()
-    .split(/[^a-z0-9]+/)
-    .filter((w) => w.length > 3 && !["with", "that", "from", "only", "size"].includes(w));
-
-  const scored = found
-    .map((product) => {
-      const haystack = `${product.title} ${product.brand ?? ""} ${product.category}`.toLowerCase();
-      const hits = words.filter((w) => haystack.includes(w)).length;
-      return { product, hits };
-    })
-    .sort((a, b) => b.hits - a.hits);
-
-  const best = scored[0];
+  const best = scoreCandidates(wanted, found)[0];
 
   // No overlap with the requested item means this is not a match, it is just
   // the first row of whatever the fallback query returned. Showing a sofa for
@@ -222,7 +260,40 @@ export async function matchProduct(
 
   return {
     product: best.product,
-    matchedBy: `${best.hits}/${words.length} terms matched (${via})`,
+    matchedBy: `${best.hits}/${best.terms} terms matched (${via})`,
+  };
+}
+
+/**
+ * Every candidate worth showing, best first — the list `matchProduct` picks
+ * its single winner from, rather than the winner alone.
+ *
+ * The picker exists because that winner was chosen silently: the operator saw
+ * the product the agent preferred and never the two it passed over, so the
+ * choice was invisible precisely where a human is meant to make it.
+ *
+ * Returns fewer than `limit` when the catalog returned fewer, and none when
+ * nothing overlapped with the request. Both are reported as they are — a
+ * "2 candidates found" strip is honest, a third card padded with a sofa is
+ * not, and the `hits > 0` rule is the same one the single match applies.
+ *
+ * `candidates[0]` is what `matchProduct` would return, so a caller can take
+ * the list once instead of searching twice.
+ */
+export async function searchCandidates(
+  wanted: string,
+  limit = 3
+): Promise<{ candidates: CatalogProduct[]; matchedBy: string | null }> {
+  const { found, via } = await searchResilient(wanted);
+  if (found.length === 0) return { candidates: [], matchedBy: null };
+
+  const eligible = scoreCandidates(wanted, found).filter((entry) => entry.hits > 0);
+  if (eligible.length === 0) return { candidates: [], matchedBy: null };
+
+  const best = eligible[0];
+  return {
+    candidates: eligible.slice(0, Math.max(1, limit)).map((entry) => entry.product),
+    matchedBy: `${best.hits}/${best.terms} terms matched (${via})`,
   };
 }
 
