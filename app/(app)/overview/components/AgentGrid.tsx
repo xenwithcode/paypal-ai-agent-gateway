@@ -46,6 +46,9 @@ import type { Balance } from "@/lib/paypal";
 // One key, one module: Activity reads the same rows this component writes, so
 // neither side gets to invent a spelling of its own.
 import { POLICY_STORAGE_KEY as STORAGE_KEY, recordBlocked } from "@/lib/history";
+// The same switch the sidebar, /fx and the Send rails read. Sharing one hook
+// is what keeps "the FX module is on" meaning the same thing on every surface.
+import { useFxShield } from "../../hooks/useFxShield";
 
 /**
  * Structural check for rows read back out of storage. Anything that does not
@@ -161,6 +164,12 @@ export default function AgentGrid({
     selectedId === null ? null : (rowData.find((row) => row.id === selectedId) ?? null);
 
   const [logs, setLogs] = useState<string[]>([]);
+
+  // The Venezuela simulation belongs to the opt-in module, exactly like the
+  // sidebar's Pago Móvil link, the /send/bank gate and the bank tab. It was
+  // the one VES surface that ignored the switch, which put the niche rail on
+  // the dashboard for someone who never asked for it.
+  const { enabled: fxEnabled } = useFxShield();
 
   // Single funnel for this page: drafting, hold transitions and the two test
   // buttons all append their events here. Pago Móvil reports next to its own
@@ -594,8 +603,12 @@ export default function AgentGrid({
       addLog(
         `🛡️ [FX SHIELD] ${depositVES.toLocaleString("en-US")} VES → ${Number(data.gridRow.limit).toFixed(2)} PYUSD at that rate.`
       );
+      // The simulation moves nothing either way, so the sentence says what is
+      // always true rather than asserting a configuration it cannot see: it
+      // used to claim "No PayPal credentials configured" unconditionally,
+      // which was false for anyone who had them.
       addLog(
-        "⚠️ [DEMO] No PayPal credentials configured — no funds were moved. The figure above is what the live rate would yield."
+        "⚠️ [DEMO] This simulation moved no funds — the figure above is what the live rate would yield."
       );
 
       // Land the real result in the policy table rather than only narrating it.
@@ -873,9 +886,13 @@ export default function AgentGrid({
         <div className="flex justify-between items-center border-b border-slate-800 pb-2 mb-2 text-slate-400">
           <span>🖥️ Agentic Event Console (UCP & Gateway stream)</span>
           <div className="flex gap-2">
-            <button onClick={triggerDevaluationShieldSimulation} className="bg-emerald-950 hover:bg-emerald-900 border border-emerald-700 text-emerald-400 px-2 py-0.5 rounded text-[10px] font-bold transition">
-              🛡️ Simulate VES Payroll
-            </button>
+            {/* VES only, and only when the operator opted into the FX module —
+                the same gate every other Pago Móvil surface uses. */}
+            {fxEnabled && (
+              <button onClick={triggerDevaluationShieldSimulation} className="bg-emerald-950 hover:bg-emerald-900 border border-emerald-700 text-emerald-400 px-2 py-0.5 rounded text-[10px] font-bold transition">
+                🛡️ Simulate VES Payroll
+              </button>
+            )}
             <button onClick={triggerFraudSimulation} className="bg-red-950 hover:bg-red-900 border border-red-700 text-red-400 px-2 py-0.5 rounded text-[10px] font-bold transition">
               💥 Simulate Fraud
             </button>
