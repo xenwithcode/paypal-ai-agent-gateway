@@ -51,6 +51,7 @@ Approve **once**: *≤ 60 USD, this week, these merchants.* The agent then produ
 | **Purchase history + printable report** | Activity lists every order that settled — date, item, condition, endpoint, amount — beside the charges it refused, which are recorded nowhere else. Sample rows carry a `Sample` chip; **Print / save as PDF** produces the report. |
 | **Standing allowances** | Recurring lists the orders that are `Active` with no condition to wait for — the ones that run until you take them off. Removing one needs a deliberate second click. |
 | **Manifest reader** | Agentic Commerce shows the machine-readable record behind each order — ceiling, endpoint, condition, expiry, mode — with absent fields marked absent, and **View as JSON**. |
+| **Send money** | Three rails: **USD** first, because that is what PayPal settles in, then the stablecoin, then a Venezuelan bank behind the FX opt-in. Name a recipient and an amount, see *recipient gets* / *you pay* before committing, and the recipient is written into the order **before** anything is authorized. |
 
 ---
 
@@ -188,7 +189,7 @@ Stated plainly, because a judge deserves to know exactly what they are looking a
 
 | Piece | Status |
 | --- | --- |
-| **Payment execution** | The sandbox chain is wired end to end — `createOrder` (intent `AUTHORIZE`) → `authorizeOrder` → `captureOrder` / `voidPayment` through `@paypal/paypal-server-sdk`. A hold reports `live` only when it actually carries an `authorizationId`; without one it reports `demo` and says no funds moved. What is still unproven is the payer's own approval in the browser — that click is the one step only the operator can perform. Route A (`createOrder` with `payee`) is not built. |
+| **Payment execution** | The sandbox chain is wired end to end — `createOrder` (intent `AUTHORIZE`) → `authorizeOrder` → `captureOrder` / `voidPayment` through `@paypal/paypal-server-sdk`. A hold reports `live` only when it actually carries an `authorizationId`; without one it reports `demo` and says no funds moved. The recipient rides the same chain: the payee is written into the order itself, so PayPal directs the funds rather than a later call being able to redirect them. What is still unproven is the payer's own approval in the browser — that click is the one step only the operator can perform. |
 | **Enforcement** | The charge check is real and runs on the server — ceiling, endpoint allow-list and policy state, all live. What is modelled is the *isolation*; real kernel isolation needs an OpenShell sandbox, Phase 2. |
 | **Transfers and QR** | The conversion maths is real against the live BCV rate. No funds move, and the panel labels itself a preview rather than reporting a settlement. |
 | **Recurring / Activity / Agentic Commerce** | All three are built and read real stored records. What is local is the *source*: no `createSubscription` yet, the ledger is this browser's storage rather than Transaction Search, and the manifests are rendered from policy rows rather than exchanged with a counterparty. |
@@ -252,8 +253,8 @@ paypal-ai-agent/
    `captureOrder` → `voidPayment` — and a hold reports `live` only when it
    carries an `authorizationId`. The step nobody but the operator can perform
    is clicking PayPal's own button in a browser; until that happens every hold
-   reports `demo` and says so.
-2. **Route A — PYUSD to a PayPal account.** `createOrder` with `payee.emailAddress`, so money moves to another person with no conversion. The section it belongs in already exists at `/send`.
+   reports `demo` and says so. It is also what stands between the Send money
+   section and a transfer that has actually been approved.
 
 ### Done
 
@@ -261,7 +262,9 @@ paypal-ai-agent/
 - **Server-side enforcement** — `/api/policy/check` compares an attempted charge against the ceiling, the endpoint allow-list and the policy's state; `/api/holds` performs the transitions. The browser reports what it wants; it does not get to declare that its condition is satisfied.
 - **Approval card** — the product card ACP and UCP put in front of the human, plus the envelope neither of them carries. Re-read from the catalog each time it opens.
 - **Order persistence** — rows survive a reload, are validated on read, and are re-checked against the live catalog on mount.
-- **Send money** — the transfer rails moved out of the dashboard into their own section, with a PayPal tab and a Venezuelan bank tab behind the FX opt-in.
+- **Send money** — the transfer rails moved out of the dashboard into their own section, with USD first because that is what PayPal settles in, the stablecoin rail beside it, and a Venezuelan bank tab behind the FX opt-in.
+- **Route A — the recipient** — `createOrder` with `payee.emailAddress`, so the order names the account the money may land on and PayPal directs the funds there. A transfer drafted from `/send` writes its recipient into the envelope *before* PayPal is ever shown.
+- **Recipient enforced on the server** — the envelope gained `payee` beside `allowEndpoint`, printed in the order cell, the approval card and the manifest, and judged by the same endpoint that judges the ceiling: an attempt aimed at anyone else is refused, and one that names no destination at all is refused too.
 - **Honest console** — the log reports which path produced a policy, labels its simulated inputs as simulated, and prints the server's verdict instead of narrating one.
 - **Widened intent schema** — `what`, `merchant`, `condition`, `expires` alongside the ceiling, with grid columns to match. The fallback prefers a currency-adjacent amount so a shoe size cannot become a budget.
 
