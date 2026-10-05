@@ -22,6 +22,31 @@ import {
 /** PayPal order ids are a short alphanumeric run; anything else is not one. */
 const ORDER_ID = /^[A-Z0-9]{10,40}$/i;
 
+/**
+ * An address PayPal will accept as a payee.
+ *
+ * Deliberately permissive about the local part and strict about the shape: the
+ * goal is to stop a typo reaching PayPal and coming back as an opaque 4xx, not
+ * to re-implement address validation PayPal has its own opinions about.
+ */
+const EMAIL = /^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/;
+
+/**
+ * Read the recipient off the request.
+ *
+ * Returns the trimmed address, or a plain reason to refuse. An absent payee is
+ * valid — most orders do not name one — but a present one that is malformed is
+ * refused here, where the message can name the field, rather than by PayPal.
+ */
+function readPayee(value: unknown): { error: string } | { payeeEmail: string } {
+  if (value === undefined || value === null || value === "") return { payeeEmail: "" };
+  if (typeof value !== "string") return { error: "payeeEmail must be a string." };
+  const email = value.trim();
+  if (email.length > 254) return { error: "payeeEmail is too long." };
+  if (!EMAIL.test(email)) return { error: "payeeEmail must be an email address." };
+  return { payeeEmail: email };
+}
+
 /** "10" / "10.5" / "10.00" → "10.00", or null when it is not money. */
 function normaliseAmount(value: unknown): string | null {
   const text = typeof value === "number" ? String(value) : typeof value === "string" ? value.trim() : "";
@@ -52,7 +77,7 @@ export async function POST(req: NextRequest) {
 
     // ── create ────────────────────────────────────────────────────────────
     if (action === "create") {
-      const { amount, currency, description, customId } = body as Record<string, unknown>;
+      const { amount, currency, description, customId, payeeEmail } = body as Record<string, unknown>;
 
       const money = normaliseAmount(amount);
       if (!money) {
@@ -74,6 +99,10 @@ export async function POST(req: NextRequest) {
           { status: 400 }
         );
       }
+      const payee = readPayee(payeeEmail);
+      if ("error" in payee) {
+        return NextResponse.json({ success: false, error: payee.error }, { status: 400 });
+      }
 
       try {
         const order = await createAuthorizeOrder({
@@ -81,6 +110,7 @@ export async function POST(req: NextRequest) {
           currency,
           description: what,
           customId: typeof customId === "string" ? customId : undefined,
+          payeeEmail: payee.payeeEmail || undefined,
         });
         return NextResponse.json({ success: true, mode: "live", ...order });
       } catch (error) {

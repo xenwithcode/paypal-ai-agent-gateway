@@ -100,7 +100,33 @@ export type StoredRow = {
   expires?: string;
   mode?: string;
   allowEndpoint?: string;
-  marketImage?: string;
+  /**
+   * Who may receive the money, named when the order was drafted.
+   *
+   * The counterpart to `allowEndpoint`: that one says which host may be
+   * reached, this one says which account the funds may land on. Empty means no
+   * recipient was named and therefore nothing is restricted — the same reading
+   * the endpoint rule gives an empty allow-list.
+   *
+   * Optional because rows stored before it existed simply carry none.
+   */
+  payee?: string;
+  /** Catalog thumbnail, or null when nothing matched. */
+  marketImage?: string | null;
+  /** Catalog price at draft time, null when nothing matched. */
+  marketPrice?: number | null;
+  /** true = condition satisfied, false = violated, null = cannot be judged. */
+  conditionMet?: boolean | null;
+  /** How the verdict was reached, including the catalog it came from. */
+  conditionDetail?: string;
+  /** PayPal's order id, set when the payer is asked to approve a hold. */
+  paypalOrderId?: string;
+  /**
+   * The authorization PayPal issued once the payer approved. Capture and void
+   * both refer to it by name, so a hold without one can only be released as a
+   * demo decision.
+   */
+  authorizationId?: string;
   capturedAt?: string;
   createdAt?: string;
 };
@@ -333,6 +359,74 @@ export function removePolicyRow(id: number): number {
 
   writeJson(POLICY_STORAGE_KEY, remaining);
   return stored.length - remaining.length;
+}
+
+/**
+ * Add an order that was drafted outside Overview.
+ *
+ * A transfer names its recipient while it is being written, so the row it
+ * produces is born with the payee already inside it. That ordering is the
+ * whole point: an envelope only proves anything if who may receive the money
+ * is settled *before* somebody approves it, and writing the recipient after
+ * approval would be amending the thing you just agreed to.
+ *
+ * Appended rather than prepended, because that is how Overview writes this
+ * key — a row drafted from Send money must not reorder the table the next
+ * time it is read.
+ *
+ * The type is narrow on purpose. Overview restores a stored array only when
+ * *every* entry passes `isPolicyRow` (a numeric id, a non-empty `what`, a
+ * finite `limit`, a `currency` and a status `isStatus` accepts), so a row
+ * missing any of those does not just fail to appear — it takes every other
+ * order down with it and the table silently falls back to the seed.
+ */
+export function appendPolicyRow(
+  row: {
+    id: number;
+    what: string;
+    limit: number;
+    currency: string;
+    status: string;
+    createdAt?: string;
+  } & StoredRow
+): ManifestRow {
+  const stored = readJson(POLICY_STORAGE_KEY);
+  const rows: unknown[] = Array.isArray(stored) ? stored : [];
+  rows.push({ ...row, createdAt: row.createdAt ?? new Date().toISOString() });
+  writeJson(POLICY_STORAGE_KEY, rows);
+  return row;
+}
+
+/**
+ * Merge fields into a stored order.
+ *
+ * Send money drafts its transfer here and then authorizes it against PayPal,
+ * so the ids PayPal hands back have to reach the same row the approval was
+ * written into — otherwise Overview would show an order with no authorization
+ * while the panel next door holds one.
+ *
+ * A merge rather than a replacement: only the fields passed are written, so a
+ * caller cannot blank the ceiling by forgetting to send it.
+ *
+ * Returns how many rows changed, because zero means the row was not there and
+ * a caller that cannot tell will report a success that never happened.
+ */
+export function updatePolicyRow(id: number, patch: Partial<StoredRow>): number {
+  const stored = readJson(POLICY_STORAGE_KEY);
+  if (!Array.isArray(stored)) return 0;
+
+  let changed = 0;
+  const next = stored.map((entry) => {
+    if (!entry || typeof entry !== "object") return entry;
+    const row = entry as Record<string, unknown>;
+    if (row.id !== id) return entry;
+    changed += 1;
+    return { ...row, ...patch };
+  });
+  if (changed === 0) return 0;
+
+  writeJson(POLICY_STORAGE_KEY, next);
+  return changed;
 }
 
 /** Append a refusal the server actually made. */

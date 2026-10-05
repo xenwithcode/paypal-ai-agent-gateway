@@ -52,6 +52,9 @@ function ManifestCard({ row }: { row: ManifestRow }) {
   const condition = row.condition?.trim() ?? "";
   const expires = row.expires?.trim() ?? "";
   const endpoint = row.allowEndpoint?.trim() ?? "";
+  // Absent on rows written before this field existed; it renders as absent
+  // rather than as an empty restriction, the same way the endpoint does.
+  const payee = row.payee?.trim() ?? "";
   const status = row.status;
 
   const payload = {
@@ -61,6 +64,9 @@ function ManifestCard({ row }: { row: ManifestRow }) {
     condition: condition || null,
     valid_until: expires || null,
     mode: row.mode ?? null,
+    // The recipient sits with the endpoint because they are the same question
+    // asked twice: where may this order send money.
+    payee: payee || null,
     allow_endpoint: endpoint || null,
     status,
   };
@@ -92,6 +98,7 @@ function ManifestCard({ row }: { row: ManifestRow }) {
         />
         <Field label="valid_until" value={expires || "No expiry"} empty={!expires} />
         <Field label="mode" value={row.mode ?? "—"} empty={!row.mode} />
+        <Field label="payee" value={payee || "no recipient set"} empty={!payee} />
         <Field
           label="allow_endpoint"
           value={endpoint || "no endpoint set"}

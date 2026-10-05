@@ -498,6 +498,15 @@ export default function AgentGrid({
       ? target.allowEndpoint.replace(/^api\./, "api.unapproved-")
       : "api.unnamed-merchant.com";
 
+    // A transfer names the one account it may pay, so a charge aimed at
+    // anyone else is a violation this button exists to provoke — derived from
+    // the row's own recipient rather than a fixed address, so the verdict is
+    // about an envelope the operator actually approved. Where no recipient
+    // was named there is no recipient rule to break, and the endpoint stays
+    // the only destination in play.
+    const payee = (target.payee ?? "").trim();
+    const chargePayee = payee ? payee.replace(/@/, "+unapproved@") : "";
+
     addLog(`⚠️ [ALERT] Incoming charge: ${attempted.toFixed(2)} ${target.currency} → ${endpoint}...`);
 
     try {
@@ -505,13 +514,14 @@ export default function AgentGrid({
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          charge: { amount: attempted, currency: target.currency, endpoint },
+          charge: { amount: attempted, currency: target.currency, endpoint, payee: chargePayee },
           policy: {
             limit: target.limit,
             currency: target.currency,
             allowEndpoint: target.allowEndpoint,
             what: target.what,
             status: target.status,
+            payee,
           },
         }),
       });

@@ -52,6 +52,12 @@ type Props = {
   currency: string;
   description: string;
   customId?: string;
+  /**
+   * The account the funds are directed to, written into the order as its
+   * payee. Passed to the server on create — the browser never decides it,
+   * and by the time PayPal sees it, it is already part of the order.
+   */
+  payeeEmail?: string;
   /** Runs after PayPal approved and we hold the authorization. */
   onAuthorized: (result: AuthorizeResult) => void | Promise<void>;
   /** The flow could not run — the caller switches back to its own button. */
@@ -97,6 +103,7 @@ export default function PayPalAuthorizeButton({
   currency,
   description,
   customId,
+  payeeEmail,
   onAuthorized,
   onUnavailable,
   disabled = false,
@@ -146,7 +153,7 @@ export default function PayPalAuthorizeButton({
           const res = await fetch("/api/paypal/orders", {
             method: "POST",
             headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({ action: "create", amount, currency, description, customId }),
+            body: JSON.stringify({ action: "create", amount, currency, description, customId, payeeEmail }),
           });
           const data = (await res.json()) as { success?: boolean; orderId?: string; error?: string };
           if (!data.success || !data.orderId) {
@@ -217,8 +224,10 @@ export default function PayPalAuthorizeButton({
       cancelled = true;
       host?.replaceChildren();
     };
-    // Rebuilt when the order it will create changes, not on every render.
-  }, [clientId, amount, currency, description, customId]);
+    // Rebuilt when the order it will create changes, not on every render —
+    // which is why the payee belongs here too: it is part of that order, and
+    // a button holding a stale recipient would create one pointed elsewhere.
+  }, [clientId, amount, currency, description, customId, payeeEmail]);
 
   if (state === "failed") return null;
 

@@ -5,20 +5,17 @@
 // This is the enforcement the product claims, moved out of the browser. The
 // console button used to narrate a block after a fixed delay regardless of
 // what any policy said; here the attempt is compared against the ceiling, the
-// endpoint allow-list and the policy's state, and the verdict is the
-// server's. Every violation found is reported, not just the first, because an
-// approver who only hears about the amount will fix the amount and re-run
-// straight into the endpoint rule.
+// endpoint allow-list, the named recipient and the policy's state, and the
+// verdict is the server's.
 //
-// Deliberately does not judge price conditions — settling a condition is
-// /api/holds' job. Keeping the two apart means neither has to know whether the
-// other has run.
+// The rules themselves live in lib/policy.ts as `judgeCharge`. They are here
+// only as a shape: this file validates what came over the wire and formats
+// what goes back. Splitting it that way is what lets the suite test the
+// judgement without booting a Next server, and what stops a rule from being
+// written twice — once for the route and once for anything else that asks.
 
 import { NextRequest, NextResponse } from "next/server";
-import { STATUS, isStatus } from "@/lib/policy";
-
-/** Statuses under which a charge against this policy may be attempted at all. */
-const SPENDABLE_STATUSES: readonly string[] = [STATUS.enforced, STATUS.reserved];
+import { isStatus, judgeCharge } from "@/lib/policy";
 
 /** Mirrors the maxLength on the grid's editable cells. */
 const MAX_TEXT = 200;
@@ -34,7 +31,7 @@ function isCurrency(value: unknown): value is string {
 function readAttempt(
   charge: unknown,
   policy: unknown
-): { error: string } | { charge: { amount: number; currency: string; endpoint: string }; policy: { limit: number; currency: string; allowEndpoint: string; what: string; status: string } } {
+): { error: string } | { charge: { amount: number; currency: string; endpoint: string; payee: string }; policy: { limit: number; currency: string; allowEndpoint: string; what: string; status: string; payee: string } } {
   if (!charge || typeof charge !== "object" || Array.isArray(charge)) {
     return { error: "charge must be an object." };
   }
@@ -53,6 +50,20 @@ function readAttempt(
     return { error: `charge.endpoint must be a string under ${MAX_TEXT} characters.` };
   }
 
+  // Absent reads as "this attempt named no recipient", which is not the same
+  // as a malformed request: the fraud button and every caller written before
+  // the payee rule existed send no payee at all, and a new rule must not start
+  // rejecting payloads that were valid yesterday. A payee that *is* present but
+  // is not a string is refused rather than quietly dropped — dropping one would
+  // switch the rule off by sending the wrong type.
+  if (c.payee !== undefined && c.payee !== null && typeof c.payee !== "string") {
+    return { error: "charge.payee must be a string." };
+  }
+  const chargePayee = typeof c.payee === "string" ? c.payee : "";
+  if (chargePayee.length > MAX_TEXT) {
+    return { error: `charge.payee must be a string under ${MAX_TEXT} characters.` };
+  }
+
   if (typeof p.limit !== "number" || !Number.isFinite(p.limit) || p.limit <= 0) {
     return { error: "policy.limit must be a positive number." };
   }
@@ -60,19 +71,27 @@ function readAttempt(
   if (typeof p.allowEndpoint !== "string" || p.allowEndpoint.length > MAX_TEXT) {
     return { error: `policy.allowEndpoint must be a string under ${MAX_TEXT} characters.` };
   }
+  if (p.payee !== undefined && p.payee !== null && typeof p.payee !== "string") {
+    return { error: "policy.payee must be a string." };
+  }
+  const policyPayee = typeof p.payee === "string" ? p.payee : "";
+  if (policyPayee.length > MAX_TEXT) {
+    return { error: `policy.payee must be a string under ${MAX_TEXT} characters.` };
+  }
   if (typeof p.what !== "string" || !p.what.trim() || p.what.length > MAX_TEXT) {
     return { error: `policy.what must be a non-empty string under ${MAX_TEXT} characters.` };
   }
   if (!isStatus(p.status)) return { error: "policy.status is not a known status." };
 
   return {
-    charge: { amount: c.amount, currency: c.currency, endpoint: c.endpoint },
+    charge: { amount: c.amount, currency: c.currency, endpoint: c.endpoint, payee: chargePayee },
     policy: {
       limit: p.limit,
       currency: p.currency,
       allowEndpoint: p.allowEndpoint,
       what: p.what,
       status: p.status,
+      payee: policyPayee,
     },
   };
 }
@@ -93,50 +112,22 @@ export async function POST(req: NextRequest) {
     }
 
     const { charge, policy } = parsed;
-    const violations: string[] = [];
-
-    // 1. Is the policy even armed? Nothing under draft or already settled may
-    //    be charged, and the reason has to say so rather than failing vaguely.
-    if (!SPENDABLE_STATUSES.includes(policy.status)) {
-      violations.push(
-        policy.status === STATUS.pending
-          ? `The policy for "${policy.what}" has not been activated yet.`
-          : `The policy for "${policy.what}" is ${policy.status}, so it no longer permits charges.`
-      );
-    }
-
-    // 2. The ceiling.
-    if (charge.currency !== policy.currency) {
-      violations.push(
-        `Currency mismatch: the charge is in ${charge.currency} but the ceiling is in ${policy.currency}.`
-      );
-    } else if (charge.amount > policy.limit) {
-      violations.push(
-        `Amount ${charge.amount.toFixed(2)} ${charge.currency} exceeds the ${policy.limit.toFixed(2)} ${policy.currency} ceiling.`
-      );
-    }
-
-    // 3. The destination. An empty allow-list means no merchant was named and
-    //    therefore nothing is restricted — stated plainly rather than implied.
-    if (policy.allowEndpoint && charge.endpoint && charge.endpoint !== policy.allowEndpoint) {
-      violations.push(
-        `Endpoint ${charge.endpoint} is not allowed for this order (only ${policy.allowEndpoint}).`
-      );
-    }
-
-    const allowed = violations.length === 0;
+    const { allowed, violations, reason } = judgeCharge(charge, policy);
 
     return NextResponse.json({
       success: true,
       allowed,
       violations,
-      reason: allowed
-        ? `Charge of ${charge.amount.toFixed(2)} ${charge.currency} is within "${policy.what}".`
-        : violations.join(" "),
-      // The amount and endpoint the server actually judged, so the console
-      // reports the same numbers that were checked rather than the ones the
-      // button intended to send.
-      judged: { amount: charge.amount, currency: charge.currency, endpoint: charge.endpoint },
+      reason,
+      // The amount, endpoint and recipient the server actually judged, so the
+      // console reports the same values that were checked rather than the ones
+      // the button intended to send.
+      judged: {
+        amount: charge.amount,
+        currency: charge.currency,
+        endpoint: charge.endpoint,
+        payee: charge.payee,
+      },
       ceiling: { limit: policy.limit, currency: policy.currency },
       log: allowed
         ? `✅ [CHECK] Allowed: charge of ${charge.amount.toFixed(2)} ${charge.currency} is within "${policy.what}".`

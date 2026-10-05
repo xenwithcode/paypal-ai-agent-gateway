@@ -391,6 +391,11 @@ export default function OrderPanel({
                 }
               />
               <Field
+                label="May only pay"
+                value={row.payee?.trim() || "no recipient set"}
+                tone={row.payee?.trim() ? "font-mono text-slate-900" : "italic text-slate-400"}
+              />
+              <Field
                 label="May only reach"
                 value={row.allowEndpoint || "no endpoint set"}
                 tone={row.allowEndpoint ? "" : "italic text-slate-400"}

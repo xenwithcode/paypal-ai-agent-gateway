@@ -43,4 +43,13 @@ export interface PolicyRow {
    * ceiling with no endpoint is only half a permission.
    */
   allowEndpoint: string;
+  /**
+   * The account this order may pay, or empty when no recipient was named.
+   *
+   * The other half of the same idea: `allowEndpoint` bounds where the agent
+   * may spend, this bounds who it may pay. Optional because rows stored
+   * before it existed carry none, and an absent field must not read as an
+   * empty restriction.
+   */
+  payee?: string;
 }

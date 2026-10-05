@@ -11,8 +11,9 @@ export default function SendLayout({ children }: { children: React.ReactNode }) 
       <header className="px-6 pt-8 md:px-8">
         <h1 className="text-2xl font-bold tracking-tight text-slate-900">Send money</h1>
         <p className="mt-2 max-w-[68ch] text-sm leading-relaxed text-slate-500">
-          Get PYUSD to a person. Name the recipient, set an amount, and the order carries them as
-          its payee — so the money can only land where you said it would.
+          Dollars first, because that is what PayPal settles in. Name the recipient and set an
+          amount; the recipient goes into the order <em>before</em> anything is authorized, so the
+          money can only land on the account you named.
         </p>
       </header>
 

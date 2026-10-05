@@ -1,23 +1,25 @@
 // app/(app)/send/page.tsx
-import { SendHorizonal } from "lucide-react";
-import EmptyState from "../components/EmptyState";
+import { getBalance } from "@/lib/paypal";
+import TransferPanel from "./components/TransferPanel";
+
+// Forces Next.js to read the balance from the PayPal SDK on every request —
+// a cached figure would outlive the transfer it is being shown beside.
+export const dynamic = "force-dynamic";
 
 /**
- * Sending to a person is the other half of what an agent-issued payment order
- * is for: an envelope that governs spending tells only half the story if the
- * agent cannot pay anyone with it.
+ * The first rail: dollars, the currency PayPal actually settles in.
  *
- * The rail itself is not connected yet — it needs PayPal credentials — so the
- * page says that plainly instead of showing a form that cannot send.
+ * It used to be an empty state promising a PYUSD transfer that was not built,
+ * which put the one working rail — the Venezuelan one, behind an opt-in switch
+ * — in the position of being the section's only real surface. This is the
+ * general case, and Venezuela is the reason it matters rather than the
+ * product itself.
  */
-export default function SendToPaypalPage() {
+export default async function SendUsdPage() {
+  const balance = await getBalance();
+  const paypalClientId = process.env.PAYPAL_CLIENT_ID ?? "";
+
   return (
-    <EmptyState
-      icon={SendHorizonal}
-      title="No recipients yet"
-      description="Send to a PayPal account by email address. The recipient is written into the order as its payee, which is what stops an agent from paying an account you never chose."
-      action={{ label: "Send PYUSD", disabled: true }}
-      note="Not connected yet. This rail arrives with the PayPal sandbox credentials — until then there is nothing to send from."
-    />
+    <TransferPanel currency="USD" balance={balance} paypalClientId={paypalClientId} />
   );
 }

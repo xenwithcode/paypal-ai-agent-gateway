@@ -250,16 +250,25 @@ export type CreatedOrder = {
  *
  * `intent: AUTHORIZE` is the whole point: without it there is nothing for a
  * condition to gate, because the money would already have moved.
+ *
+ * `payeeEmail` is the other half of the envelope: naming it here means PayPal
+ * itself directs the funds to that account, so the destination is fixed at the
+ * moment the order is created rather than being something a later call could
+ * redirect. Omitting it leaves the recipient to the default — which is only
+ * correct while no recipient has been named.
  */
 export async function createAuthorizeOrder(input: {
   amount: string;
   currency: string;
   description: string;
   customId?: string;
+  payeeEmail?: string;
 }): Promise<CreatedOrder> {
   if (!hasRealPaypalCredentials()) {
     throw new Error("PayPal credentials are not configured.");
   }
+
+  const payeeEmail = input.payeeEmail?.trim();
 
   try {
     const { result } = await orders().createOrder({
@@ -270,6 +279,10 @@ export async function createAuthorizeOrder(input: {
             amount: { currencyCode: input.currency, value: input.amount },
             description: input.description.slice(0, 120),
             ...(input.customId ? { customId: input.customId.slice(0, 127) } : {}),
+            // `payee` sits on the purchase unit, not on the order: PayPal
+            // models it as "the merchant this unit pays", which is what makes
+            // it the place a recipient belongs.
+            ...(payeeEmail ? { payee: { emailAddress: payeeEmail } } : {}),
           },
         ],
         applicationContext: {
