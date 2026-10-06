@@ -52,6 +52,7 @@ Approve **once**: *≤ 60 USD, this week, these merchants.* The agent then produ
 | **Conversion shown before it happens** | The transfer form prints *recipient gets* / *you pay* / *the applied rate* above the button, and refuses to submit while no live rate exists. |
 | **Live event console** | Every draft, hold transition and charge verdict on this page, streamed. |
 | **Purchase history + printable report** | Activity lists every order that settled — date, item, condition, endpoint, amount — beside the charges it refused, which are recorded nowhere else. Sample rows carry a `Sample` chip; **Print / save as PDF** produces the report. |
+| **Money that moved, read live** | Activity also asks Transaction Search for the last 30 days and renders the account's own records in AG Grid, with the column groups derived from the response's nesting rather than written by hand. *Could not ask*, *asked and it is empty* and *here it is* are three different states — only the last one means you have no transactions. |
 | **Standing allowances** | Recurring lists the orders that are `Active` with no condition to wait for — the ones that run until you take them off. Removing one needs a deliberate second click. |
 | **Manifest reader** | Agentic Commerce shows the machine-readable record behind each order — ceiling, endpoint, condition, expiry, mode — with absent fields marked absent, and **View as JSON**. |
 | **Send money** | Three rails: **USD** first, because that is what PayPal settles in, then the stablecoin, then a Venezuelan bank behind the FX opt-in. Name a recipient and an amount, see *recipient gets* / *you pay* before committing, and the recipient is written into the order **before** anything is authorized. |
@@ -209,7 +210,7 @@ Stated plainly, because a judge deserves to know exactly what they are looking a
 | **Enforcement** | The judgement is real and runs on the server — ceiling, endpoint allow-list, recipient, policy state, expiry window and autonomy mode — and it now stands on the money path itself: in front of `POST /api/paypal/orders` before an order exists, on every `capture`, and on every charge sent to `/api/policy/check`. **What is still modelled:** the envelope travels from the browser (the row lives in browser storage until server-side persistence lands), so the server judges the envelope it is given rather than one it owns; and the *isolation* — real kernel isolation needs an OpenShell sandbox, Phase 2. |
 | **The autonomous agent** | Real: it runs on a timer, **the server judges every pass**, and a capture goes through the same PayPal path as a click — a live one prints its own `captureId`. What is modelled is the *schedule*: it ticks while this page is open, rather than a worker that wakes on its own. |
 | **Transfers and QR** | The conversion maths is real against the live BCV rate. No funds move, and the panel labels itself a preview rather than reporting a settlement. |
-| **Recurring / Activity / Agentic Commerce** | All three are built and read real stored records. What is local is the *source*: no `createSubscription` yet, the ledger is read from this browser's copy — which the server now keeps a durable one of, so it survives a second browser and not just a refresh — rather than from Transaction Search, and the manifests are rendered from policy rows rather than exchanged with a counterparty. |
+| **Recurring / Activity / Agentic Commerce** | All three are built and read real stored records. Activity now reads **Transaction Search live** for what actually moved, beside two local ledgers — what the policy allowed, and what it refused (the one PayPal never sees) — both backed by the durable copy. What is still local: no `createSubscription` yet, and the manifests are rendered from policy rows rather than exchanged with a counterparty. |
 
 > Nothing in this README or the UI claims enforcement or settlement that does not exist.
 
@@ -232,14 +233,16 @@ paypal-ai-agent/
 │   ├── api/policy/check/route.ts   # ceiling + recipient + window + mode, every violation
 │   ├── api/catalog/route.ts        # demo-catalog lookup proxy
 │   ├── api/paypal/orders/route.ts  # create · authorize, judged against the envelope first
+│   ├── api/paypal/transactions/route.ts # GET — the account's own record, live
 │   ├── api/fx/route.ts             # cached live FX proxy
 │   ├── api/store/route.ts          # GET · PUT — the durable copy of the two records
 │   ├── layout.tsx  page.tsx  globals.css
 ├── lib/
 │   ├── policy.ts                   # STATUS / MODE + transition, charge and hold judgements, ceiling bands
 │   ├── gemini.ts                   # structured-output LLM call
-│   ├── paypal.ts                   # server-only client, balance, order lifecycle
+│   ├── paypal.ts                   # server-only client, balance, order lifecycle, transactions
 │   ├── history.ts                  # the ledger and the policy rows, read and written
+│   ├── gridColumns.ts              # JSON records → AG Grid columns, derived not declared
 │   ├── store.ts                    # storage keys, hydration and push to the durable copy
 │   ├── rateLimit.ts                # sliding window in front of the route that spends money
 │   ├── contingency.ts              # refunds + enforcement check
@@ -247,7 +250,7 @@ paypal-ai-agent/
 │   ├── fx/{rates,providers}.ts     # conversion math + live feeds
 │   └── shields/                    # InflationShield, PagoMovilEngine
 ├── data/                           # runtime only, gitignored — the durable copy on disk
-├── tests/                          # 100 tests on node:test — transitions, conditions, ceiling bands, window, judgements, ledger, store, rate limit
+├── tests/                          # 113 tests on node:test — transitions, conditions, ceiling bands, window, judgements, ledger, store, rate limit, grid columns
 ├── docs/architecture/              # Archify diagram + spec
 ├── PRODUCT.md  DESIGN.md  TRABAJO-PROXIMA-SESION.md
 ├── env.example  LICENSE

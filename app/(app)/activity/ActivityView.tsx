@@ -14,6 +14,7 @@ import {
   type BlockedAttempt,
 } from "@/lib/history";
 import { ensureHydrated } from "@/lib/store";
+import LiveTransactions from "./LiveTransactions";
 
 type Data = { purchases: Purchase[]; blocked: BlockedAttempt[] };
 
@@ -83,14 +84,21 @@ export default function ActivityView() {
 
   return (
     // Fixed height so the content arriving after mount cannot push the page.
-    <div className="min-h-[340px]">
-      {/* Report head — only exists on paper. */}
-      <div className="hidden print:mb-6 print:block">
+    <div className="min-h-[340px] space-y-6">
+      {/* Report head — only exists on paper. The `hidden` attribute rather than
+          the class: the gap below is measured by space-y, which skips
+          `[hidden]` and has no way to see a display:none. */}
+      <div hidden className="print:mb-6 print:block">
         <h1 className="text-2xl font-bold text-slate-900">Purchase report</h1>
         <p className="mt-1 text-sm text-slate-600">
           PayPal AI Agent Gateway · generated {generated}
         </p>
       </div>
+
+      {/* Reads PayPal rather than this browser, so it waits for nothing: the
+          two sections below depend on hydration and this one does not, and a
+          slow store has no business holding up a live read. */}
+      <LiveTransactions />
 
       {!data ? null : (
         <div className="space-y-6">

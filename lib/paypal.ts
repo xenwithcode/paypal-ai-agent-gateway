@@ -151,6 +151,75 @@ export async function getBalance(): Promise<Balance> {
 }
 
 /**
+ * What the transaction history request came back with, and how to read it.
+ *
+ * `rows` holds the records exactly as PayPal returned them — nothing renamed,
+ * nothing flattened, because the whole point of showing them is that they are
+ * somebody else's answer rather than ours.
+ */
+export type TransactionsResult = {
+  rows: Record<string, unknown>[];
+  /** `live` means PayPal answered. Anything else means it did not. */
+  source: "live" | "unavailable";
+  /** Plain reason when `source` is "unavailable". Never a stack trace. */
+  reason: string | null;
+  /** The window actually asked for. Transaction Search refuses more than 31 days. */
+  window: { startDate: string; endDate: string };
+};
+
+/**
+ * The account's own record of what moved, for the last 30 days.
+ *
+ * This is the third ledger, and the other two are not a substitute for it:
+ * `lib/history.ts` holds what the policy *allowed* and what it *stopped*, and
+ * neither of those is the same question as what PayPal actually settled. This
+ * one is also the only record of the three this browser cannot edit.
+ *
+ * Two limits come with the answer rather than living in a comment. The window
+ * is at most 31 days, and new activity can take up to three hours to appear —
+ * a row that is three hours stale looks exactly like one that is current, so
+ * the reader is told which window was asked for instead of being left to
+ * assume "recent" means "now".
+ *
+ * Never throws: an unconfigured account and a refused request both come back
+ * as `source: "unavailable"` with a reason, because an empty table and a table
+ * we could not ask for are different things — and only one of them means "you
+ * have no transactions".
+ */
+export async function getRecentTransactions(): Promise<TransactionsResult> {
+  const endDate = new Date();
+  const startDate = new Date(endDate.getTime() - 30 * 24 * 60 * 60 * 1000);
+  const window = { startDate: startDate.toISOString(), endDate: endDate.toISOString() };
+
+  if (!hasRealPaypalCredentials()) {
+    warnOnce("PayPal credentials are missing or still README placeholders.");
+    return {
+      rows: [],
+      source: "unavailable",
+      reason: "No PayPal credentials configured.",
+      window,
+    };
+  }
+
+  try {
+    const { result } = await new TransactionSearchController(paypalClient).searchTransactions({
+      startDate: window.startDate,
+      endDate: window.endDate,
+      // Without this only `transactionInfo` comes back. The payer and shipping
+      // sections are what make the nesting worth showing a grid for.
+      fields: "all",
+      pageSize: 20,
+    });
+    const rows = (result.transactionDetails ?? []) as unknown as Record<string, unknown>[];
+    return { rows, source: "live", reason: null, window };
+  } catch (error) {
+    const why = describePaypalError(error);
+    warnOnce(`the PayPal transactions call failed (${why}).`);
+    return { rows: [], source: "unavailable", reason: `PayPal: ${why}`, window };
+  }
+}
+
+/**
  * The amount held by one balance entry.
  *
  * The wire format is snake_case (`total_balance`); the SDK deserializes it
