@@ -1,9 +1,11 @@
 // lib/gridColumns.ts
 //
-// Turns nested JSON records into AG Grid columns — the shape of the data,
-// derived from the data.
+// How to read nested JSON records: into columns for many of them, and into
+// labelled lines for one. Both derive the answer from the data rather than
+// declaring it, and both apply the same rules about what counts as content —
+// which is why they share a file.
 //
-// Why derive rather than declare: PayPal's records are nested three or four
+// Columns, first: PayPal's records are nested three or four deep and they do
 // deep and they do not all look alike. A payout carries `shippingInfo`; a
 // subscription payment does not. Writing those columns by hand means a grid
 // full of blank columns for sections that were never there, quietly missing
@@ -166,6 +168,75 @@ export function formatCell(value: unknown): string {
   if (value == null) return "";
   if (typeof value === "object") return JSON.stringify(value);
   return String(value);
+}
+
+/** One line of a record read vertically: either a heading, or a label and a value. */
+export type DetailNode =
+  | { kind: "group"; key: string; children: DetailNode[] }
+  | { kind: "field"; key: string; value: string };
+
+/** Nothing to say: absent, null, or an empty string are all "not here". */
+function isBlank(value: unknown): boolean {
+  return value === null || value === undefined || value === "";
+}
+
+/**
+ * One record, laid out for reading top to bottom.
+ *
+ * The sibling of `columnDefsFor` over the same problem and the same rules —
+ * which is why they share this module: both skip `links`, both skip a section
+ * that is empty rather than showing it as blank, and both would drift if the
+ * two were written apart.
+ *
+ * What differs is the question. Columns ask "what fields exist across these
+ * records"; this asks "what does *this* record have". A section PayPal filled
+ * in another row and not this one must disappear here, because a heading with
+ * nothing under it reads as "this field is blank" — and blank is not the same
+ * fact as "was never here".
+ */
+export function flattenRecord(value: unknown): DetailNode[] {
+  const nodes: DetailNode[] = [];
+
+  if (Array.isArray(value)) {
+    for (const [index, item] of value.entries()) {
+      const key = `[${index}]`;
+      if (item !== null && typeof item === "object") {
+        const children = flattenRecord(item);
+        if (children.length > 0) nodes.push({ kind: "group", key, children });
+      } else if (!isBlank(item)) {
+        nodes.push({ kind: "field", key, value: String(item) });
+      }
+    }
+    return nodes;
+  }
+
+  if (value !== null && typeof value === "object") {
+    for (const [key, child] of Object.entries(value as Record<string, unknown>)) {
+      if (NOISE_KEYS.has(key) || isBlank(child)) continue;
+
+      if (typeof child === "object") {
+        // An array of scalars is one value here for the same reason it is one
+        // cell in the grid: two strings as two lines tells nobody anything,
+        // and two copies of that rule is two copies to keep agreeing.
+        if (Array.isArray(child) && !child.some((item) => item !== null && typeof item === "object")) {
+          const rendered = child.filter((item) => !isBlank(item)).map(String);
+          if (rendered.length > 0) nodes.push({ kind: "field", key, value: rendered.join(", ") });
+          continue;
+        }
+
+        const children = flattenRecord(child);
+        // An object with nothing readable under it is a heading with no
+        // entries: the section exists in the schema and was not filled here.
+        if (children.length > 0) nodes.push({ kind: "group", key, children });
+        continue;
+      }
+
+      nodes.push({ kind: "field", key, value: String(child) });
+    }
+    return nodes;
+  }
+
+  return nodes;
 }
 
 /**

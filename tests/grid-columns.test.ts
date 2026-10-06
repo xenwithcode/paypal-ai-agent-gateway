@@ -10,7 +10,7 @@
 // its first row.
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { JSON_COL_DEF, columnDefsFor, formatCell } from "../lib/gridColumns.ts";
+import { JSON_COL_DEF, columnDefsFor, flattenRecord, formatCell } from "../lib/gridColumns.ts";
 import type { ColDef, ColGroupDef } from "ag-grid-community";
 
 type AnyCol = Partial<ColDef> & Partial<ColGroupDef> & { children?: (ColDef | ColGroupDef)[] };
@@ -197,4 +197,94 @@ test("ordering does not change what the columns are", () => {
   const plain = leafIds(columnDefsFor(rows));
   const ordered = leafIds(columnDefsFor(rows, { lead: ["info.amount"] }));
   assert.deepEqual([...ordered].sort(), [...plain].sort());
+});
+
+// ─── One record, read top to bottom ────────────────────────────────────────
+
+test("a scalar becomes a label and a value", () => {
+  const nodes = flattenRecord({ transactionId: "4C731322JC300130E" });
+  assert.deepEqual(nodes, [
+    { kind: "field", key: "transactionId", value: "4C731322JC300130E" },
+  ]);
+});
+
+test("numbers and booleans arrive as the words a reader can read", () => {
+  // The grid formats cells itself; this lays them out, and String() is what
+  // keeps `5000` from rendering as an object or a formatted date.
+  const nodes = flattenRecord({ value: -1.00, active: true });
+  assert.deepEqual(
+    nodes.map((node) => (node.kind === "field" ? node.value : node.kind)),
+    ["-1", "true"]
+  );
+});
+
+test("a nested object becomes a group with its own children", () => {
+  const nodes = flattenRecord({
+    transactionInfo: { transactionId: "X", transactionAmount: { value: "5000.00" } },
+  });
+
+  assert.equal(nodes.length, 1);
+  assert.equal(nodes[0].kind, "group");
+  const group = nodes[0] as Extract<(typeof nodes)[number], { kind: "group" }>;
+  assert.equal(group.key, "transactionInfo");
+  assert.deepEqual(
+    group.children.map((child) => child.kind),
+    ["field", "group"],
+    "the id is a field, the amount is a group under it"
+  );
+});
+
+test("navigation links are skipped", () => {
+  // Same rule as the columns: HATEOAS repeats identically on every record.
+  const nodes = flattenRecord({ links: [{ href: "https://api.sandbox.paypal.com", rel: "self" }] });
+  assert.deepEqual(nodes, []);
+});
+
+test("a section left empty here leaves no heading either", () => {
+  // The rule this whole view exists for. A heading with nothing under it reads
+  // as "this field is blank", and blank is not the same fact as "was never
+  // here for this record".
+  const nodes = flattenRecord({ cartInfo: {}, transactionSubject: "Probe" });
+  assert.deepEqual(
+    nodes.map((node) => node.key),
+    ["transactionSubject"],
+    "the empty section disappears instead of announcing itself"
+  );
+});
+
+test("blank values are omitted rather than printed as nothing", () => {
+  const nodes = flattenRecord({ a: null, b: "", c: undefined, d: "kept" });
+  assert.deepEqual(
+    nodes.map((node) => node.key),
+    ["d"]
+  );
+});
+
+test("a section another record fills but this one does not is absent", () => {
+  // The cross-record rule, stated as the two sides of it: the columns keep the
+  // field because someone has it, and the detail drops it because this record
+  // does not. Same input family, opposite and both correct answers.
+  const withShipping = flattenRecord({ shippingInfo: { name: "John" } });
+  const withoutShipping = flattenRecord({ shippingInfo: {} });
+  assert.equal(withShipping.length, 1, "the record that has it shows it");
+  assert.equal(withoutShipping.length, 0, "the record that does not, does not");
+});
+
+test("an array of objects opens as indexed groups", () => {
+  const nodes = flattenRecord({ items: [{ sku: "A" }, { sku: "B" }] });
+  assert.equal(nodes.length, 1);
+  const group = nodes[0] as Extract<(typeof nodes)[number], { kind: "group" }>;
+  assert.deepEqual(
+    group.children.map((child) => child.key),
+    ["[0]", "[1]"]
+  );
+});
+
+test("an array of scalars becomes one field, as it becomes one cell", () => {
+  // The same decision the columns make, reached the same way: two strings as
+  // two lines would tell nobody anything, and one rule in one module is one
+  // rule to keep agreeing. This test failed the first time it ran because the
+  // detail had decided the opposite — which is what sharing the file is for.
+  const nodes = flattenRecord({ currencies: ["USD", "EUR"] });
+  assert.deepEqual(nodes, [{ kind: "field", key: "currencies", value: "USD, EUR" }]);
 });

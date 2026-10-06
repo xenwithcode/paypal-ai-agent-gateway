@@ -29,6 +29,7 @@ export default function JsonGrid({
   rows,
   label,
   lead,
+  onRowClicked,
 }: {
   rows: object[];
   label: string;
@@ -38,6 +39,11 @@ export default function JsonGrid({
    * for, and a default order is still an opinion about it.
    */
   lead?: readonly string[];
+  /**
+   * Which record was picked. The grid is for scanning many records; reading
+   * one is the detail panel's job, and this is how it learns which one.
+   */
+  onRowClicked?: (record: object) => void;
 }) {
   // `lead` is a dependency because a different order is different columns. The
   // callers keep theirs at module scope so the reference is stable — an inline
@@ -67,6 +73,11 @@ export default function JsonGrid({
         suppressColumnVirtualisation
         domLayout="autoHeight"
         tooltipShowDelay={300}
+        // Any cell in the row: asking a reader to hit a specific column to
+        // open details would be a rule they have to learn for no benefit.
+        onRowClicked={(event) => {
+          if (event.data) onRowClicked?.(event.data as object);
+        }}
       />
     </div>
   );

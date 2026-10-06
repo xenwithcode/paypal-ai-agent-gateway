@@ -6,6 +6,14 @@ import { ArrowLeftRight, TriangleAlert } from "lucide-react";
 import type { TransactionsResult } from "@/lib/paypal";
 import { summariseTransactions } from "@/lib/transactionTotals";
 import JsonGrid from "./JsonGrid";
+import TransactionDetail from "./TransactionDetail";
+
+/** What a record is called in the panel: its id when it has one, else where it sits. */
+function titleFor(record: Record<string, unknown>, index: number): string {
+  const info = record.transactionInfo as Record<string, unknown> | undefined;
+  const id = info?.transactionId;
+  return typeof id === "string" && id.trim() ? `Transaction ${id}` : `Record ${index + 1}`;
+}
 
 /**
  * The order a person reads money in: when it happened, how much, what it was
@@ -106,6 +114,10 @@ function formatWindow(window: { startDate: string; endDate: string }): string {
  */
 export default function LiveTransactions() {
   const [result, setResult] = useState<TransactionsResult | null>(null);
+  // Which record is being read vertically. Identity is compared rather than an
+  // index, so clicking the open row again can close it without keeping a
+  // position that a re-fetch would have invalidated.
+  const [selected, setSelected] = useState<Record<string, unknown> | null>(null);
 
   useEffect(() => {
     let cancelled = false;
@@ -175,7 +187,28 @@ export default function LiveTransactions() {
               rows={result.rows}
               label="Transactions PayPal recorded, last 30 days"
               lead={TRANSACTION_LEAD}
+              onRowClicked={(record) => {
+                // Clicking the open row again closes it: a second control just
+                // to dismiss would be one more thing to hunt for.
+                const row = record as Record<string, unknown>;
+                setSelected((current) => (current === row ? null : row));
+              }}
             />
+
+            {selected ? (
+              <TransactionDetail
+                record={selected}
+                title={titleFor(selected, result.rows.indexOf(selected))}
+                onClose={() => setSelected(null)}
+              />
+            ) : (
+              // Discoverability, not decoration: nothing about a grid says it
+              // can be clicked, and a vertical reading that only exists after
+              // an unmarked gesture does not exist for most people.
+              <p className="mt-3 text-[11px] text-slate-400">
+                Click any row to read that transaction top to bottom.
+              </p>
+            )}
 
             {/* Totals are an opinion about the rows rather than a row, so they
                 are stated as one: two directions per currency, never a single
