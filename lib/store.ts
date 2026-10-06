@@ -141,10 +141,15 @@ export function ensureHydrated(): Promise<boolean> {
     if (typeof window === "undefined") return false;
     const before = localSnapshot();
 
-    // Already holding something: this browser is the authority for itself and
-    // every write below will carry it to the server anyway.
+    // Already holding something: this browser is the authority for itself.
+    //
+    // No push here, and that removal is deliberate. Pushing belongs to writes,
+    // and every path that changes a row already carries it to the server — so
+    // the only thing a push on *read* could add is a browser that has just
+    // displayed its own seed overwriting a server copy it never read. That is
+    // not a hypothetical: it is how an order added on one page disappeared from
+    // the server it had reached moments earlier.
     if (before && (before.policies.length > 0 || before.blocked.length > 0)) {
-      void pushSnapshot(before);
       return false;
     }
 
@@ -156,11 +161,11 @@ export function ensureHydrated(): Promise<boolean> {
 
       // Re-read after the round trip. The check above ran before the request
       // went out, and anything written while it was in flight — an order
-      // drafted in the seconds it took — is newer than what is arriving, and
-      // overwriting it would discard the only copy.
+      // drafted in the seconds it took — is newer than what is arriving, so
+      // the local copy wins and the pull is dropped. No push either: the write
+      // that created those rows already carried them to the server.
       const now = localSnapshot();
       if (now && (now.policies.length > 0 || now.blocked.length > 0)) {
-        void pushSnapshot(now);
         return false;
       }
 

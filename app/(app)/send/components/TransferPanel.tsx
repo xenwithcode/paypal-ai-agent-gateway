@@ -9,6 +9,9 @@ import { appendPolicyRow, updatePolicyRow } from "@/lib/history";
 // server-only module — least of all a credential — reaches this file.
 import type { Balance } from "@/lib/paypal";
 import PayPalAuthorizeButton from "../../overview/components/PayPalAuthorizeButton";
+// The figure at the top of this panel is read once, when the page renders.
+// An authorization happens after that, here, in this browser.
+import { usePaypalBalance } from "../../hooks/usePaypalBalance";
 
 type Note = { kind: "ok" | "warn" | "error"; text: string };
 
@@ -65,6 +68,9 @@ export default function TransferPanel({ currency, balance, paypalClientId }: Pro
   const [draft, setDraft] = useState<Draft | null>(null);
   const [authorized, setAuthorized] = useState<{ authorizationId: string } | null>(null);
   const [notes, setNotes] = useState<Note[]>([]);
+
+  // The balance as it stands now — re-read after something can have moved it.
+  const { balance: liveBalance, refresh } = usePaypalBalance(balance);
 
   const push = (kind: Note["kind"], text: string) =>
     setNotes((prev) => [{ kind, text }, ...prev].slice(0, 5));
@@ -149,6 +155,16 @@ export default function TransferPanel({ currency, balance, paypalClientId }: Pro
       "ok",
       `🔐 Authorized — ${draft.envelope.limit.toFixed(2)} ${currency} reserved for ${draft.envelope.payee}. No money has moved yet.`
     );
+
+    // The figure above was read when this page rendered, and an authorization
+    // happens after that. PayPal may book it as a hold or leave the total
+    // alone — so this reports the number it found and attributes nothing to
+    // it, and when nothing moved it says nothing at all rather than inventing
+    // a reason for a figure that stayed put.
+    const moved = await refresh();
+    if (moved) {
+      push("ok", `Account Balance is now ${moved.value} ${moved.currency} — re-read from PayPal.`);
+    }
   };
 
   const reset = () => {
@@ -160,7 +176,7 @@ export default function TransferPanel({ currency, balance, paypalClientId }: Pro
     push("ok", "Ready for the next transfer.");
   };
 
-  const balanceLive = balance.source === "live";
+  const balanceLive = liveBalance.source === "live";
 
   return (
     <div className="mt-6 space-y-6">
@@ -183,20 +199,20 @@ export default function TransferPanel({ currency, balance, paypalClientId }: Pro
                 ? "border-emerald-200 bg-emerald-100 text-emerald-800"
                 : "border-amber-200 bg-amber-100 text-amber-800"
             }`}
-            title={balanceLive ? "Read from PayPal just now." : (balance.reason ?? "Demo figure.")}
+            title={balanceLive ? "Read from PayPal just now." : (liveBalance.reason ?? "Demo figure.")}
           >
             <Wallet className="h-3.5 w-3.5" strokeWidth={1.75} aria-hidden="true" />
-            {balance.value} {balance.currency}
+            {liveBalance.value} {liveBalance.currency}
           </div>
           <p className="mt-1 text-[10px] text-slate-400">
             {balanceLive ? "PayPal · live" : "demo figure"}
           </p>
-          {balance.currency !== currency && (
+          {liveBalance.currency !== currency && (
             <p
               className="mt-0.5 text-[10px] leading-tight text-amber-600"
               title="The balance PayPal reported and the currency this rail settles in are not the same, and neither is being rounded into the other."
             >
-              balance held in {balance.currency}
+              balance held in {liveBalance.currency}
             </p>
           )}
         </div>

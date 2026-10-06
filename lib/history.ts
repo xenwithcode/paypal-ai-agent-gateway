@@ -431,6 +431,19 @@ export function updatePolicyRow(id: number, patch: Partial<StoredRow>): number {
   return changed;
 }
 
+/**
+ * Write the order table.
+ *
+ * The one path the grid writes through, so its edits reach the durable copy
+ * the same way every other write does. It used to call `localStorage` itself,
+ * which meant a ceiling edited or a hold captured here stayed in this browser
+ * — and the server, asked by a second one, would answer with rows that had
+ * never heard of it.
+ */
+export function writePolicyRows(rows: readonly unknown[]): void {
+  writeJson(POLICY_STORAGE_KEY, rows);
+}
+
 /** Append a refusal the server actually made. */
 export function recordBlocked(
   attempt: Omit<BlockedAttempt, "id" | "when" | "sample">

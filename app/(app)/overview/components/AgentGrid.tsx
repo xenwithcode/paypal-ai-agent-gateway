@@ -49,13 +49,16 @@ import type { CatalogProduct } from "@/lib/commerce/catalog";
 import type { Balance } from "@/lib/paypal";
 // One key, one module: Activity reads the same rows this component writes, so
 // neither side gets to invent a spelling of its own.
-import { POLICY_STORAGE_KEY as STORAGE_KEY, recordBlocked } from "@/lib/history";
+import { POLICY_STORAGE_KEY as STORAGE_KEY, recordBlocked, writePolicyRows } from "@/lib/history";
 // The durable copy: asked only when this browser holds nothing, so a return
 // visit never leaves the synchronous read it was already doing.
 import { ensureHydrated } from "@/lib/store";
 // The same switch the sidebar, /fx and the Send rails read. Sharing one hook
 // is what keeps "the FX module is on" meaning the same thing on every surface.
 import { useFxShield } from "../../hooks/useFxShield";
+// The balance, re-read after something moves it — the figure this page is
+// given at render is correct then and stale from the first capture on.
+import { usePaypalBalance } from "../../hooks/usePaypalBalance";
 
 /**
  * Structural check for rows read back out of storage. Anything that does not
@@ -226,6 +229,37 @@ export default function AgentGrid({
   }, []);
 
   /**
+   * The balance as it stands now, re-read after anything that moved money.
+   *
+   * The figure arrives with the page — read once, on the server, when it was
+   * rendered. Correct when it appeared, and stale the moment something
+   * settled, because a capture happens later, here, in this browser. A
+   * balance that does not move when money does is worse than no balance at
+   * all: it looks like the capture did nothing.
+   */
+  const { balance: liveBalance, refresh: refreshBalance } = usePaypalBalance(balance);
+
+  /**
+   * Re-read it, and say so — but only when it changed.
+   *
+   * A line announcing a number identical to the one before it is noise, and
+   * this console has spent the whole project learning the difference between
+   * the two. The caller names the cause; the figure is PayPal's to give.
+   */
+  const reportBalance = useCallback(
+    async (cause: string) => {
+      // `refresh` hands back the figure only when it moved, so this logs once
+      // per change rather than once per attempt — and both dependencies are
+      // stable, which is what lets it sit in another effect's list without
+      // restarting that effect every time the number changed.
+      const moved = await refreshBalance();
+      if (moved) addLog(`💰 Account Balance ${moved.value} ${moved.currency} — ${cause}`);
+    },
+    [refreshBalance, addLog]
+  );
+
+
+  /**
    * Re-read the catalog for every row whose verdict could have moved since it
    * was last judged.
    *
@@ -342,8 +376,8 @@ export default function AgentGrid({
       if (!rows) {
         // Nothing here: this is the browser that has to ask. Only a pull that
         // actually returned something counts as a restore — otherwise the
-        // seeds written by the effect below would be reported as rows this
-        // machine had been holding.
+        // seeds on screen would be reported as rows this machine had been
+        // holding.
         const pulled = await ensureHydrated();
         if (cancelled) return;
         if (pulled) {
@@ -352,6 +386,23 @@ export default function AgentGrid({
         }
       }
       if (cancelled) return;
+
+      if (!rows) {
+        // Nothing stored and nothing to pull, so what is on screen is the
+        // seed — and storage has to say the same. The write effect is
+        // deliberately silent while `rowData` *is* the seed, so this is where
+        // the two agree; without it, Overview would show three orders while
+        // Commerce reported none, until somebody's first edit reconciled them.
+        //
+        // After the pull rather than before it: filling storage first would
+        // make the request above find a browser that already holds orders and
+        // decide there is nothing worth bringing.
+        try {
+          window.localStorage.setItem(STORAGE_KEY, JSON.stringify(SEED_ROWS));
+        } catch {
+          // Quota or private mode: the display is unaffected either way.
+        }
+      }
 
       const restored = rows?.length ?? 0;
       const visible = rows ?? SEED_ROWS;
@@ -400,12 +451,22 @@ export default function AgentGrid({
   // Written on every change. Declared after the read above on purpose — on the
   // first commit both run, and the read has to observe the stored value before
   // anything overwrites it with the seed rows.
+  //
+  // The seed is skipped by identity, and that guard is the whole fix. `rowData`
+  // starts as `SEED_ROWS`, so on the first commit this effect runs *before* the
+  // state the read above has queued has applied — and writing it would replace
+  // whatever storage holds with rows that have not been read yet. With
+  // `reactStrictMode` the read effect runs again immediately afterwards, finds
+  // the seed it just wrote, and restores that instead: the clobber stops being
+  // transient and becomes the stored value.
+  //
+  // Until something could be added here that is not a seed, this never showed:
+  // storage held the same three rows the seed holds, so overwriting them
+  // changed nothing. The first row added from another page is the first one it
+  // could destroy.
   useEffect(() => {
-    try {
-      window.localStorage.setItem(STORAGE_KEY, JSON.stringify(rowData));
-    } catch {
-      // Quota exceeded or storage disabled: same trade-off as above.
-    }
+    if (rowData === SEED_ROWS) return;
+    writePolicyRows(rowData);
   }, [rowData]);
 
   /**
@@ -469,6 +530,18 @@ export default function AgentGrid({
 
         addLog(data.log);
 
+        // A capture or a release moves money; an activation does not. The
+        // figure at the top of this page was read when the page rendered, so
+        // it is only wrong after one of these two — and silent in the case
+        // where it did not change at all.
+        if (data.status === STATUS.captured || data.status === STATUS.released) {
+          void reportBalance(
+            data.status === STATUS.captured
+              ? `after capturing "${row.what}"`
+              : `after releasing "${row.what}"`
+          );
+        }
+
         setRowData((prev) =>
           prev.map((r) =>
             r.id === row.id
@@ -495,7 +568,7 @@ export default function AgentGrid({
         addLog(`❌ Error reaching the hold service: ${message}`);
       }
     },
-    [addLog]
+    [addLog, reportBalance]
   );
 
   /**
@@ -526,9 +599,15 @@ export default function AgentGrid({
       addLog(
         `🔐 [PAYPAL] Approved and authorized — hold ${info.authorizationId} on order ${info.orderId}.`
       );
+      // An authorization reserves the ceiling. Whether PayPal books that as
+      // withheld or leaves the total alone is its own business — what matters
+      // here is that the figure on screen is re-read rather than assumed.
+      void reportBalance(
+        `after reserving ${row.limit.toFixed(2)} ${row.currency} for "${row.what}"`
+      );
       await handleHoldAction("activate", row);
     },
-    [addLog, handleHoldAction]
+    [addLog, handleHoldAction, reportBalance]
   );
 
   /**
@@ -784,6 +863,16 @@ export default function AgentGrid({
             )
           );
         }
+
+        // The agent settles with nobody watching, so nothing else on this page
+        // would otherwise notice that it did — which is exactly the moment the
+        // figure at the top needs re-reading.
+        if (
+          Array.isArray(data.results) &&
+          data.results.some((result: { status?: string }) => result.status === STATUS.captured)
+        ) {
+          void reportBalance("after the agent settled an order on its own");
+        }
       } catch (error) {
         if (cancelled) return;
         addLog(`❌ [AGENT] ${error instanceof Error ? error.message : String(error)}`);
@@ -796,7 +885,7 @@ export default function AgentGrid({
       cancelled = true;
       window.clearInterval(timer);
     };
-  }, [agentRunning, addLog]);
+  }, [agentRunning, addLog, reportBalance]);
 
   const triggerFraudSimulation = async () => {
     const target = rowData.find((row) => row.status === STATUS.enforced) ?? rowData[0];
@@ -1174,9 +1263,9 @@ export default function AgentGrid({
             Account Balance
             {/* The figure without saying where it came from is a figure a
                 reader takes at face value, so the source travels with it. */}
-            {balance.source === "demo" && (
+            {liveBalance.source === "demo" && (
               <span
-                title={balance.reason ?? "Demo figure — no live data."}
+                title={liveBalance.reason ?? "Demo figure — no live data."}
                 className="ml-2 rounded border border-amber-300 bg-amber-100 px-1.5 py-0.5 align-middle text-[9px] font-bold uppercase tracking-wide text-amber-800"
               >
                 demo
@@ -1184,13 +1273,13 @@ export default function AgentGrid({
             )}
           </span>
           <span
-            className={`text-2xl font-mono font-bold ${balance.source === "live" ? "text-emerald-400" : "text-amber-300"}`}
+            className={`text-2xl font-mono font-bold ${liveBalance.source === "live" ? "text-emerald-400" : "text-amber-300"}`}
           >
             {/* The currency PayPal actually reported. This account holds USD,
                 and asking the endpoint for PYUSD answers 400 — so there is no
                 PYUSD figure to show, and printing one would be an invention
                 rather than a shorthand. */}
-            {balance.value} {balance.currency}
+            {liveBalance.value} {liveBalance.currency}
           </span>
         </div>
       </div>
