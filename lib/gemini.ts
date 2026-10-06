@@ -10,8 +10,15 @@ import { MODE, isMode } from "./policy";
 
 const MODEL = process.env.GEMINI_MODEL ?? "gemini-3.8-flash";
 
-/** Serves every model this app uses; only the region of the request. */
-const DEFAULT_LOCATION = "us-central1";
+/**
+ * Where the request is served. Verified against a real project, not assumed:
+ * `gemini-3.8-flash` — this app's default model — **404s in `us-central1`**
+ * and only answers from `global`, while `gemini-2.5-flash` answers from all
+ * three regions tried. Region and model are not independent choices, and
+ * picking a location that does not serve the configured model looks exactly
+ * like a model that does not exist.
+ */
+const DEFAULT_LOCATION = "global";
 
 /**
  * How this server authenticates, decided by what is in .env.local.
@@ -140,13 +147,33 @@ export async function parseUserIntention(
   // the column headers it has to satisfy.
   const systemInstruction =
     `You are the purchase-order author for PayPal AI Agent Gateway. ` +
-    `Turn the user's request into a strict spending policy. The user's ` +
-    `available balance is ${availableBalance}. If the requested ceiling ` +
-    `exceeds it, reduce the ceiling to the available balance. Respond only ` +
-    `with JSON matching the provided schema.\n` +
+    `Turn the user's request into a strict spending policy. ` +
+    // The model has no idea what day it is, and being asked for a date
+    // without one produced "2024-10-27" for a deadline of October 27 in
+    // 2026 — an authority that had already lapsed the moment it was written.
+    // A stale year is not a formatting slip; it makes the policy worthless.
+    `Today is ${new Date().toISOString().slice(0, 10)}. Resolve every ` +
+    `relative date ("by Friday", "next week", "the 27th") against that, and ` +
+    `never return an "expires" date that has already passed. ` +
+    `The user's available balance is ${availableBalance}. If the requested ` +
+    `ceiling exceeds it, reduce the ceiling to the available balance. ` +
+    `Respond only with JSON matching the provided schema.\n` +
     `Rules:\n` +
-    `- "condition" is what must hold before money moves. Leave it empty when ` +
-    `the user wants it to happen right away.\n` +
+    // The schema's example showed "price <= 60" but never said when to
+    // produce one, so the model read "no more than $100" as a budget alone
+    // and returned an empty condition — five times out of five. An empty
+    // condition is not neutral here: lib/policy.ts turns it into a standing
+    // allowance instead of a held order, and the approval card hides the
+    // PayPal button behind conditionText, so the bounded purchase the user
+    // asked for became an unconditional one with no way to approve it.
+    `- "condition" is what must hold before money moves. When the request ` +
+    `names a maximum price ("no more than 100", "at most $80", "below 50"), ` +
+    `that maximum IS the condition: write it as 'price <= <N>'. Do not ` +
+    `leave it empty just because the same number also sets the ceiling — ` +
+    `"limit" is the budget and "condition" is what the approver verifies, ` +
+    `and an empty condition turns a bounded purchase into an immediate ` +
+    `unconditional one. Leave it empty only when the user asked for it to ` +
+    `go ahead with no requirement attached.\n` +
     `- "expires" is a YYYY-MM-DD date, never a phrase.\n` +
     `- Keep "what" human readable; fold the identifying attributes into it ` +
     `rather than inventing extra fields.`;
