@@ -60,8 +60,20 @@ function collectPaths(value: Record<string, unknown> | unknown[], node: PathNode
   }
 }
 
-function toColumns(node: PathNode, prefix: string): (ColDef | ColGroupDef)[] {
-  return Array.from(node.children, ([key, child]) => {
+function toColumns(
+  node: PathNode,
+  prefix: string,
+  lead: readonly string[]
+): (ColDef | ColGroupDef)[] {
+  const entries = Array.from(node.children);
+  // Sorted only when somebody asked for an order. The default keeps whatever
+  // order the data arrived in — which is the right default for a generic
+  // reader and the wrong one for a person, hence the option below.
+  const ordered = lead.length
+    ? [...entries].sort((a, b) => rankOf(prefix, a[0], lead) - rankOf(prefix, b[0], lead))
+    : entries;
+
+  return ordered.map(([key, child]) => {
     const path = prefix ? `${prefix}.${key}` : key;
     // Array positions are numbers, and a header of bare `0` reads as a column
     // named zero rather than as "the first of these".
@@ -84,10 +96,44 @@ function toColumns(node: PathNode, prefix: string): (ColDef | ColGroupDef)[] {
       // Keep the group's columns together when one is sorted or resized, so
       // `transactionAmount` never ends up parked beside `feeAmount`'s parent.
       marryChildren: true,
-      children: toColumns(child, path),
+      children: toColumns(child, path, lead),
     };
   });
 }
+
+/**
+ * Where this column sits in the order somebody asked for.
+ *
+ * A lead entry matches either the column itself or anything nested under it,
+ * which is what lets one list order both the groups and the leaves inside
+ * them: `transactionInfo.transactionAmount` puts the group `transactionInfo`
+ * first *and* the amount first within it.
+ *
+ * Columns nothing claims come last and keep the order they arrived in — the
+ * sort is stable, so asking for three columns does not shuffle the other
+ * forty-three into a new arbitrary order.
+ */
+function rankOf(prefix: string, key: string, lead: readonly string[]): number {
+  const path = prefix ? `${prefix}.${key}` : key;
+  for (let index = 0; index < lead.length; index += 1) {
+    const entry = lead[index];
+    if (entry === path || entry.startsWith(`${path}.`)) return index;
+  }
+  return Number.MAX_SAFE_INTEGER;
+}
+
+export type ColumnOptions = {
+  /**
+   * Paths or prefixes to bring to the front, most important first.
+   *
+   * Leftmost is what a reader sees before scrolling, so the default — the
+   * order the data arrived in — can put an identifier where a person would
+   * expect an amount. Somebody has to decide what "most important" means, and
+   * it is not this module's business to guess: the caller passes it, because
+   * the caller is the one who knows what the table is for.
+   */
+  lead?: readonly string[];
+};
 
 /**
  * The columns these records need, discovered from the records themselves.
@@ -97,12 +143,15 @@ function toColumns(node: PathNode, prefix: string): (ColDef | ColGroupDef)[] {
  * a grid that only read `rows[0]` would drop a column the moment a second
  * record carried a field the first did not.
  */
-export function columnDefsFor(rows: readonly object[]): (ColDef | ColGroupDef)[] {
+export function columnDefsFor(
+  rows: readonly object[],
+  options: ColumnOptions = {}
+): (ColDef | ColGroupDef)[] {
   const root: PathNode = { children: new Map() };
   for (const row of rows) {
     collectPaths(row as Record<string, unknown>, root);
   }
-  return toColumns(root, "");
+  return toColumns(root, "", options.lead ?? []);
 }
 
 /**

@@ -4,7 +4,39 @@
 import { useEffect, useState } from "react";
 import { ArrowLeftRight, TriangleAlert } from "lucide-react";
 import type { TransactionsResult } from "@/lib/paypal";
+import { summariseTransactions } from "@/lib/transactionTotals";
 import JsonGrid from "./JsonGrid";
+
+/**
+ * The order a person reads money in: when it happened, how much, what it was
+ * for — then how they stood afterwards — and only at the end the identifiers
+ * needed to look a row up again.
+ *
+ * PayPal's own key order starts with `transactionId`, which is the right order
+ * for a machine and the wrong one for someone scanning a table: nobody reads
+ * an order reference before they read the amount.
+ *
+ * `payerInfo` is deliberately **not** first. It is the counterparty — who paid,
+ * or who was paid — not this account's own details. Those live inside
+ * `transactionInfo` (`paypalAccountId`, `endingBalance`) and they are the same
+ * in every row, so leading with them would spend the best position in the
+ * table on a constant.
+ */
+const TRANSACTION_LEAD = [
+  "transactionInfo.transactionInitiationDate",
+  "transactionInfo.transactionAmount",
+  // The amount before its currency, so the number lands first under the group
+  // that already names the field. Without this the currency leads, because
+  // `currencyCode` is written before `value` in the response.
+  "transactionInfo.transactionAmount.value",
+  "transactionInfo.transactionSubject",
+  "transactionInfo.transactionStatus",
+  "transactionInfo.transactionEventCode",
+  "transactionInfo.endingBalance",
+  "transactionInfo.transactionId",
+  "payerInfo.emailAddress",
+  "payerInfo.payerName",
+] as const;
 
 /**
  * Fetch the account's own record, and normalise whatever comes back.
@@ -85,6 +117,21 @@ export default function LiveTransactions() {
     };
   }, []);
 
+  const summary = result?.rows ? summariseTransactions(result.rows) : null;
+  // One line per direction per currency. Flat-mapped rather than filtered so
+  // an empty direction cannot leave a stray separator behind.
+  const totalsLine = summary
+    ? summary.currencies
+        .flatMap((entry) => {
+          const parts: string[] = [];
+          if (entry.inAmount > 0) parts.push(`${entry.inAmount.toFixed(2)} ${entry.currency} in`);
+          if (entry.outAmount > 0) parts.push(`${entry.outAmount.toFixed(2)} ${entry.currency} out`);
+          if (entry.fees > 0) parts.push(`${entry.fees.toFixed(2)} ${entry.currency} in fees`);
+          return parts;
+        })
+        .join("   ·   ")
+    : "";
+
   return (
     // Excluded from the printed report: the report is a table this page styled
     // for paper, and a grid with thirty columns is not it. Say so rather than
@@ -124,7 +171,36 @@ export default function LiveTransactions() {
           </p>
         ) : (
           <>
-            <JsonGrid rows={result.rows} label="Transactions PayPal recorded, last 30 days" />
+            <JsonGrid
+              rows={result.rows}
+              label="Transactions PayPal recorded, last 30 days"
+              lead={TRANSACTION_LEAD}
+            />
+
+            {/* Totals are an opinion about the rows rather than a row, so they
+                are stated as one: two directions per currency, never a single
+                figure. A credit and a debit added together is arithmetic
+                nobody can use — the purchases table further down this page
+                already refuses it by splitting per currency, and this refuses
+                it by splitting per direction. */}
+            {totalsLine ? (
+              <>
+                <p className="mt-3 text-xs font-semibold text-slate-700">{totalsLine}</p>
+                <p className="mt-1 text-[11px] leading-relaxed text-slate-400">
+                  Summed from what PayPal reported, split by direction — money in and money out
+                  are never added into one figure. Fees come from their own field and are shown
+                  apart, because an amount and the fee taken from it are not the same number.
+                  {summary && summary.uncounted > 0 ? (
+                    <>
+                      {" "}
+                      {summary.uncounted} record{summary.uncounted === 1 ? "" : "s"} carried no
+                      readable amount and is not counted.
+                    </>
+                  ) : null}
+                </p>
+              </>
+            ) : null}
+
             <p className="mt-3 text-[11px] leading-relaxed text-slate-400">
               {result.rows.length} record{result.rows.length === 1 ? "" : "s"} · window asked:{" "}
               {formatWindow(result.window)} — 30 days, the most Transaction Search accepts is 31.

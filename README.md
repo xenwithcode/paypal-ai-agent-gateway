@@ -52,7 +52,7 @@ Approve **once**: *≤ 60 USD, this week, these merchants.* The agent then produ
 | **Conversion shown before it happens** | The transfer form prints *recipient gets* / *you pay* / *the applied rate* above the button, and refuses to submit while no live rate exists. |
 | **Live event console** | Every draft, hold transition and charge verdict on this page, streamed. |
 | **Purchase history + printable report** | Activity lists every order that settled — date, item, condition, endpoint, amount — beside the charges it refused, which are recorded nowhere else. Sample rows carry a `Sample` chip; **Print / save as PDF** produces the report. |
-| **Money that moved, read live** | Activity also asks Transaction Search for the last 30 days and renders the account's own records in AG Grid, with the column groups derived from the response's nesting rather than written by hand. *Could not ask*, *asked and it is empty* and *here it is* are three different states — only the last one means you have no transactions. |
+| **Money that moved, read live** | Activity also asks Transaction Search for the last 30 days and renders the account's own records in AG Grid, with the column groups derived from the response's nesting rather than written by hand — and read in the order a person reads money: *when, how much, what for*, and only then the identifiers. Totals split by direction with fees on their own line, because an amount and the fee taken from it are not the same number. *Could not ask*, *asked and it is empty* and *here it is* are three different states — only the last one means you have no transactions. |
 | **Standing allowances** | Recurring lists the orders that are `Active` with no condition to wait for — the ones that run until you take them off. Removing one needs a deliberate second click. |
 | **Manifest reader** | Agentic Commerce shows the machine-readable record behind each order — ceiling, endpoint, condition, expiry, mode — with absent fields marked absent, and **View as JSON**. |
 | **Send money** | Three rails: **USD** first, because that is what PayPal settles in, then the stablecoin, then a Venezuelan bank behind the FX opt-in. Name a recipient and an amount, see *recipient gets* / *you pay* before committing, and the recipient is written into the order **before** anything is authorized. |
@@ -243,6 +243,7 @@ paypal-ai-agent/
 │   ├── paypal.ts                   # server-only client, balance, order lifecycle, transactions
 │   ├── history.ts                  # the ledger and the policy rows, read and written
 │   ├── gridColumns.ts              # JSON records → AG Grid columns, derived not declared
+│   ├── transactionTotals.ts        # what came in, out, and what it cost — split, never summed as one
 │   ├── store.ts                    # storage keys, hydration and push to the durable copy
 │   ├── rateLimit.ts                # sliding window in front of the route that spends money
 │   ├── contingency.ts              # refunds + enforcement check
@@ -250,7 +251,7 @@ paypal-ai-agent/
 │   ├── fx/{rates,providers}.ts     # conversion math + live feeds
 │   └── shields/                    # InflationShield, PagoMovilEngine
 ├── data/                           # runtime only, gitignored — the durable copy on disk
-├── tests/                          # 113 tests on node:test — transitions, conditions, ceiling bands, window, judgements, ledger, store, rate limit, grid columns
+├── tests/                          # 128 tests on node:test — transitions, conditions, ceiling bands, window, judgements, ledger, store, rate limit, grid columns, totals
 ├── docs/architecture/              # Archify diagram + spec
 ├── PRODUCT.md  DESIGN.md  TRABAJO-PROXIMA-SESION.md
 ├── env.example  LICENSE

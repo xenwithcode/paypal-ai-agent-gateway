@@ -25,8 +25,24 @@ ModuleRegistry.registerModules([AllCommunityModule]);
  * reader has no other way to reach. Twenty records is well inside what that
  * costs.
  */
-export default function JsonGrid({ rows, label }: { rows: object[]; label: string }) {
-  const columnDefs = useMemo(() => columnDefsFor(rows), [rows]);
+export default function JsonGrid({
+  rows,
+  label,
+  lead,
+}: {
+  rows: object[];
+  label: string;
+  /**
+   * What to bring to the front, most important first. Passed through rather
+   * than decided here: this component knows nothing about what the table is
+   * for, and a default order is still an opinion about it.
+   */
+  lead?: readonly string[];
+}) {
+  // `lead` is a dependency because a different order is different columns. The
+  // callers keep theirs at module scope so the reference is stable — an inline
+  // array would rebuild every column on every render.
+  const columnDefs = useMemo(() => columnDefsFor(rows, { lead }), [rows, lead]);
 
   return (
     // The region is named for the screen reader: a grid of unlabelled cells is

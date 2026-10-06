@@ -139,3 +139,62 @@ test("the shared column settings never infer a type", () => {
   assert.equal(typeof JSON_COL_DEF.valueFormatter, "function");
   assert.equal(JSON_COL_DEF.filter, true);
 });
+
+// ─── The order somebody asked for ──────────────────────────────────────────
+
+test("a lead list brings the claimed columns to the front, most important first", () => {
+  const columns = columnDefsFor([{ when: 1, amount: 2, reference: 3 }], {
+    lead: ["amount", "when"],
+  });
+  assert.deepEqual(
+    columns.map((column) => (column as ColDef).colId),
+    ["amount", "when", "reference"],
+    "claimed first in the order given, unclaimed after"
+  );
+});
+
+test("columns nobody claimed keep the order they arrived in", () => {
+  // The sort is stable: asking for one column must not shuffle the other
+  // forty-three into a new arbitrary order.
+  const columns = columnDefsFor([{ z: 1, y: 2, x: 3 }], { lead: ["y"] });
+  assert.deepEqual(
+    columns.map((column) => (column as ColDef).colId),
+    ["y", "z", "x"]
+  );
+});
+
+test("with no order asked for, nothing is reordered", () => {
+  const columns = columnDefsFor([{ z: 1, a: 2 }]);
+  assert.deepEqual(columns.map((column) => (column as ColDef).colId), ["z", "a"]);
+});
+
+test("a lead entry orders the group it is nested in, and the leaf inside it", () => {
+  // One list has to do both jobs: put `transactionInfo` first at the top level
+  // and `transactionAmount` first within it. A prefix match is what lets a
+  // single entry mean both.
+  const columns = columnDefsFor(
+    [{ info: { id: "x", amount: 5 }, payer: { name: "Ana" }, ship: { city: "CCS" } }],
+    { lead: ["info.amount", "payer.name"] }
+  );
+
+  assert.deepEqual(
+    columns.map((column) => column.headerName),
+    ["info", "payer", "ship"],
+    "the group holding the first lead entry comes first"
+  );
+
+  const info = columns[0] as ColGroupDef;
+  assert.deepEqual(
+    (info.children ?? []).map((column) => column.headerName),
+    ["amount", "id"],
+    "and inside it, the claimed leaf leads while the rest keep their order"
+  );
+});
+
+test("ordering does not change what the columns are", () => {
+  // Reordering must be presentation only: same ids, same fields, same depth.
+  const rows = [{ info: { amount: 5, id: "x" } }];
+  const plain = leafIds(columnDefsFor(rows));
+  const ordered = leafIds(columnDefsFor(rows, { lead: ["info.amount"] }));
+  assert.deepEqual([...ordered].sort(), [...plain].sort());
+});
