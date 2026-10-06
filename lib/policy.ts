@@ -434,6 +434,101 @@ export function ceilingUsage(limit: number, price: number | null | undefined): C
 }
 
 
+/**
+ * The terms a seller publishes, and the payment offered against them.
+ *
+ * The finding worth stating before the function: **an offer is judged by the
+ * same rules a buyer's charge is.** Window, mode, destination, currency,
+ * whether the order is armed — none of that is specific to which side of a
+ * trade you are on, which is why this does not re-implement any of it. It asks
+ * `judgeCharge` about all of it and adds the one rule that does not transfer.
+ *
+ * That rule is the amount, and it is the mirror image. A buyer refuses *above*
+ * a ceiling and never below it — paying less is not a violation of their own
+ * limit. A seller refuses anything that is not the price, in both directions:
+ * underpayment is theft and overpayment is a mistake, and an agent that
+ * settles a listing for a figure nobody agreed to has done something wrong
+ * either way.
+ *
+ * So `price` is asked of the judge as a `limit`, where it does double duty as
+ * the ceiling — an offer above it is refused there, with that rule's own
+ * wording — and the floor is stated here, in the seller's words.
+ */
+export type OfferTerms = {
+  what: string;
+  /** The price. Both bounds: the offer must match it. */
+  price: number;
+  currency: string;
+  /** Only these buyers may pay. Empty means any. */
+  buyer?: string;
+  /** Only this storefront may be paid through. Empty means any. */
+  allowEndpoint?: string;
+  /** The terms' own state. Nothing is accepted against a draft. */
+  status: string;
+  expires?: string;
+  mode?: string;
+};
+
+/** A payment arriving at a seller. */
+export type Offer = {
+  amount: number;
+  currency: string;
+  buyer?: string;
+  endpoint?: string;
+  /** Declared, never assumed — see the autonomy rule in `judgeCharge`. */
+  initiatedBy?: "human" | "agent";
+};
+
+/**
+ * Judge an incoming payment against the terms its seller published.
+ *
+ * Returns the same `Verdict` a charge does, so a caller cannot tell which side
+ * it asked about — which is the point: a counterparty checking an offer and a
+ * buyer checking a charge are one question with two seats.
+ */
+export function judgeOffer(offer: Offer, terms: OfferTerms, today: Date = new Date()): Verdict {
+  const shared = judgeCharge(
+    {
+      amount: offer.amount,
+      currency: offer.currency,
+      endpoint: offer.endpoint,
+      payee: offer.buyer,
+      initiatedBy: offer.initiatedBy,
+    },
+    {
+      limit: terms.price,
+      currency: terms.currency,
+      allowEndpoint: terms.allowEndpoint,
+      payee: terms.buyer,
+      what: terms.what,
+      status: terms.status,
+      expires: terms.expires,
+      mode: terms.mode,
+    },
+    today
+  );
+
+  const violations = [...shared.violations];
+
+  // The floor. Above it, the shared ceiling rule has already spoken and with
+  // the better wording for that side of it.
+  if (offer.currency === terms.currency && offer.amount < terms.price) {
+    violations.push(
+      `The price of "${terms.what}" is ${terms.price.toFixed(2)} ${terms.currency}, and the offer is ${offer.amount.toFixed(2)} ${offer.currency}.`
+    );
+  }
+
+  const allowed = violations.length === 0;
+  return {
+    allowed,
+    violations,
+    reason: allowed
+      ? `Offer of ${offer.amount.toFixed(2)} ${offer.currency} matches "${terms.what}".`
+      : violations.join(" "),
+  };
+}
+
+
 /** Autonomy level granted to the agent for a given policy. */
 export const MODE = {
   /** Agent may execute on its own within the limit. */

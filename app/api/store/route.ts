@@ -17,15 +17,14 @@
 //      one this product exists to keep;
 //   2. it writes atomically — a half-written JSON file is a corrupted audit,
 //      and the next read would not be able to tell corruption from emptiness.
+//
+// Both live in `lib/storeFile.ts` now: the manifest endpoint reads the same
+// file, and one definition of where it is and how it is replaced is worth more
+// than a route that owns its own copy.
 
 import { NextRequest, NextResponse } from "next/server";
-import { promises as fs } from "node:fs";
-import path from "node:path";
-import { MAX_BLOCKED, MAX_POLICIES, normaliseSnapshot, type StoreSnapshot } from "@/lib/store";
-
-/** Where the two arrays live. Inside the repo so a checkout starts empty. */
-const STORE_DIR = path.join(process.cwd(), "data");
-const STORE_FILE = path.join(STORE_DIR, "store.json");
+import { MAX_BLOCKED, MAX_POLICIES, normaliseSnapshot } from "@/lib/store";
+import { readStoreFile, writeStoreFile } from "@/lib/storeFile";
 
 /**
  * Largest body this endpoint will read.
@@ -36,46 +35,8 @@ const STORE_FILE = path.join(STORE_DIR, "store.json");
  */
 const MAX_BODY_CHARS = 1_000_000;
 
-const EMPTY: StoreSnapshot = { policies: [], blocked: [] };
-
-/**
- * Writes serialised through one chain.
- *
- * Two PUTs arriving together would otherwise interleave their read-modify-write
- * and the loser's file could be built from a state that has already gone. One
- * promise handed down the line costs nothing at this scale and removes the
- * question entirely.
- */
-let writeChain: Promise<void> = Promise.resolve();
-
-async function readStore(): Promise<StoreSnapshot> {
-  try {
-    const text = await fs.readFile(STORE_FILE, "utf8");
-    // The same validation a PUT goes through: a file this process would have
-    // refused to write is not one it should serve.
-    return normaliseSnapshot(JSON.parse(text)) ?? EMPTY;
-  } catch {
-    // No file yet, unreadable, or malformed — all three mean "nothing stored",
-    // and an absent record must never look like an error to the browser. It
-    // would stop trying, and the next visit would look empty forever.
-    return EMPTY;
-  }
-}
-
-async function writeStore(snapshot: StoreSnapshot): Promise<void> {
-  await fs.mkdir(STORE_DIR, { recursive: true });
-
-  const temp = `${STORE_FILE}.${process.pid}.tmp`;
-  const json = JSON.stringify(snapshot);
-
-  await fs.writeFile(temp, json, "utf8");
-  // Rename within the same directory is atomic on every platform this runs on,
-  // so a reader sees either the old file or the new one — never a truncated one.
-  await fs.rename(temp, STORE_FILE);
-}
-
 export async function GET() {
-  const store = await readStore();
+  const store = await readStoreFile();
   return NextResponse.json(store, {
     headers: {
       // This is a read of mutable local state, not a document: never cached,
@@ -114,12 +75,7 @@ export async function PUT(req: NextRequest) {
       );
     }
 
-    const previous = writeChain;
-    writeChain = previous.then(
-      () => writeStore(snapshot),
-      () => writeStore(snapshot)
-    );
-    await writeChain;
+    await writeStoreFile(snapshot);
 
     return NextResponse.json({
       success: true,

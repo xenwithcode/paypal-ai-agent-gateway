@@ -4,6 +4,7 @@
 import { useEffect, useState } from "react";
 import { ScrollText, Braces } from "lucide-react";
 import { readPolicyRows, type ManifestRow } from "@/lib/history";
+import { manifestFor } from "@/lib/manifests";
 import { ensureHydrated } from "@/lib/store";
 import EmptyState from "../components/EmptyState";
 
@@ -58,19 +59,10 @@ function ManifestCard({ row }: { row: ManifestRow }) {
   const payee = row.payee?.trim() ?? "";
   const status = row.status;
 
-  const payload = {
-    what: row.what,
-    merchant: row.merchant || null,
-    ceiling: { amount: row.limit, currency: row.currency },
-    condition: condition || null,
-    valid_until: expires || null,
-    mode: row.mode ?? null,
-    // The recipient sits with the endpoint because they are the same question
-    // asked twice: where may this order send money.
-    payee: payee || null,
-    allow_endpoint: endpoint || null,
-    status,
-  };
+  // Built by the same function `GET /api/manifest` uses: this card and the
+  // record a counterparty fetches have to be the same document, or the JSON
+  // shown here is a promise the endpoint does not keep.
+  const payload = manifestFor(row);
 
   return (
     <article className="overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm">

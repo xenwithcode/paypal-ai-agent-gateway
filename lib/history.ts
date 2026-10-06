@@ -16,6 +16,9 @@
 // A module reachable from a test imports with the extension; a module only
 // ever bundled by Next may keep dropping it.
 import { POLICY_STORAGE_KEY, BLOCKED_STORAGE_KEY, pushToStore } from "./store.ts";
+// Type-only import of ManifestRow lives in manifests.ts, so this direction is
+// the only runtime one: history → manifests, and no cycle to resolve.
+import { looksLikeManifest } from "./manifests.ts";
 
 // Re-exported so every existing reader keeps importing from here. The keys
 // moved to the module that syncs them; making callers follow would be churn
@@ -163,31 +166,13 @@ export type ManifestRow = StoredRow & {
 };
 
 /**
- * Enough of a record to be called a manifest.
- *
- * Anything missing those fields is dropped rather than padded: a corrupt row
- * rendered with a `0.00 USD` ceiling and a status it never had would be
- * indistinguishable from a real one.
- */
-function looksLikeManifest(value: unknown): value is ManifestRow {
-  if (!value || typeof value !== "object") return false;
-  const row = value as StoredRow;
-  return (
-    typeof row.what === "string" &&
-    row.what.trim() !== "" &&
-    typeof row.limit === "number" &&
-    Number.isFinite(row.limit) &&
-    typeof row.currency === "string" &&
-    typeof row.status === "string"
-  );
-}
-
-/**
  * Every stored order — not only the settled ones.
  *
  * The purchase history only cares what finished; the manifest view needs the
  * whole record, because the point of a manifest is what it constrains before
- * anything has happened.
+ * anything has happened. The test of what counts lives in `lib/manifests.ts`,
+ * beside the builder — this page and the endpoint a counterparty fetches must
+ * agree on which rows are records at all.
  */
 export function readPolicyRows(): ManifestRow[] {
   const stored = readJson(POLICY_STORAGE_KEY);
