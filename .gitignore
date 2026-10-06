@@ -26,3 +26,8 @@ yarn-error.log*
 .vscode/
 .idea/
 *.swp
+
+# Datos en ejecución — el almacén persistido no es código, y una copia
+# guardada en el repo sería leída por todo el que hiciera un clone.
+# El directorio se crea solo al primer PUT.
+data/

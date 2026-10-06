@@ -9,10 +9,21 @@
 // copy in Activity says a stopped payment exists nowhere else, and that stops
 // being true as soon as two components invent their own key for it.
 
-/** Rows the app seeds so the section is not empty on arrival. */
-export const POLICY_STORAGE_KEY = "paypal-ai-agent.policies.v1";
-/** Charges the server refused, appended as they happen. */
-export const BLOCKED_STORAGE_KEY = "paypal-ai-agent.blocked.v1";
+// The keys and the sync live here; history keeps importing them so its readers
+// and writers do not have to follow. The extension is required rather than
+// optional: `tests/history.test.ts` loads this module through Node's ESM
+// resolver, which wants one — see the note on `allowImportingTsExtensions`.
+// A module reachable from a test imports with the extension; a module only
+// ever bundled by Next may keep dropping it.
+import { POLICY_STORAGE_KEY, BLOCKED_STORAGE_KEY, pushToStore } from "./store.ts";
+
+// Re-exported so every existing reader keeps importing from here. The keys
+// moved to the module that syncs them; making callers follow would be churn
+// for its own sake, and a second definition of the name is how two components
+// end up writing to different places. The records themselves are the rows the
+// app seeds so a section is not empty on arrival, and the charges the server
+// refused as they happened.
+export { POLICY_STORAGE_KEY, BLOCKED_STORAGE_KEY };
 
 export type Purchase = {
   id: string | number;
@@ -56,8 +67,14 @@ function writeJson(key: string, value: unknown): void {
     window.localStorage.setItem(key, JSON.stringify(value));
   } catch {
     // Quota or private mode: the session keeps working, it just will not
-    // survive the next reload.
+    // survive the next reload. Return rather than fall through, because
+    // pushing a copy the working store rejected would send a state this
+    // browser no longer holds.
+    return;
   }
+  // The working copy moved, so the durable copy follows — debounced, since
+  // this runs on every edit a person makes to a ceiling or a condition.
+  pushToStore();
 }
 
 function daysAgo(days: number): string {

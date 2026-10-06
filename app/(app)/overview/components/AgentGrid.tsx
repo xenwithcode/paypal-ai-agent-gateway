@@ -50,6 +50,9 @@ import type { Balance } from "@/lib/paypal";
 // One key, one module: Activity reads the same rows this component writes, so
 // neither side gets to invent a spelling of its own.
 import { POLICY_STORAGE_KEY as STORAGE_KEY, recordBlocked } from "@/lib/history";
+// The durable copy: asked only when this browser holds nothing, so a return
+// visit never leaves the synchronous read it was already doing.
+import { ensureHydrated } from "@/lib/store";
 // The same switch the sidebar, /fx and the Send rails read. Sharing one hook
 // is what keeps "the FX module is on" meaning the same thing on every surface.
 import { useFxShield } from "../../hooks/useFxShield";
@@ -281,41 +284,80 @@ export default function AgentGrid({
    * where localStorage does not exist, and the two renders would disagree.
    */
   useEffect(() => {
-    let restored = 0;
-    let rows: PolicyRow[] | null = null;
-    try {
-      const raw = window.localStorage.getItem(STORAGE_KEY);
-      if (raw) {
+    let cancelled = false;
+
+    /**
+     * What storage holds right now, or null when it holds nothing the grid
+     * would accept. Only a non-empty list of things shaped like rows counts —
+     * a corrupt or hand-edited value must not take the table down with it,
+     * and a partial list is not a list.
+     */
+    const readStored = (): PolicyRow[] | null => {
+      try {
+        const raw = window.localStorage.getItem(STORAGE_KEY);
+        if (!raw) return null;
         const stored: unknown = JSON.parse(raw);
-        // Only accept something shaped like rows. A corrupt or hand-edited
-        // value must not take the table down with it.
-        if (Array.isArray(stored) && stored.length > 0 && stored.every(isPolicyRow)) {
-          rows = stored;
-          restored = stored.length;
+        return Array.isArray(stored) && stored.length > 0 && stored.every(isPolicyRow)
+          ? stored
+          : null;
+      } catch {
+        // Private mode, disabled storage or unreadable JSON: the session keeps
+        // working, it just will not survive the next reload.
+        return null;
+      }
+    };
+
+    // Read *before* any await. The write effect below runs on this same first
+    // commit, and once this read has to wait for a server it would otherwise
+    // find the seed rows it had just put there and report them as something
+    // the operator had. Taking the synchronous path whenever there are rows is
+    // also what keeps a return visit behaving exactly as it did before there
+    // was a server to ask.
+    let rows = readStored();
+    let fromStore = false;
+
+    const settle = async () => {
+      if (!rows) {
+        // Nothing here: this is the browser that has to ask. Only a pull that
+        // actually returned something counts as a restore — otherwise the
+        // seeds written by the effect below would be reported as rows this
+        // machine had been holding.
+        const pulled = await ensureHydrated();
+        if (cancelled) return;
+        if (pulled) {
+          rows = readStored();
+          fromStore = rows !== null;
         }
       }
-    } catch {
-      // Private mode, disabled storage or unreadable JSON: the session keeps
-      // working, it just will not survive the next reload.
-    }
+      if (cancelled) return;
 
-    const visible = rows ?? SEED_ROWS;
-    if (rows) setRowData(rows);
+      const restored = rows?.length ?? 0;
+      const visible = rows ?? SEED_ROWS;
+      if (rows) setRowData(rows);
 
-    // The clock is read here rather than in the initialiser because the
-    // initialiser also runs on the server, where it would be a different time
-    // — and React reports any disagreement as a hydration mismatch.
-    setLogs([
-      `[${new Date().toLocaleTimeString()}] ${
-        restored
-          ? `🗂️ Restored ${restored} order${restored === 1 ? "" : "s"} from this browser.`
-          : "🗂️ Order table ready — rows are kept in this browser."
-      }`,
-    ]);
+      // The clock is read here rather than in the initialiser because the
+      // initialiser also runs on the server, where it would be a different time
+      // — and React reports any disagreement as a hydration mismatch.
+      setLogs([
+        `[${new Date().toLocaleTimeString()}] ${
+          restored
+            ? `🗂️ Restored ${restored} order${restored === 1 ? "" : "s"} from ${
+                fromStore ? "the store" : "this browser"
+              }.`
+            : "🗂️ Order table ready — rows are kept in this browser."
+        }`,
+      ]);
 
-    // Settle the prices before the operator is asked to act on them. Runs
-    // once: `recheckOrders` is memoised on a stable callback.
-    void recheckOrders(visible);
+      // Settle the prices before the operator is asked to act on them. Runs
+      // once: `recheckOrders` is memoised on a stable callback.
+      void recheckOrders(visible);
+    };
+
+    void settle();
+
+    return () => {
+      cancelled = true;
+    };
   }, [recheckOrders]);
 
   // Written on every change. Declared after the read above on purpose — on the

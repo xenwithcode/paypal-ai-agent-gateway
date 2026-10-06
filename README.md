@@ -207,7 +207,7 @@ Stated plainly, because a judge deserves to know exactly what they are looking a
 | **Payment execution** | The sandbox chain is wired end to end — `createOrder` (intent `AUTHORIZE`) → `authorizeOrder` → `captureOrder` / `voidPayment` through `@paypal/paypal-server-sdk`. A hold reports `live` only when it actually carries an `authorizationId`; without one it reports `demo` and says no funds moved. The recipient rides the same chain: the payee is written into the order itself, so PayPal directs the funds rather than a later call being able to redirect them. What is still unproven is the payer's own approval in the browser — that click is the one step only the operator can perform. |
 | **Enforcement** | The judgement is real and runs on the server — ceiling, endpoint allow-list, recipient, policy state, expiry window and autonomy mode — and it now stands on the money path itself: in front of `POST /api/paypal/orders` before an order exists, on every `capture`, and on every charge sent to `/api/policy/check`. **What is still modelled:** the envelope travels from the browser (the row lives in browser storage until server-side persistence lands), so the server judges the envelope it is given rather than one it owns; and the *isolation* — real kernel isolation needs an OpenShell sandbox, Phase 2. |
 | **Transfers and QR** | The conversion maths is real against the live BCV rate. No funds move, and the panel labels itself a preview rather than reporting a settlement. |
-| **Recurring / Activity / Agentic Commerce** | All three are built and read real stored records. What is local is the *source*: no `createSubscription` yet, the ledger is this browser's storage rather than Transaction Search, and the manifests are rendered from policy rows rather than exchanged with a counterparty. |
+| **Recurring / Activity / Agentic Commerce** | All three are built and read real stored records. What is local is the *source*: no `createSubscription` yet, the ledger is read from this browser's copy — which the server now keeps a durable one of, so it survives a second browser and not just a refresh — rather than from Transaction Search, and the manifests are rendered from policy rows rather than exchanged with a counterparty. |
 
 > Nothing in this README or the UI claims enforcement or settlement that does not exist.
 
@@ -225,23 +225,27 @@ paypal-ai-agent/
 │   │   ├── overview/               # dashboard: intent bar, AG Grid, approval card, console
 │   │   ├── recurring/  activity/  commerce/  send/   # allowances · ledger · manifests · transfers
 │   │   └── fx/                     # live rates, converter
-│   ├── api/agent/route.ts          # intent → policy, validated
+│   ├── api/agent/route.ts          # intent → policy, metered, validated
 │   ├── api/holds/route.ts          # activate · capture · release · evaluate
-│   ├── api/policy/check/route.ts   # ceiling + allow-list + state, every violation
+│   ├── api/policy/check/route.ts   # ceiling + recipient + window + mode, every violation
 │   ├── api/catalog/route.ts        # demo-catalog lookup proxy
-│   ├── api/paypal/orders/route.ts  # create · authorize
+│   ├── api/paypal/orders/route.ts  # create · authorize, judged against the envelope first
 │   ├── api/fx/route.ts             # cached live FX proxy
+│   ├── api/store/route.ts          # GET · PUT — the durable copy of the two records
 │   ├── layout.tsx  page.tsx  globals.css
 ├── lib/
-│   ├── policy.ts                   # shared STATUS / MODE constants + transition rules
+│   ├── policy.ts                   # STATUS / MODE + transition, charge and hold judgements, ceiling bands
 │   ├── gemini.ts                   # structured-output LLM call
 │   ├── paypal.ts                   # server-only client, balance, order lifecycle
-│   ├── history.ts                  # the two storage keys: ledger and policy rows
+│   ├── history.ts                  # the ledger and the policy rows, read and written
+│   ├── store.ts                    # storage keys, hydration and push to the durable copy
+│   ├── rateLimit.ts                # sliding window in front of the route that spends money
 │   ├── contingency.ts              # refunds + enforcement check
 │   ├── commerce/catalog.ts         # demo-catalog search + condition evaluation
 │   ├── fx/{rates,providers}.ts     # conversion math + live feeds
 │   └── shields/                    # InflationShield, PagoMovilEngine
-├── tests/                          # 79 tests on node:test — transitions, conditions, ceiling bands, window, judgements, ledger
+├── data/                           # runtime only, gitignored — the durable copy on disk
+├── tests/                          # 100 tests on node:test — transitions, conditions, ceiling bands, window, judgements, ledger, store, rate limit
 ├── docs/architecture/              # Archify diagram + spec
 ├── PRODUCT.md  DESIGN.md  TRABAJO-PROXIMA-SESION.md
 ├── env.example  LICENSE
@@ -256,6 +260,7 @@ paypal-ai-agent/
 - **No internal error leakage.** Production returns a generic message; detail goes to the server log only.
 - **A rate is never guessed.** If the BCV feed is unreachable the FX path raises instead of converting at a plausible-but-wrong number.
 - **Rate limiting on `/api/agent`.** A sliding window in memory — 20 requests a minute per caller, checked **before the body is read**. It guards two spends: the model call and the PayPal balance read behind it. It is a loop detector, not a meter: a person drafting orders never gets near it, an effect that never settles goes through it in seconds. Deliberately in-process and dependency-free — a judge who has no service running must still be able to run `npm run dev`, and a setup instruction that fails is worse than a limit that covers one process. Refusals return `429` with `Retry-After`, and the console prints them as `⏳ [LIMIT]` rather than as the agent turning an order down, because nothing was judged.
+- **The durable copy is a file, and it is not protected.** `PUT /api/store` writes two arrays to `data/store.json` — atomically, size-capped, and with a payload that is refused rather than defaulted if it arrives without the ledger of refused charges (a missing array sent as `[]` would erase it). It carries **no authentication**: it is localhost, holding what one browser would otherwise hold alone. Anyone who can reach this server can replace those two arrays, and nothing else. Auth is the same roadmap item as below.
 - **Not yet implemented:** authentication, CSRF hardening. Required before public hosting — tracked in the roadmap.
 
 ---

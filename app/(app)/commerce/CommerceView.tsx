@@ -4,6 +4,7 @@
 import { useEffect, useState } from "react";
 import { ScrollText, Braces } from "lucide-react";
 import { readPolicyRows, type ManifestRow } from "@/lib/history";
+import { ensureHydrated } from "@/lib/store";
 import EmptyState from "../components/EmptyState";
 
 /**
@@ -125,7 +126,16 @@ export default function CommerceView() {
   const [rows, setRows] = useState<ManifestRow[] | null>(null);
 
   useEffect(() => {
-    setRows(readPolicyRows());
+    let cancelled = false;
+    // The store is asked first: a browser that has never seen this app reads
+    // manifests the server has been holding, not an empty list.
+    void ensureHydrated().then(() => {
+      if (cancelled) return;
+      setRows(readPolicyRows());
+    });
+    return () => {
+      cancelled = true;
+    };
   }, []);
 
   // Fixed height so content arriving after mount cannot push the page.
@@ -137,7 +147,7 @@ export default function CommerceView() {
           title="No manifests yet"
           description="Draft an order from the Overview and its manifest appears here for review — the ceiling, the endpoint it may reach, and the condition that releases the money, all read back before anything is authorised."
           action={{ label: "Draft an order", href: "/overview" }}
-          note="Manifests are read from this browser's local storage; they appear as soon as an order exists."
+          note="Manifests are read from this browser's copy, which the server keeps a copy of as well; they appear as soon as an order exists."
         />
       ) : (
         <div className="space-y-4">

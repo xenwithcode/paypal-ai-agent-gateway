@@ -13,6 +13,7 @@ import {
   type Purchase,
   type BlockedAttempt,
 } from "@/lib/history";
+import { ensureHydrated } from "@/lib/store";
 
 type Data = { purchases: Purchase[]; blocked: BlockedAttempt[] };
 
@@ -60,7 +61,16 @@ export default function ActivityView() {
   const [data, setData] = useState<Data | null>(null);
 
   useEffect(() => {
-    setData({ purchases: readPurchases(), blocked: readBlockedAttempts() });
+    let cancelled = false;
+    // Ask the store before deciding the report is empty: on a browser that has
+    // never seen this app, the ledger lives on the server until this resolves.
+    void ensureHydrated().then(() => {
+      if (cancelled) return;
+      setData({ purchases: readPurchases(), blocked: readBlockedAttempts() });
+    });
+    return () => {
+      cancelled = true;
+    };
   }, []);
 
   const generated = new Date().toLocaleString("en-GB", {

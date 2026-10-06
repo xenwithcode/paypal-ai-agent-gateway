@@ -7,9 +7,12 @@
     "strict": true,
     "noEmit": true,
     // The test suite runs under `node --experimental-strip-types`, whose ESM
-    // resolver requires the extension. Application code keeps importing
-    // without one — `moduleResolution: bundler` resolves those — so this only
-    // ever affects `tests/`.
+    // resolver requires the extension. Application code may import without one
+    // — `moduleResolution: bundler` resolves those — with one exception that
+    // cost a green suite to discover: a module *loaded by a test* (even an
+    // application one, e.g. lib/history.ts) goes through that same resolver,
+    // so every relative import in its graph needs the extension too. The rule
+    // is "reachable from tests ⇒ extension", not "tests ⇒ extension".
     "allowImportingTsExtensions": true,
     "esModuleInterop": true,
     "module": "esnext",

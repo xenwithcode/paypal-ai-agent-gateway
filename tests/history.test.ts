@@ -27,7 +27,21 @@ const storage: Storage = {
   getItem: (key) => store.get(key) ?? null,
   setItem: (key, value) => void store.set(key, value),
 };
-(globalThis as unknown as { window: { localStorage: Storage } }).window = { localStorage: storage };
+
+// The window double needs the timers as well: a write now reaches for the
+// durable copy, and a window without `setTimeout` would throw on the very
+// first one. The stub schedules nothing, so no request ever starts — this
+// suite is about what gets written, not about what a server does with it.
+type WindowDouble = {
+  localStorage: Storage;
+  setTimeout(handler: () => void, timeout: number): number;
+  clearTimeout(handle: number): void;
+};
+(globalThis as unknown as { window: WindowDouble }).window = {
+  localStorage: storage,
+  setTimeout: () => 0,
+  clearTimeout: () => undefined,
+};
 
 function writeRows(rows: unknown): void {
   storage.setItem(POLICY_STORAGE_KEY, JSON.stringify(rows));
