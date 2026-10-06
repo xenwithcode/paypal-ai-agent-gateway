@@ -14,6 +14,7 @@ import assert from "node:assert/strict";
 import {
   MODE,
   STATUS,
+  agentCharge,
   judgeCharge,
   judgeHoldRequest,
   readExpiry,
@@ -316,4 +317,45 @@ test("a hold against a Copilot order still has to show the human", () => {
 
   const allowed = judgeHoldRequest(attempt({ initiatedBy: "human" }), drafted({ mode: MODE.copilot }));
   assert.equal(allowed.allowed, true, allowed.reason);
+});
+
+// ─── What the agent sends when it acts ─────────────────────────────────────
+
+test("the charge the agent declares is judged as the agent, never as a person", () => {
+  // The whole autonomy rule hangs on this one field. If `agentCharge` ever
+  // stopped setting it, a Copilot order would become capturable by the very
+  // thing its mode exists to stop — and nothing else in this suite would
+  // notice, because the route that sends the payload is a route, not a unit
+  // this file can import.
+  const envelope = drafted({ status: STATUS.reserved, mode: MODE.copilot });
+  const verdict = judgeCharge(agentCharge(envelope), envelope);
+  assert.equal(verdict.allowed, false);
+  assert.match(verdict.reason, /started by the agent/);
+});
+
+test("the same declaration passes on an Autonomous order", () => {
+  // What makes "Autonomous" a behaviour rather than a label: the agent may
+  // settle a hold the human approved, without asking again.
+  const envelope = drafted({ status: STATUS.reserved, mode: MODE.autonomous });
+  const verdict = judgeCharge(agentCharge(envelope), envelope);
+  assert.equal(verdict.allowed, true, verdict.reason);
+});
+
+test("the agent charges the reservation itself, not an amount of its own", () => {
+  // The capture takes the whole hold, so the charge cannot pass the ceiling by
+  // construction. The figure that can still break it is the catalog price,
+  // which the pass checks separately against a fresh read of the product.
+  const envelope = drafted({ status: STATUS.reserved, limit: 80 });
+  const charge = agentCharge(envelope);
+  assert.equal(charge.amount, 80, "the ceiling, not a number the agent chose");
+  assert.equal(charge.initiatedBy, "agent", "the declaration, stated where it cannot be missed");
+});
+
+test("an expired window stops the agent before it reaches the catalog", () => {
+  // Ordering matters: the envelope is judged first, so a dead order costs no
+  // catalog request — and cannot be settled even if its condition still holds.
+  const envelope = drafted({ status: STATUS.reserved, mode: MODE.autonomous, expires: "2020-01-01" });
+  const verdict = judgeCharge(agentCharge(envelope), envelope);
+  assert.equal(verdict.allowed, false);
+  assert.match(verdict.reason, /passed its valid-until date/);
 });

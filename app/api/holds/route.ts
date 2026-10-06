@@ -18,6 +18,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import {
   STATUS,
+  agentCharge,
   canPerform,
   isHoldAction,
   isMode,
@@ -169,6 +170,141 @@ function readPolicy(value: unknown): PolicyInput | string {
   };
 }
 
+/** What one order did on this pass, in the words the console will print. */
+type RunResult = {
+  id: number;
+  /** Present only when the order's own state actually changed. */
+  status?: string;
+  /** The catalog price as this pass read it, when there was one to read. */
+  marketPrice?: number;
+  log: string;
+};
+
+/** Most orders one pass will look at — a guard against a runaway loop, not a quota. */
+const MAX_RUN_ROWS = 100;
+
+/**
+ * One pass of the agent, with nobody watching.
+ *
+ * This is the action no button performs: it is what "Autonomous" means once
+ * the column stops being a label. The orders still arrive from the browser —
+ * they live there until persistence owns them — but every decision is the
+ * server's, and the pass declares itself for what it is: the charge is marked
+ * `initiatedBy: "agent"`, so the rule written for Copilot stops a Copilot
+ * order here **by name**, and an expired window is refused before the catalog
+ * is even consulted.
+ *
+ * Nothing is settled that was not already approved. A pass can only capture a
+ * hold the human authorized — the same capture path, the same envelope, the
+ * same refusals — and PayPal still gets the final word on whether it takes.
+ *
+ * A row that needs no action is not reported at all. A pass that narrated
+ * every draft it walked past would read as activity when there was none.
+ */
+async function runAutonomousPass(raw: unknown): Promise<NextResponse> {
+  if (!Array.isArray(raw) || raw.length === 0) {
+    return NextResponse.json(
+      { success: false, error: "policies must be a non-empty array of orders." },
+      { status: 400 }
+    );
+  }
+  if (raw.length > MAX_RUN_ROWS) {
+    return NextResponse.json(
+      { success: false, error: `At most ${MAX_RUN_ROWS} orders in one pass.` },
+      { status: 400 }
+    );
+  }
+
+  const results: RunResult[] = [];
+
+  for (const entry of raw) {
+    const policy = readPolicy(entry);
+    if (typeof policy === "string") {
+      results.push({ id: -1, log: `🤖 [AGENT] A row was skipped: ${policy}` });
+      continue;
+    }
+
+    // Only a held order has anything to settle: a draft is still waiting on the
+    // human, and a standing allowance holds nothing to take.
+    if (policy.status !== STATUS.reserved) continue;
+
+    // The agent declares itself rather than claiming a person. Everything the
+    // autonomy rule was written for happens in this one call — Copilot refuses
+    // it by name, the window and the ceiling are judged, and none of it needs
+    // the catalog first.
+    const verdict = judgeCharge(agentCharge(policy), {
+      limit: policy.limit,
+      currency: policy.currency,
+      allowEndpoint: policy.allowEndpoint,
+      payee: policy.payee,
+      what: policy.what,
+      status: policy.status,
+      expires: policy.expires,
+      mode: policy.mode,
+    });
+    if (!verdict.allowed) {
+      results.push({ id: policy.id, log: `🤖 [AGENT] "${policy.what}" — refused: ${verdict.reason}` });
+      continue;
+    }
+
+    // The condition, re-read from the catalog instead of believed from the row
+    // — the same rule the capture path follows, for the same reason.
+    const { product } = await matchProduct(`${policy.what} ${policy.merchant}`.trim());
+    const evaluation = evaluateCondition(policy.condition, product);
+    const marketPrice = product ? Number(product.price.toFixed(2)) : undefined;
+
+    if (evaluation.met !== true) {
+      results.push({
+        id: policy.id,
+        marketPrice,
+        log: `🤖 [AGENT] "${policy.what}" — waiting: ${evaluation.detail}`,
+      });
+      continue;
+    }
+
+    // The ceiling, against the price as it stands now. The judge already
+    // compared the reservation with itself; this is the number that can still
+    // break it.
+    if (product && product.price > policy.limit) {
+      results.push({
+        id: policy.id,
+        marketPrice,
+        log: `🤖 [AGENT] "${policy.what}" — refused: the price is ${product.price.toFixed(2)} ${policy.currency}, above the ${policy.limit.toFixed(2)} ${policy.currency} ceiling.`,
+      });
+      continue;
+    }
+
+    // Money moves here — and only if PayPal is already holding some.
+    let mode: HoldMode = "demo";
+    let after = "";
+    if (policy.authorizationId) {
+      try {
+        const captured = await captureAuthorization(policy.authorizationId);
+        mode = "live";
+        after = `${captured.captureId || policy.authorizationId} (${captured.status})`;
+      } catch (error) {
+        results.push({
+          id: policy.id,
+          marketPrice,
+          log: `🤖 [AGENT] "${policy.what}" — PayPal refused: ${
+            error instanceof Error ? error.message : "the capture was not accepted."
+          }`,
+        });
+        continue;
+      }
+    }
+
+    results.push({
+      id: policy.id,
+      status: STATUS.captured,
+      marketPrice,
+      log: `🤖 [AGENT] Captured ${policy.limit.toFixed(2)} ${policy.currency} for "${policy.what}" with nobody watching. ${evaluation.detail}${holdNote(mode, policy.authorizationId, after)}`,
+    });
+  }
+
+  return NextResponse.json({ success: true, results });
+}
+
 export async function POST(req: NextRequest) {
   try {
     const body = await req.json().catch(() => null);
@@ -180,14 +316,28 @@ export async function POST(req: NextRequest) {
 
     // `evaluate` is the read-only one: re-resolve the catalog entry and report
     // what the condition looks like now, without touching the hold.
-    const action: HoldAction | "evaluate" | null =
-      rawAction === "evaluate" ? "evaluate" : isHoldAction(rawAction) ? rawAction : null;
+    //
+    // `run` is the agent's own pass — the one action no button in this UI
+    // performs — and it carries a list of orders rather than one, so it is read
+    // separately instead of being squeezed into `readPolicy`.
+    const action: HoldAction | "evaluate" | "run" | null =
+      rawAction === "run"
+        ? "run"
+        : rawAction === "evaluate"
+          ? "evaluate"
+          : isHoldAction(rawAction)
+            ? rawAction
+            : null;
 
     if (!action) {
       return NextResponse.json(
-        { success: false, error: "action must be activate, capture, release or evaluate." },
+        { success: false, error: "action must be activate, capture, release, evaluate or run." },
         { status: 400 }
       );
+    }
+
+    if (action === "run") {
+      return runAutonomousPass((body as { policies?: unknown }).policies);
     }
 
     const policy = readPolicy(rawPolicy);

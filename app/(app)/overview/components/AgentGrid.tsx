@@ -79,6 +79,28 @@ function isPolicyRow(value: unknown): value is PolicyRow {
 }
 
 /**
+ * What colour a line in the console is.
+ *
+ * Refusals shout whatever produced them, because a charge that was stopped is
+ * the event worth catching at a glance. The agent then gets a colour of its
+ * own: in a console this busy, following one actor without reading every word
+ * is the difference between watching it work and watching text scroll.
+ */
+function logTone(log: string): string {
+  if (
+    log.includes("🚨") ||
+    log.includes("⚠️") ||
+    log.includes("❌") ||
+    log.includes("— refused")
+  ) {
+    return "text-red-400 font-bold";
+  }
+  if (log.includes("🤖")) return "text-sky-300";
+  if (log.includes("🟢")) return "text-emerald-400";
+  return "text-slate-200";
+}
+
+/**
  * What the table starts with: a standing allowance, a drafted order whose
  * condition fails, and a held order whose condition holds. Between them they
  * show every state the Protection column can offer an action for.
@@ -655,6 +677,94 @@ export default function AgentGrid({
     [addLog]
   );
 
+  /**
+   * One pass of the agent, and the switch that keeps it running.
+   *
+   * "Autonomous" was a word in a column until now: the server knew how to
+   * refuse a Copilot order and nothing ever arrived to be refused. This is the
+   * actor. It only ever sends orders the human approved, the server judges
+   * every one of them again before touching PayPal, and each pass prints what
+   * it did — captured, waiting, or refused and why.
+   *
+   * The rows ride in a ref rather than the effect's dependencies: a ticker
+   * that restarted every time a ceiling was edited would never get to tick.
+   */
+  const [agentRunning, setAgentRunning] = useState(false);
+  const rowsRef = useRef(rowData);
+  useEffect(() => {
+    rowsRef.current = rowData;
+  }, [rowData]);
+
+  const toggleAgent = () => {
+    const next = !agentRunning;
+    setAgentRunning(next);
+    addLog(
+      next
+        ? "🤖 [AGENT] Running — it may only touch orders you approved, and the server judges every pass before any money moves."
+        : "🤖 [AGENT] Stopped. Nothing is being watched."
+    );
+  };
+
+  useEffect(() => {
+    if (!agentRunning) return;
+    let cancelled = false;
+
+    const pass = async () => {
+      const rows = rowsRef.current;
+      // Nothing held means nothing to settle, so the pass does not even ask.
+      // A tick that reports "nothing to do" every few seconds would be noise
+      // wearing the costume of activity.
+      if (!rows.some((row) => row.status === STATUS.reserved)) return;
+
+      try {
+        const res = await fetch("/api/holds", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ action: "run", policies: rows }),
+        });
+        const data = await res.json();
+        if (cancelled) return;
+        if (!data.success) {
+          addLog(`❌ [AGENT] ${data.error ?? "The pass could not run."}`);
+          return;
+        }
+
+        for (const result of data.results ?? []) {
+          addLog(result.log);
+          if (typeof result.id !== "number") continue;
+          const settled = typeof result.status === "string";
+          const price = typeof result.marketPrice === "number";
+          if (!settled && !price) continue;
+          setRowData((prev) =>
+            prev.map((row) =>
+              row.id === result.id
+                ? {
+                    ...row,
+                    ...(settled ? { status: result.status } : {}),
+                    // Dated when it settles, exactly as a click would date it:
+                    // the report prints the day the money moved, not the day
+                    // the order was drafted.
+                    ...(result.status === STATUS.captured ? { capturedAt: new Date().toISOString() } : {}),
+                    ...(price ? { marketPrice: result.marketPrice } : {}),
+                  }
+                : row
+            )
+          );
+        }
+      } catch (error) {
+        if (cancelled) return;
+        addLog(`❌ [AGENT] ${error instanceof Error ? error.message : String(error)}`);
+      }
+    };
+
+    void pass();
+    const timer = window.setInterval(() => void pass(), 8000);
+    return () => {
+      cancelled = true;
+      window.clearInterval(timer);
+    };
+  }, [agentRunning, addLog]);
+
   const triggerFraudSimulation = async () => {
     const target = rowData.find((row) => row.status === STATUS.enforced) ?? rowData[0];
     if (!target) {
@@ -1150,6 +1260,25 @@ export default function AgentGrid({
               the h2's own margins and weight, so this renders identically. */}
           <h2 className="text-xs font-normal">🖥️ Agentic Event Console (UCP &amp; Gateway stream)</h2>
           <div className="flex gap-2">
+            {/* The agent comes first because it is the only control here that
+                does something real — the other two are demonstrations. Its own
+                lines get their own colour so a reader can follow the agent
+                through a busy console without reading every word. */}
+            <button
+              onClick={toggleAgent}
+              title={
+                agentRunning
+                  ? "Stop the agent. Nothing will be watched or settled."
+                  : "Run the agent: it re-checks the orders you approved and settles the ones whose condition now holds."
+              }
+              className={`px-2 py-0.5 rounded text-[10px] font-bold border transition ${
+                agentRunning
+                  ? "bg-blue-950 hover:bg-blue-900 border-blue-500 text-blue-300"
+                  : "bg-slate-900 hover:bg-slate-800 border-slate-600 text-slate-300"
+              }`}
+            >
+              {agentRunning ? "⏸ Stop agent" : "▶ Run agent"}
+            </button>
             {/* VES only, and only when the operator opted into the FX module —
                 the same gate every other Pago Móvil surface uses. */}
             {fxEnabled && (
@@ -1164,7 +1293,7 @@ export default function AgentGrid({
         </div>
         <div className="h-32 overflow-y-auto space-y-1 scrollbar-thin">
           {logs.map((log, index) => (
-            <div key={index} className={`${log.includes("🚨") || log.includes("⚠️") || log.includes("❌") ? "text-red-400 font-bold" : log.includes("🟢") ? "text-emerald-400" : "text-slate-200"}`}>
+            <div key={index} className={logTone(log)}>
               {log}
             </div>
           ))}

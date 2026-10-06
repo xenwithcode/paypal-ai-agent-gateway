@@ -284,6 +284,34 @@ function judgeScope(charge: ChargeAttempt, policy: PolicyEnvelope, today: Date):
 }
 
 /**
+ * The charge the agent declares when it acts on an order.
+ *
+ * A function rather than an object literal in the route, because the
+ * declaration *is* the whole point of the autonomy rule: the pass has to say
+ * who it is, and an inline object is exactly where `initiatedBy` would be
+ * dropped in a refactor — leaving a Copilot order silently capturable by the
+ * very thing its mode exists to stop, with no test to notice. Named here, it
+ * can be pinned, and it is.
+ */
+export function agentCharge(policy: {
+  limit: number;
+  currency: string;
+  allowEndpoint?: string;
+  payee?: string;
+}): ChargeAttempt {
+  return {
+    // The capture takes the whole reservation, so the charge is the ceiling
+    // itself: the figure that can still break it is the catalog price, which
+    // the pass checks separately against a fresh read.
+    amount: policy.limit,
+    currency: policy.currency,
+    endpoint: policy.allowEndpoint ?? "",
+    payee: policy.payee ?? "",
+    initiatedBy: "agent",
+  };
+}
+
+/**
  * Judge an attempted charge against a policy.
  *
  * Every violation is reported rather than the first, because an approver who
