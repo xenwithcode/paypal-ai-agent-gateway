@@ -3,6 +3,9 @@ import { NextRequest, NextResponse } from "next/server";
 import { getBalance } from "@/lib/paypal";
 import { parseUserIntention } from "@/lib/gemini";
 import { STATUS } from "@/lib/policy";
+// The meter in front of this route. It guards two spends, not one: the model
+// call below and the PayPal balance read that precedes it.
+import { agentRateLimit, keyFromHeaders } from "@/lib/rateLimit";
 import { searchCandidates, evaluateCondition, CATALOG_SOURCE } from "@/lib/commerce/catalog";
 // Isolated module that owns the Venezuela inflation-shield logic.
 import { processEmergencyDevaluationShield } from "@/lib/shields/InflationShield";
@@ -31,6 +34,23 @@ const INFLATION_KEYWORDS = [
 ];
 
 export async function POST(req: NextRequest) {
+  // The only route that spends a model call, so the only one that needs a
+  // meter. Checked before the body is even read: refusing cheaply is the
+  // point, and parsing a payload we are about to throw away is work this
+  // endpoint should not be paid for either.
+  const limit = agentRateLimit.check(keyFromHeaders(req.headers));
+  if (!limit.allowed) {
+    return NextResponse.json(
+      {
+        success: false,
+        error: `Too many requests — wait ${limit.retryAfterSeconds} second${
+          limit.retryAfterSeconds === 1 ? "" : "s"
+        } and try again.`,
+      },
+      { status: 429, headers: { "Retry-After": String(limit.retryAfterSeconds) } }
+    );
+  }
+
   try {
     const body = await req.json().catch(() => null);
 

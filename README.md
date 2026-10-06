@@ -255,7 +255,8 @@ paypal-ai-agent/
 - **Input validation.** `/api/agent` rejects malformed JSON, non-string or empty intents, and anything over 500 characters before a model call can happen.
 - **No internal error leakage.** Production returns a generic message; detail goes to the server log only.
 - **A rate is never guessed.** If the BCV feed is unreachable the FX path raises instead of converting at a plausible-but-wrong number.
-- **Not yet implemented:** authentication, rate limiting, CSRF hardening. Required before public hosting — tracked in the roadmap.
+- **Rate limiting on `/api/agent`.** A sliding window in memory — 20 requests a minute per caller, checked **before the body is read**. It guards two spends: the model call and the PayPal balance read behind it. It is a loop detector, not a meter: a person drafting orders never gets near it, an effect that never settles goes through it in seconds. Deliberately in-process and dependency-free — a judge who has no service running must still be able to run `npm run dev`, and a setup instruction that fails is worse than a limit that covers one process. Refusals return `429` with `Retry-After`, and the console prints them as `⏳ [LIMIT]` rather than as the agent turning an order down, because nothing was judged.
+- **Not yet implemented:** authentication, CSRF hardening. Required before public hosting — tracked in the roadmap.
 
 ---
 

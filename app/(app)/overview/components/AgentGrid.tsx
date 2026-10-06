@@ -936,6 +936,11 @@ export default function AgentGrid({
           // so it opens itself rather than waiting to be found in the table.
           setSelectedId(data.gridRow.id);
         }
+      } else if (res.status === 429) {
+        // Distinct from a rejection on purpose: nothing was judged here, so it
+        // must not read as the agent turning the order down. The attempt was
+        // never reached — it arrived too often, not too much.
+        addLog(`⏳ [LIMIT] ${data.error ?? "Too many requests."}`);
       } else {
         addLog(`❌ [API] ${data.error ?? "The agent rejected the request."}`);
       }
