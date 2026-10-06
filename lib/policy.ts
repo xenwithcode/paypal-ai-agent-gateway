@@ -365,6 +365,47 @@ export function judgeHoldRequest(
   };
 }
 
+/**
+ * How much of a ceiling the current price is using.
+ *
+ * The display counterpart of the ceiling rule in `judgeScope`: that one
+ * answers "may this amount pass", this one answers "how full is it" — same
+ * ceiling, different question, one file, so the two cannot drift.
+ *
+ * Three bands, at thresholds that mean something rather than at round numbers:
+ * under 70% there is room, 70-100% is close enough to look at, past the
+ * ceiling it cannot fill at all.
+ *
+ * `band: "none"` is not a fourth band so much as an honest refusal to draw
+ * one: no price, or no ceiling worth dividing by, means there is nothing to
+ * measure. A short bar where the catalog returned nothing would be inventing
+ * a figure the row does not have — the same rule that keeps an unverifiable
+ * condition from reading as satisfied.
+ */
+export type CeilingUsage = {
+  /** Price against the ceiling, capped at 1 for drawing. Null when unmeasurable. */
+  ratio: number | null;
+  /** True when the price passes the ceiling. */
+  over: boolean;
+  band: "none" | "low" | "near" | "over";
+};
+
+export function ceilingUsage(limit: number, price: number | null | undefined): CeilingUsage {
+  const usable = Number.isFinite(limit) && limit > 0;
+  const known = typeof price === "number" && Number.isFinite(price);
+  if (!usable || !known) return { ratio: null, over: false, band: "none" };
+
+  const over = price! > limit;
+  return {
+    // Capped so a price three times the ceiling does not run off the cell:
+    // the words carry "exceeded", not the bar's length.
+    ratio: Math.min(price! / limit, 1),
+    over,
+    band: over ? "over" : price! / limit >= 0.7 ? "near" : "low",
+  };
+}
+
+
 /** Autonomy level granted to the agent for a given policy. */
 export const MODE = {
   /** Agent may execute on its own within the limit. */

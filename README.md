@@ -43,7 +43,8 @@ Approve **once**: *≤ 60 USD, this week, these merchants.* The agent then produ
 | **Conditional holds** | An order with a condition reserves its ceiling (`Reserved`), settles only through **Capture** while the condition holds, and returns the money through **Release**. The server re-judges the condition on every capture instead of trusting the verdict from draft time. |
 | **Charges judged on the server** | `/api/policy/check` compares an attempted charge against the ceiling, the endpoint allow-list, the recipient, the policy's state, its *Valid until* window and its autonomy mode, and reports every violation it finds — not just the first. The same judge stands in front of `POST /api/paypal/orders`, so an order that names the wrong recipient, asks for more than the ceiling, or has run out of days is refused **before PayPal ever sees it**. |
 | **Autonomous vs. Copilot** | Routine spends run `Autonomous`. Large or one-off spends run `Copilot` and require a human — enforced on the server: a charge against a `Copilot` order is refused unless the request shows a human behind it, and silence is not read as consent. |
-| **The window is enforced** | *Valid until* is judged, not printed. An order past its date is refused when charged, when captured and when created; a cell that is not a date is refused too, rather than read as "never expires". |
+| **The window is enforced** | *Valid until* is judged, not printed. An order past its date is refused when charged, when captured and when created; a cell that is not a date is refused too, rather than read as "never expires". The same words appear in the grid, on the approval card and in the refusal — one function reads the date for all three. |
+| **The ceiling, at a glance** | The ceiling cell draws the current price against the limit — room, close, or unable to fill — beside the number, which still says `· exceeded` in words. A row with no catalog price draws no bar rather than a small one: a missing reading is not a low one. |
 | **Over-limit containment** | Attempt one unit over your ceiling, from a host the order does not allow → the server refuses it and reports every violation it found. The alarm carries the reason it gave. |
 | **Live FX rates** | BCV official and intervention rates, plus Solana and the PYUSD peg — fetched from publishers, never hardcoded, each shown with its source and publication date. |
 | **FX shield (VES → PYUSD)** | An incoming VES deposit is converted at the published BCV rate, and the response carries the rate it used. |
@@ -140,7 +141,7 @@ port is taken, in which case it picks the next free one and says so.
 | `npm run build` | Production build — **stop `dev` first** |
 | `npm start` | Serve the production build |
 | `npm run lint` / `lint:fix` | ESLint |
-| `npm test` | Test suite — transition rules, condition evaluation, history readers. Uses Node's built-in runner, so no test dependency. |
+| `npm test` | Test suite — transition rules, condition evaluation, the ceiling bands, the window, the charge and hold judgements, history readers. Uses Node's built-in runner, so no test dependency. |
 
 > ⚠️ `npm run build` and `npm run dev` both write to `.next/`. The build wipes it, so running them together leaves the dev server serving stale artifacts and throwing `MODULE_NOT_FOUND`.
 
@@ -240,7 +241,7 @@ paypal-ai-agent/
 │   ├── commerce/catalog.ts         # demo-catalog search + condition evaluation
 │   ├── fx/{rates,providers}.ts     # conversion math + live feeds
 │   └── shields/                    # InflationShield, PagoMovilEngine
-├── tests/                          # 38 tests on node:test — transitions, conditions, ledger
+├── tests/                          # 79 tests on node:test — transitions, conditions, ceiling bands, window, judgements, ledger
 ├── docs/architecture/              # Archify diagram + spec
 ├── PRODUCT.md  DESIGN.md  TRABAJO-PROXIMA-SESION.md
 ├── env.example  LICENSE
@@ -308,7 +309,7 @@ Tracked in [`TRABAJO-PROXIMA-SESION.md`](./TRABAJO-PROXIMA-SESION.md).
 
 **Sponsors**
 
-- **[AG Grid](https://ag-grid.com)** — the policy control table: editable columns, custom cell renderer for approval, select editor for autonomy mode, Quartz theme through the Theming API.
+- **[AG Grid](https://ag-grid.com)** — the policy control table: editable columns, a ceiling cell that draws the current price against the limit, a *Valid until* cell that says when the window has closed, custom cell renderers for the product and the approval control, select editor for autonomy mode, Quartz theme through the Theming API.
 
 **Supporting**
 

@@ -4,7 +4,7 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import Image from "next/image";
 import { X, ImageOff, SearchX, Bot } from "lucide-react";
-import { STATUS, type HoldAction, type PolicyEnvelope } from "@/lib/policy";
+import { STATUS, readExpiry, type HoldAction, type PolicyEnvelope } from "@/lib/policy";
 import type { CatalogProduct } from "@/lib/commerce/catalog";
 import type { PolicyRow } from "../types";
 import PayPalAuthorizeButton from "./PayPalAuthorizeButton";
@@ -62,6 +62,20 @@ function money(value: number, currency: string) {
 /** The same three words the grid uses, so the two never disagree. */
 function verdictWord(met: boolean | null) {
   return met === true ? "met" : met === false ? "NOT met" : "unverified";
+}
+
+/** The window as the judge reads it, spelled out for the card. */
+function validityOf(raw: string): { text: string; tone: string } {
+  const expiry = readExpiry(raw);
+  if (expiry.kind === "date") {
+    return expiry.expired
+      ? { text: `${expiry.iso} · expired`, tone: "text-red-700 font-semibold" }
+      : { text: expiry.iso, tone: "" };
+  }
+  if (expiry.kind === "unreadable") {
+    return { text: `${expiry.raw} · not a date`, tone: "text-amber-700 font-semibold" };
+  }
+  return { text: "No expiry", tone: "italic text-slate-400" };
 }
 
 function Field({ label, value, tone = "" }: { label: string; value: string; tone?: string }) {
@@ -184,7 +198,11 @@ export default function OrderPanel({
 
   const overCeiling = typeof price === "number" && price > row.limit;
   const conditionText = row.condition.trim();
-  const expiry = row.expires.trim() || "No expiry";
+  // The window, read the way the judge reads it. A date that has passed and a
+  // date that is not a date both say so here, on the card the human approves
+  // from — the grid shows the same words from the same function, so the two
+  // surfaces cannot describe the same cell differently.
+  const validity = validityOf(row.expires);
 
   const isReserved = row.status === STATUS.reserved;
   const metNow = conditionMet === true;
@@ -444,8 +462,8 @@ export default function OrderPanel({
               />
               <Field
                 label="Valid until"
-                value={expiry}
-                tone={row.expires.trim() ? "" : "italic text-slate-400"}
+                value={validity.text}
+                tone={validity.tone}
               />
               <Field label="Mode" value={row.mode} />
             </dl>

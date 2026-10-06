@@ -32,11 +32,14 @@ if (process.env.NODE_ENV !== "production") {
 // Child visual components
 import ActionBtnRenderer from "./ActionBtnRenderer";
 import WhatCellRenderer from "./WhatCellRenderer";
+import CeilingCellRenderer from "./CeilingCellRenderer";
 import OrderPanel from "./OrderPanel";
 import CandidatePicker from "./CandidatePicker";
 
-// Shared status/mode strings (also produced by the API routes on the server).
-import { STATUS, MODE, MODE_OPTIONS, isStatus, type HoldAction } from "@/lib/policy";
+// Shared status/mode strings (also produced by the API routes on the server),
+// and the window reader — the same function the judge uses, so the cell and
+// the refusal agree about what "valid until" means.
+import { STATUS, MODE, MODE_OPTIONS, isStatus, readExpiry, type HoldAction } from "@/lib/policy";
 import type { PolicyRow } from "../types";
 import type { CatalogProduct } from "@/lib/commerce/catalog";
 // Type-only, so it is erased before bundling: this file is client-side and
@@ -777,6 +780,10 @@ export default function AgentGrid({
       // cannot be left to spot on their own — and it is exactly the case the
       // Condition column never flags, because a policy can carry no condition
       // at all and still be impossible to fill.
+      //
+      // The formatter stays even though the renderer draws its own copy: it is
+      // what an export and a clipboard copy read, so the number, the cell and
+      // the CSV describe the same ceiling the same way.
       valueFormatter: (p) => {
         const ceiling = Number(p.value);
         if (!Number.isFinite(ceiling)) return String(p.value ?? "");
@@ -785,16 +792,11 @@ export default function AgentGrid({
         const over = typeof price === "number" && price > ceiling;
         return over ? `${base} · exceeded` : base;
       },
-      // Red is a secondary cue only: the word "exceeded" carries the meaning
-      // for anyone who cannot read it.
-      cellClass: (p) => {
-        const ceiling = Number(p.value);
-        const price = p.data?.marketPrice;
-        const over = Number.isFinite(ceiling) && typeof price === "number" && price > ceiling;
-        return over
-          ? "font-mono text-red-700 font-semibold text-right"
-          : "font-mono text-emerald-600 font-semibold text-right";
-      },
+      // Colour, typography and alignment moved into the renderer: it draws two
+      // lines and a bar, and a `text-right` on the cell would align the bar's
+      // track with them. Red is still a secondary cue — the words `· exceeded`
+      // carry the meaning for anyone who cannot read it.
+      cellRenderer: CeilingCellRenderer,
     },
     {
       field: "marketPrice",
@@ -830,15 +832,38 @@ export default function AgentGrid({
       field: "expires",
       headerName: "Valid until",
       editable: true,
-      flex: 0.8,
+      flex: 0.9,
       // "None" was being printed as though it were a value the operator had
       // entered. An empty cell means the date was never set, so it should
       // read as absent — and look like it.
+      //
+      // The window is judged by the server now, and it is visible too: a date
+      // that has passed and a date that is not a date both say so in words,
+      // because a caption that quietly stopped applying is worse than one that
+      // never existed. `readExpiry` is the very function the judge calls, so
+      // the cell and the refusal cannot disagree about what this cell means.
+      //
+      // Reading the clock here is safe because AG Grid lays its cells out in
+      // the browser — the seed rows are not in the server's HTML, so there is
+      // no second render to disagree with.
       valueFormatter: (p) => {
         const raw = String(p.value ?? "").trim();
-        return raw ? raw : "No expiry";
+        if (!raw) return "No expiry";
+        const window = readExpiry(raw);
+        if (window.kind === "date" && window.expired) return `${raw} · expired`;
+        if (window.kind === "unreadable") return `${raw} · not a date`;
+        return raw;
       },
-      cellClass: (p) => (String(p.value ?? "").trim() ? "" : "italic text-slate-400"),
+      cellClass: (p) => {
+        const raw = String(p.value ?? "").trim();
+        if (!raw) return "italic text-slate-400";
+        const window = readExpiry(raw);
+        // Both carry the meaning in words above; the colour only makes the
+        // closed one findable across a table of black text.
+        if (window.kind === "date" && window.expired) return "text-red-700 font-semibold";
+        if (window.kind === "unreadable") return "text-amber-700 font-semibold";
+        return "";
+      },
     },
     {
       field: "mode",
