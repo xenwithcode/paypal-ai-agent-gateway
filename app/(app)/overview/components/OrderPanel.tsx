@@ -1,10 +1,10 @@
 // app/(app)/overview/components/OrderPanel.tsx
 "use client";
 
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import Image from "next/image";
 import { X, ImageOff, SearchX, Bot } from "lucide-react";
-import { STATUS, type HoldAction } from "@/lib/policy";
+import { STATUS, type HoldAction, type PolicyEnvelope } from "@/lib/policy";
 import type { CatalogProduct } from "@/lib/commerce/catalog";
 import type { PolicyRow } from "../types";
 import PayPalAuthorizeButton from "./PayPalAuthorizeButton";
@@ -93,6 +93,29 @@ export default function OrderPanel({
    * silent demo hold.
    */
   const [paypalNote, setPaypalNote] = useState<string | null>(null);
+
+  /**
+   * The envelope the server judges this order against.
+   *
+   * Built here rather than as a literal because PayPalAuthorizeButton keeps
+   * it in its effect dependencies: a fresh object every render would tear the
+   * PayPal button down and rebuild it whenever anything on the card changed.
+   * Every field is the row's own — this card does not get to widen what the
+   * grid says was approved.
+   */
+  const envelope = useMemo<PolicyEnvelope>(
+    () => ({
+      what: row.what,
+      limit: row.limit,
+      currency: row.currency,
+      allowEndpoint: row.allowEndpoint,
+      payee: row.payee ?? "",
+      status: row.status,
+      expires: row.expires,
+      mode: row.mode,
+    }),
+    [row]
+  );
 
   const evaluate = useCallback(async () => {
     setEvaluating(true);
@@ -545,6 +568,12 @@ export default function OrderPanel({
                         currency={row.currency}
                         description={row.what}
                         customId={`order-${row.id}`}
+                        // The recipient the order names, carried into the
+                        // order itself: the server compares this against the
+                        // envelope's payee, so an order that may only pay one
+                        // account cannot be opened aimed at another.
+                        payeeEmail={row.payee ?? ""}
+                        policy={envelope}
                         disabled={busy}
                         onAuthorized={(info) => onPaypalAuthorized(row, info)}
                         onUnavailable={(reason) => setPaypalNote(reason)}

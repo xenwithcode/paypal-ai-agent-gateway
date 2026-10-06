@@ -15,7 +15,7 @@
 // written twice — once for the route and once for anything else that asks.
 
 import { NextRequest, NextResponse } from "next/server";
-import { isStatus, judgeCharge } from "@/lib/policy";
+import { isMode, isStatus, judgeCharge } from "@/lib/policy";
 
 /** Mirrors the maxLength on the grid's editable cells. */
 const MAX_TEXT = 200;
@@ -24,6 +24,28 @@ function isCurrency(value: unknown): value is string {
   return value === "USD" || value === "PYUSD";
 }
 
+/** The attempt as it goes to the judge. */
+type JudgedCharge = {
+  amount: number;
+  currency: string;
+  endpoint: string;
+  payee: string;
+  /** Absent when the attempt does not say who started it. */
+  initiatedBy?: "human" | "agent";
+};
+
+/** The envelope as it goes to the judge. Strings are empty, never missing. */
+type JudgedEnvelope = {
+  limit: number;
+  currency: string;
+  allowEndpoint: string;
+  what: string;
+  status: string;
+  payee: string;
+  expires: string;
+  mode: string;
+};
+
 /**
  * Validate the attempt. Returns a plain error string on failure so nothing the
  * client sent is ever echoed back into an error message.
@@ -31,7 +53,7 @@ function isCurrency(value: unknown): value is string {
 function readAttempt(
   charge: unknown,
   policy: unknown
-): { error: string } | { charge: { amount: number; currency: string; endpoint: string; payee: string }; policy: { limit: number; currency: string; allowEndpoint: string; what: string; status: string; payee: string } } {
+): { error: string } | { charge: JudgedCharge; policy: JudgedEnvelope } {
   if (!charge || typeof charge !== "object" || Array.isArray(charge)) {
     return { error: "charge must be an object." };
   }
@@ -64,6 +86,20 @@ function readAttempt(
     return { error: `charge.payee must be a string under ${MAX_TEXT} characters.` };
   }
 
+  // Who started it, when the attempt says. A value that is neither word would
+  // otherwise read as "no human showed up" — a refusal the caller never asked
+  // for, about a field it thought it had answered.
+  const rawInitiatedBy = c.initiatedBy;
+  if (
+    rawInitiatedBy !== undefined &&
+    rawInitiatedBy !== null &&
+    rawInitiatedBy !== "human" &&
+    rawInitiatedBy !== "agent"
+  ) {
+    return { error: "charge.initiatedBy must be human or agent." };
+  }
+  const initiatedBy = rawInitiatedBy === "human" || rawInitiatedBy === "agent" ? rawInitiatedBy : undefined;
+
   if (typeof p.limit !== "number" || !Number.isFinite(p.limit) || p.limit <= 0) {
     return { error: "policy.limit must be a positive number." };
   }
@@ -83,8 +119,34 @@ function readAttempt(
   }
   if (!isStatus(p.status)) return { error: "policy.status is not a known status." };
 
+  // The window and the autonomy, both judged rather than rendered. A mode
+  // that is not one of the two words would read as "not Copilot" and switch
+  // the autonomy rule off by sending the wrong value, so it is refused here
+  // where the message can name the field.
+  if (p.expires !== undefined && p.expires !== null && typeof p.expires !== "string") {
+    return { error: "policy.expires must be a string." };
+  }
+  const expires = typeof p.expires === "string" ? p.expires : "";
+  if (expires.length > MAX_TEXT) {
+    return { error: `policy.expires must be a string under ${MAX_TEXT} characters.` };
+  }
+
+  if (p.mode !== undefined && p.mode !== null && typeof p.mode !== "string") {
+    return { error: "policy.mode must be a string." };
+  }
+  const mode = typeof p.mode === "string" ? p.mode : "";
+  if (mode && !isMode(mode)) {
+    return { error: "policy.mode must be Autonomous or Copilot." };
+  }
+
   return {
-    charge: { amount: c.amount, currency: c.currency, endpoint: c.endpoint, payee: chargePayee },
+    charge: {
+      amount: c.amount,
+      currency: c.currency,
+      endpoint: c.endpoint,
+      payee: chargePayee,
+      initiatedBy,
+    },
     policy: {
       limit: p.limit,
       currency: p.currency,
@@ -92,6 +154,8 @@ function readAttempt(
       what: p.what,
       status: p.status,
       payee: policyPayee,
+      expires,
+      mode,
     },
   };
 }

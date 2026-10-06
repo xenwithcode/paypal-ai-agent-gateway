@@ -2,6 +2,7 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
+import type { PolicyEnvelope } from "@/lib/policy";
 
 /**
  * The approval step, done in PayPal's own UI.
@@ -58,6 +59,18 @@ type Props = {
    * and by the time PayPal sees it, it is already part of the order.
    */
   payeeEmail?: string;
+  /**
+   * The envelope this order is opened against: ceiling, destinations, window
+   * and autonomy, as the operator approved them.
+   *
+   * The server judges it before anything is created, so this is not decoration
+   * — an order that arrives without one is refused. It is a prop rather than
+   * something assembled from the others because it carries fields this button
+   * has no reason to know about, and it is in the effect's dependencies
+   * because a button holding a stale envelope would open an order against
+   * rules that have since changed.
+   */
+  policy: PolicyEnvelope;
   /** Runs after PayPal approved and we hold the authorization. */
   onAuthorized: (result: AuthorizeResult) => void | Promise<void>;
   /** The flow could not run — the caller switches back to its own button. */
@@ -104,6 +117,7 @@ export default function PayPalAuthorizeButton({
   description,
   customId,
   payeeEmail,
+  policy,
   onAuthorized,
   onUnavailable,
   disabled = false,
@@ -153,7 +167,16 @@ export default function PayPalAuthorizeButton({
           const res = await fetch("/api/paypal/orders", {
             method: "POST",
             headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({ action: "create", amount, currency, description, customId, payeeEmail }),
+            body: JSON.stringify({
+              action: "create",
+              amount,
+              currency,
+              description,
+              customId,
+              payeeEmail,
+              // The envelope the server judges before the order exists.
+              policy,
+            }),
           });
           const data = (await res.json()) as { success?: boolean; orderId?: string; error?: string };
           if (!data.success || !data.orderId) {
@@ -227,7 +250,12 @@ export default function PayPalAuthorizeButton({
     // Rebuilt when the order it will create changes, not on every render —
     // which is why the payee belongs here too: it is part of that order, and
     // a button holding a stale recipient would create one pointed elsewhere.
-  }, [clientId, amount, currency, description, customId, payeeEmail]);
+    // The envelope is here for the same reason one line further along: a
+    // button holding yesterday's rules would open an order against them. This
+    // is why both callers build it with useMemo — a fresh object every render
+    // would tear this button down and rebuild it without anything having
+    // changed.
+  }, [clientId, amount, currency, description, customId, payeeEmail, policy]);
 
   if (state === "failed") return null;
 

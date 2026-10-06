@@ -13,11 +13,15 @@
 // whether a condition holds.
 
 import { NextRequest, NextResponse } from "next/server";
+import { isMode, isStatus, judgeHoldRequest, type PolicyEnvelope } from "@/lib/policy";
 import {
   authorizeApprovedOrder,
   canTalkToPaypal,
   createAuthorizeOrder,
 } from "@/lib/paypal";
+
+/** Mirrors the maxLength on the grid's editable cells. */
+const MAX_TEXT = 200;
 
 /** PayPal order ids are a short alphanumeric run; anything else is not one. */
 const ORDER_ID = /^[A-Z0-9]{10,40}$/i;
@@ -54,6 +58,68 @@ function normaliseAmount(value: unknown): string | null {
   const amount = Number(text);
   if (!Number.isFinite(amount) || amount <= 0) return null;
   return amount.toFixed(2);
+}
+
+/**
+ * Read the envelope the caller says this order was approved inside.
+ *
+ * Returned as a plain error string so a refusal names the field rather than
+ * echoing the payload back.
+ *
+ * The envelope still travels from the browser — the row lives in the browser
+ * until persistence lands, which the session notes track separately — so what
+ * this buys is not tamper-proofing. It is that the server judges the envelope
+ * it is given instead of trusting the two numbers sitting in front of it:
+ * without it, `amount` and `payeeEmail` were simply believed.
+ */
+function readEnvelope(value: unknown): { error: string } | PolicyEnvelope {
+  if (!value || typeof value !== "object" || Array.isArray(value)) {
+    return { error: "policy is required: an order is opened against an envelope." };
+  }
+  const p = value as Record<string, unknown>;
+
+  if (typeof p.limit !== "number" || !Number.isFinite(p.limit) || p.limit <= 0) {
+    return { error: "policy.limit must be a positive number." };
+  }
+  if (p.currency !== "USD" && p.currency !== "PYUSD") {
+    return { error: "policy.currency must be USD or PYUSD." };
+  }
+  if (typeof p.what !== "string" || !p.what.trim() || p.what.length > MAX_TEXT) {
+    return { error: `policy.what must be a non-empty string under ${MAX_TEXT} characters.` };
+  }
+  if (!isStatus(p.status)) return { error: "policy.status is not a known status." };
+
+  // The three optional strings. Each is refused on the wrong type rather than
+  // dropped — dropping the window or the recipient would switch a rule off by
+  // sending the wrong value.
+  for (const field of ["allowEndpoint", "payee", "expires"] as const) {
+    const raw = p[field];
+    if (raw !== undefined && raw !== null && typeof raw !== "string") {
+      return { error: `policy.${field} must be a string.` };
+    }
+    if (typeof raw === "string" && raw.length > MAX_TEXT) {
+      return { error: `policy.${field} must be a string under ${MAX_TEXT} characters.` };
+    }
+  }
+
+  const mode = p.mode;
+  if (mode !== undefined && mode !== null && typeof mode !== "string") {
+    return { error: "policy.mode must be a string." };
+  }
+  if (typeof mode === "string" && mode !== "" && !isMode(mode)) {
+    return { error: "policy.mode must be Autonomous or Copilot." };
+  }
+
+  return {
+    limit: p.limit,
+    currency: p.currency,
+    allowEndpoint: typeof p.allowEndpoint === "string" ? p.allowEndpoint : "",
+    payee: typeof p.payee === "string" ? p.payee : "",
+    what: p.what,
+    status: p.status,
+    expires: typeof p.expires === "string" ? p.expires : "",
+    mode: typeof mode === "string" ? mode : "",
+  };
 }
 
 export async function POST(req: NextRequest) {
@@ -102,6 +168,45 @@ export async function POST(req: NextRequest) {
       const payee = readPayee(payeeEmail);
       if ("error" in payee) {
         return NextResponse.json({ success: false, error: payee.error }, { status: 400 });
+      }
+
+      // The envelope, and the server's judgement of it — before the order
+      // exists, because a reservation PayPal has already been asked for is
+      // the wrong moment to find out it was outside the rules.
+      //
+      // Two rules do the work here that nothing else in this route could: the
+      // ceiling (`amount` against what the operator approved) and the
+      // recipient (`payeeEmail` against who the order may pay). Both were
+      // previously taken on trust from the browser.
+      //
+      // `initiatedBy: "human"` is not a claim the browser gets to make for
+      // itself — this route is reached from the approval card and the
+      // transfer panel, both of which are buttons a person presses. The path
+      // the agent walks is /api/policy/check, where it has to declare itself.
+      const envelope = readEnvelope((body as Record<string, unknown>).policy);
+      if ("error" in envelope) {
+        return NextResponse.json({ success: false, error: envelope.error }, { status: 400 });
+      }
+
+      const verdict = judgeHoldRequest(
+        {
+          amount: Number(money),
+          currency: currency as string,
+          // An order names a recipient, not a host. The endpoint rule belongs
+          // to the charge path, where a host is actually being reached; here
+          // it would only ever compare a field with itself.
+          endpoint: "",
+          payee: payee.payeeEmail,
+          initiatedBy: "human",
+        },
+        envelope
+      );
+
+      if (!verdict.allowed) {
+        return NextResponse.json(
+          { success: false, error: verdict.reason, violations: verdict.violations },
+          { status: 409 }
+        );
       }
 
       try {

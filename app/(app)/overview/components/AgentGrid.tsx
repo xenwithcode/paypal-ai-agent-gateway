@@ -351,6 +351,14 @@ export default function AgentGrid({
               limit: row.limit,
               currency: row.currency,
               status: row.status,
+              // The rest of the envelope. The judge reads all of it at
+              // capture — a window that has closed is refused whether or not
+              // the condition still holds — so the row has to send what it
+              // carries rather than only the fields the transition needs.
+              expires: row.expires,
+              mode: row.mode,
+              allowEndpoint: row.allowEndpoint,
+              payee: row.payee ?? "",
               // Present only when PayPal issued one. The server settles
               // against it or says plainly that no funds moved.
               authorizationId: row.authorizationId ?? "",
@@ -634,7 +642,17 @@ export default function AgentGrid({
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          charge: { amount: attempted, currency: target.currency, endpoint, payee: chargePayee },
+          // Declared, not left blank: this attempt is the agent acting on its
+          // own, which is exactly what a Copilot order was approved to refuse.
+          // Leaving it out would have blocked Copilot rows for a vaguer
+          // reason and let Autonomous ones through for no stated one.
+          charge: {
+            amount: attempted,
+            currency: target.currency,
+            endpoint,
+            payee: chargePayee,
+            initiatedBy: "agent",
+          },
           policy: {
             limit: target.limit,
             currency: target.currency,
@@ -642,6 +660,11 @@ export default function AgentGrid({
             what: target.what,
             status: target.status,
             payee,
+            // Judged too: an order past its window is refused whatever the
+            // amount, and a mode this row is not entitled to ignore is read
+            // rather than rendered.
+            expires: target.expires,
+            mode: target.mode,
           },
         }),
       });

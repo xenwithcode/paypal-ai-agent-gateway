@@ -20,7 +20,9 @@ import {
   STATUS,
   canPerform,
   isHoldAction,
+  isMode,
   isStatus,
+  judgeCharge,
   statusAfterActivate,
   type HoldAction,
 } from "@/lib/policy";
@@ -64,6 +66,21 @@ interface PolicyInput {
   limit: number;
   currency: string;
   status: string;
+  /**
+   * Last day this order may be used, as the grid cell wrote it. Read because
+   * the judge reads it: a window nobody reads is only a caption.
+   */
+  expires: string;
+  /** The autonomy the approver granted, for the same reason. */
+  mode: string;
+  /**
+   * The destinations the order named, so the judge sees the whole envelope
+   * rather than a trimmed copy of it. A capture names no destination of its
+   * own — the funds land where the order already said — but the judge is
+   * handed what the row actually carries, not a version of it.
+   */
+  allowEndpoint: string;
+  payee: string;
   /** PayPal's authorization id, present only when the payer approved a hold. */
   authorizationId: string;
 }
@@ -106,6 +123,25 @@ function readPolicy(value: unknown): PolicyInput | string {
   }
   if (!isStatus(p.status)) return "policy.status is not a known status.";
 
+  // The window, the autonomy and the destinations. All four are optional on
+  // the wire because rows stored before they existed carry none, but a value
+  // of the wrong type is refused rather than dropped — dropping the window
+  // would turn a closed one into no window at all.
+  for (const field of ["expires", "mode", "allowEndpoint", "payee"] as const) {
+    const raw = p[field];
+    if (raw !== undefined && raw !== null && typeof raw !== "string") {
+      return `policy.${field} must be a string.`;
+    }
+    if (typeof raw === "string" && raw.length > MAX_TEXT) {
+      return `policy.${field} must be a string under ${MAX_TEXT} characters.`;
+    }
+  }
+  const expires = typeof p.expires === "string" ? p.expires : "";
+  const mode = typeof p.mode === "string" ? p.mode : "";
+  const allowEndpoint = typeof p.allowEndpoint === "string" ? p.allowEndpoint : "";
+  const payee = typeof p.payee === "string" ? p.payee : "";
+  if (mode && !isMode(mode)) return "policy.mode must be Autonomous or Copilot.";
+
   // Optional: present only when PayPal issued one. Anything that is not an id
   // is refused rather than passed through to a PayPal call.
   const authorizationId = p.authorizationId;
@@ -125,6 +161,10 @@ function readPolicy(value: unknown): PolicyInput | string {
     limit: p.limit,
     currency: p.currency,
     status: p.status,
+    expires,
+    mode,
+    allowEndpoint,
+    payee,
     authorizationId: typeof authorizationId === "string" ? authorizationId : "",
   };
 }
@@ -243,16 +283,55 @@ export async function POST(req: NextRequest) {
     // A capture may only happen if the condition holds right now — and this is
     // where the server judges, re-resolving the catalog instead of trusting the
     // verdict the row happened to be carrying.
-    if (!policy.condition.trim()) {
+    // The envelope first, and without touching the catalog: whether this order
+    // may still be used at all is answerable locally, and a window that has
+    // closed is the clearest refusal there is.
+    //
+    // The amount is the reservation itself, so the ceiling rule compares the
+    // hold with its own limit and cannot fail here; the figure that can still
+    // break the ceiling is the catalog price, read below against a fresh look
+    // at the product. The same rule, two different numbers.
+    //
+    // The destinations are passed as the row carries them. A capture names no
+    // destination of its own — the funds land where the order already named,
+    // which was judged when it was created — but the judge is handed the real
+    // envelope rather than a trimmed copy of it.
+    const envelope = judgeCharge(
+      {
+        amount: policy.limit,
+        currency: policy.currency,
+        endpoint: policy.allowEndpoint,
+        payee: policy.payee,
+        // Capture is a button in the Protection column, pressed by whoever is
+        // looking at the table. The agent has no path to this action, so the
+        // autonomy rule is met by how the route is reached rather than by
+        // anything the request claims about itself.
+        initiatedBy: "human",
+      },
+      {
+        limit: policy.limit,
+        currency: policy.currency,
+        allowEndpoint: policy.allowEndpoint,
+        payee: policy.payee,
+        what: policy.what,
+        status: policy.status,
+        expires: policy.expires,
+        mode: policy.mode,
+      }
+    );
+    if (!envelope.allowed) {
       return NextResponse.json(
-        {
-          success: false,
-          error: "This policy holds no condition, so there is nothing to settle.",
-        },
+        { success: false, error: envelope.reason, violations: envelope.violations },
         { status: 409 }
       );
     }
 
+    // Then the condition — and only what having one buys. An order without a
+    // condition was approved to settle on demand, and `evaluateCondition`
+    // reports exactly that with the reason printed beside the verdict, so a
+    // transfer that reserved against PayPal's authorization can now capture.
+    // The early refusal this replaces is what used to leave those holds
+    // reserved forever, under a Capture button that could never succeed.
     const { product, matchedBy } = await matchProduct(
       `${policy.what} ${policy.merchant}`.trim()
     );

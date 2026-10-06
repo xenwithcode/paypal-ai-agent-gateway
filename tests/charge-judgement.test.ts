@@ -11,7 +11,15 @@
 // would" — exists to stop.
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { STATUS, judgeCharge, type ChargeAttempt, type PolicyEnvelope } from "../lib/policy.ts";
+import {
+  MODE,
+  STATUS,
+  judgeCharge,
+  judgeHoldRequest,
+  readExpiry,
+  type ChargeAttempt,
+  type PolicyEnvelope,
+} from "../lib/policy.ts";
 
 /** A transfer envelope: a ceiling, a recipient, nothing else restricted. */
 function transfer(over: Partial<PolicyEnvelope> = {}): PolicyEnvelope {
@@ -136,4 +144,176 @@ test("every violation is reported, not only the first", () => {
   assert.match(verdict.reason, /exceeds the 25\.00 USD ceiling/);
   assert.match(verdict.reason, /Endpoint api\.evil\.com is not allowed/);
   assert.match(verdict.reason, /Recipient mallory@example\.com is not allowed/);
+});
+
+// ─── The window ────────────────────────────────────────────────────────────
+
+/** A day that has certainly passed, and one that certainly has not. */
+const PASSED = "2020-01-01";
+const AHEAD = "2099-12-31";
+
+test("an order past its valid-until date may not be charged", () => {
+  // The column has always printed a date; this is the first time anything
+  // has read it back. It is also the shape a natural-language deadline used
+  // to produce — a row born already expired.
+  const verdict = judgeCharge(attempt(), transfer({ expires: PASSED }));
+  assert.equal(verdict.allowed, false);
+  assert.equal(
+    verdict.violations[0],
+    "This order passed its valid-until date of 2020-01-01, so nothing may be spent against it."
+  );
+});
+
+test("an order with days left on its window may still be charged", () => {
+  const verdict = judgeCharge(attempt(), transfer({ expires: AHEAD }));
+  assert.equal(verdict.allowed, true, verdict.reason);
+});
+
+test("an empty window means the approver let it run, not that a date went missing", () => {
+  const verdict = judgeCharge(attempt(), transfer({ expires: "" }));
+  assert.equal(verdict.allowed, true, verdict.reason);
+});
+
+test("a valid-until cell that is not a date is refused rather than read as no expiry", () => {
+  // "I cannot tell when this ends" must never be read as "this never ends" —
+  // the same rule the condition evaluator follows when it cannot answer.
+  const verdict = judgeCharge(attempt(), transfer({ expires: "next friday" }));
+  assert.equal(verdict.allowed, false);
+  assert.equal(verdict.violations.length, 1, verdict.reason);
+  assert.match(verdict.reason, /is not a date, so the window cannot be judged/);
+  assert.match(verdict.reason, /YYYY-MM-DD/);
+});
+
+test("the window closes the day after the date it names, not on it", () => {
+  // A bare cell carries no timezone, so "valid until the 31st" has to still
+  // be valid on the 31st — otherwise every order expires hours early for
+  // anyone east of UTC.
+  assert.deepEqual(readExpiry("2026-10-31", new Date(2026, 9, 31)), {
+    kind: "date",
+    iso: "2026-10-31",
+    expired: false,
+  });
+  assert.deepEqual(readExpiry("2026-10-31", new Date(2026, 10, 1)), {
+    kind: "date",
+    iso: "2026-10-31",
+    expired: true,
+  });
+  assert.deepEqual(readExpiry("2026-10-31", new Date(2026, 9, 30)), {
+    kind: "date",
+    iso: "2026-10-31",
+    expired: false,
+  });
+});
+
+test("an unreadable window is unreadable, and an empty one is a decision", () => {
+  assert.deepEqual(readExpiry("next friday"), { kind: "unreadable", raw: "next friday" });
+  assert.deepEqual(readExpiry("  "), { kind: "none" });
+  assert.deepEqual(readExpiry(undefined), { kind: "none" });
+});
+
+// ─── The autonomy mode ─────────────────────────────────────────────────────
+
+test("a Copilot order refuses a charge the agent started on its own", () => {
+  const verdict = judgeCharge(attempt({ initiatedBy: "agent" }), transfer({ mode: MODE.copilot }));
+  assert.equal(verdict.allowed, false);
+  assert.equal(
+    verdict.violations[0],
+    "This order runs in Copilot mode, so a human has to approve each charge — this one was started by the agent."
+  );
+});
+
+test("a Copilot order refuses an attempt that does not show a human", () => {
+  // Silence is not consent here either: a mode that exists to require a
+  // human cannot read "does not say" as "there was one".
+  const verdict = judgeCharge(attempt(), transfer({ mode: MODE.copilot }));
+  assert.equal(verdict.allowed, false);
+  assert.equal(
+    verdict.violations[0],
+    "This order runs in Copilot mode, so a human has to approve each charge — and this attempt does not say that one did."
+  );
+});
+
+test("a Copilot order takes a charge a human put in motion", () => {
+  const verdict = judgeCharge(attempt({ initiatedBy: "human" }), transfer({ mode: MODE.copilot }));
+  assert.equal(verdict.allowed, true, verdict.reason);
+});
+
+test("an Autonomous order takes the agent acting alone — that is what was granted", () => {
+  const verdict = judgeCharge(attempt({ initiatedBy: "agent" }), transfer({ mode: MODE.autonomous }));
+  assert.equal(verdict.allowed, true, verdict.reason);
+});
+
+test("an envelope written before the mode column existed restricts nothing", () => {
+  const legacy: PolicyEnvelope = transfer();
+  assert.equal(legacy.mode, undefined);
+  const verdict = judgeCharge(attempt({ initiatedBy: "agent" }), legacy);
+  assert.equal(verdict.allowed, true, verdict.reason);
+});
+
+test("a window and a mode are reported alongside the amount, not instead of it", () => {
+  const verdict = judgeCharge(
+    attempt({ amount: 901, initiatedBy: "agent" }),
+    transfer({ expires: PASSED, mode: MODE.copilot })
+  );
+  assert.equal(verdict.allowed, false);
+  assert.equal(verdict.violations.length, 3, verdict.reason);
+  assert.match(verdict.reason, /exceeds the 25\.00 USD ceiling/);
+  assert.match(verdict.reason, /passed its valid-until date of 2020-01-01/);
+  assert.match(verdict.reason, /started by the agent/);
+});
+
+// ─── Opening a hold ────────────────────────────────────────────────────────
+
+/** The envelope as an approval card sees it: drafted, not yet approved. */
+function drafted(over: Partial<PolicyEnvelope> = {}): PolicyEnvelope {
+  return { ...transfer({ status: STATUS.pending }), ...over };
+}
+
+test("a drafted order inside its envelope may be opened as a hold", () => {
+  const verdict = judgeHoldRequest(attempt({ initiatedBy: "human" }), drafted());
+  assert.equal(verdict.allowed, true, verdict.reason);
+  assert.equal(verdict.reason, 'Order of 25.00 USD is within "Transfer to ana@example.com".');
+});
+
+test("a hold may only be opened against an order awaiting approval", () => {
+  // The mirror of the arming rule: charges need the order armed, holds need
+  // it not yet armed — because opening the hold is what arms it.
+  const verdict = judgeHoldRequest(attempt(), drafted({ status: STATUS.enforced }));
+  assert.equal(verdict.allowed, false);
+  assert.equal(
+    verdict.violations[0],
+    "A hold can only be opened against an order awaiting approval — this one is Active."
+  );
+});
+
+test("an order whose window already closed may not be opened as a hold", () => {
+  // The case that used to pass silently: the date was rendered, never read,
+  // so a hold could be opened against an order with no time left on it.
+  const verdict = judgeHoldRequest(attempt({ initiatedBy: "human" }), drafted({ expires: PASSED }));
+  assert.equal(verdict.allowed, false);
+  assert.match(verdict.reason, /passed its valid-until date of 2020-01-01/);
+});
+
+test("the ceiling applies to the hold as much as to the charge", () => {
+  const verdict = judgeHoldRequest(attempt({ amount: 26 }), drafted({ limit: 25 }));
+  assert.equal(verdict.allowed, false);
+  assert.match(verdict.reason, /exceeds the 25\.00 USD ceiling/);
+});
+
+test("the recipient applies before anything is reserved for it", () => {
+  const verdict = judgeHoldRequest(
+    attempt({ initiatedBy: "human", payee: "mallory@example.com" }),
+    drafted()
+  );
+  assert.equal(verdict.allowed, false);
+  assert.match(verdict.reason, /Recipient mallory@example\.com is not allowed/);
+});
+
+test("a hold against a Copilot order still has to show the human", () => {
+  const refused = judgeHoldRequest(attempt({ initiatedBy: "agent" }), drafted({ mode: MODE.copilot }));
+  assert.equal(refused.allowed, false);
+  assert.match(refused.reason, /started by the agent/);
+
+  const allowed = judgeHoldRequest(attempt({ initiatedBy: "human" }), drafted({ mode: MODE.copilot }));
+  assert.equal(allowed.allowed, true, allowed.reason);
 });

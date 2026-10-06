@@ -3,7 +3,7 @@
 
 import { useState } from "react";
 import { ArrowLeft, CheckCircle2, Send, Wallet } from "lucide-react";
-import { MODE, STATUS } from "@/lib/policy";
+import { MODE, STATUS, type PolicyEnvelope } from "@/lib/policy";
 import { appendPolicyRow, updatePolicyRow } from "@/lib/history";
 // Type-only: erased before the bundle is built, so nothing from the
 // server-only module — least of all a credential — reaches this file.
@@ -26,7 +26,16 @@ const NOTE_STYLE: Record<Note["kind"], string> = {
 const EMAIL = /^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/;
 const MONEY = /^\d{1,9}(\.\d{1,2})?$/;
 
-type Draft = { id: number; payee: string; limit: number; what: string };
+/**
+ * The order being drafted, carrying the envelope it was drafted with.
+ *
+ * The envelope lives here rather than being rebuilt when PayPal is shown, so
+ * the row written to storage, the card on screen and the object the server
+ * judges are one thing instead of three that can drift apart. A recipient
+ * edited after the draft would otherwise reach PayPal as a different order
+ * from the one the operator read.
+ */
+type Draft = { id: number; envelope: PolicyEnvelope };
 
 type Props = {
   currency: "USD" | "PYUSD";
@@ -83,28 +92,38 @@ export default function TransferPanel({ currency, balance, paypalClientId }: Pro
     const what = note.trim() || `Transfer to ${email}`;
     const id = Date.now();
 
-    appendPolicyRow({
-      id,
+    // Written once, here. The row in storage, the envelope on the card and
+    // the object the server judges when PayPal is asked are all this object —
+    // one agreement rendered in three places, instead of three that could
+    // disagree about who may be paid.
+    const envelope: PolicyEnvelope = {
       what,
-      merchant: "",
       limit,
       currency,
-      // No condition: a transfer is either made or it is not. Saying so is
-      // what keeps this row from being rendered as a purchase that is still
-      // waiting on a price nobody set.
-      condition: "",
+      // No host: a transfer names an account, not an endpoint.
+      allowEndpoint: "",
+      payee: email,
+      // No condition either: a transfer is either made or it is not, and
+      // saying so is what keeps the row from reading as a purchase still
+      // waiting on a price nobody set. It is also what lets the capture
+      // settle on demand rather than wait for a condition that was never set.
+      status: STATUS.pending,
       expires: "",
       mode: MODE.autonomous,
-      status: STATUS.pending,
-      payee: email,
-      allowEndpoint: "",
+    };
+
+    appendPolicyRow({
+      id,
+      ...envelope,
+      merchant: "",
+      condition: "",
       marketPrice: null,
       marketImage: null,
       conditionMet: true,
       conditionDetail: "No condition — executes immediately.",
     });
 
-    setDraft({ id, payee: email, limit, what });
+    setDraft({ id, envelope });
     push(
       "ok",
       `Order drafted for ${limit.toFixed(2)} ${currency} to ${email}. Nothing has been authorized yet.`
@@ -128,7 +147,7 @@ export default function TransferPanel({ currency, balance, paypalClientId }: Pro
     setAuthorized({ authorizationId: result.authorizationId });
     push(
       "ok",
-      `🔐 Authorized — ${draft.limit.toFixed(2)} ${currency} reserved for ${draft.payee}. No money has moved yet.`
+      `🔐 Authorized — ${draft.envelope.limit.toFixed(2)} ${currency} reserved for ${draft.envelope.payee}. No money has moved yet.`
     );
   };
 
@@ -289,9 +308,9 @@ export default function TransferPanel({ currency, balance, paypalClientId }: Pro
 
           <dl className="space-y-1.5">
             {[
-              ["Order", draft.what],
-              ["Ceiling", `${draft.limit.toFixed(2)} ${currency}`],
-              ["Recipient", draft.payee],
+              ["Order", draft.envelope.what],
+              ["Ceiling", `${draft.envelope.limit.toFixed(2)} ${currency}`],
+              ["Recipient", draft.envelope.payee],
               ["Condition", "No condition — executes immediately"],
               ["Mode", MODE.autonomous],
             ].map(([label, value]) => (
@@ -328,18 +347,21 @@ export default function TransferPanel({ currency, balance, paypalClientId }: Pro
               <p className="text-xs leading-relaxed text-slate-600">
                 The recipient is already inside this order. Approving below reserves{" "}
                 <span className="font-mono font-semibold text-slate-900">
-                  {draft.limit.toFixed(2)} {currency}
+                  {draft.envelope.limit.toFixed(2)} {currency}
                 </span>{" "}
                 against it — and because the order names who may be paid, no other account can
                 receive it.
               </p>
               <PayPalAuthorizeButton
                 clientId={paypalClientId}
-                amount={draft.limit.toFixed(2)}
+                amount={draft.envelope.limit.toFixed(2)}
                 currency={currency}
-                description={draft.what}
+                description={draft.envelope.what}
                 customId={String(draft.id)}
-                payeeEmail={draft.payee}
+                payeeEmail={draft.envelope.payee}
+                // The same object the row was written from, so the server
+                // judges exactly what this card showed.
+                policy={draft.envelope}
                 onAuthorized={handleAuthorized}
                 onUnavailable={(reason) => push("error", reason)}
               />

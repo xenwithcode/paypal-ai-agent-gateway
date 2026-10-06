@@ -106,6 +106,15 @@ export type ChargeAttempt = {
   endpoint?: string;
   /** Account the charge pays. Empty when the attempt names none. */
   payee?: string;
+  /**
+   * Who set this charge in motion — the attempt's half of the autonomy rule.
+   *
+   * Optional because attempts written before this field existed carry none.
+   * On a Copilot order that absence is refused rather than forgiven: a mode
+   * that exists to require a human cannot read "does not say" as "there was
+   * one". See rule 5 of the scope.
+   */
+  initiatedBy?: "human" | "agent";
 };
 
 /** The envelope an order was approved inside. */
@@ -118,6 +127,22 @@ export type PolicyEnvelope = {
   payee?: string;
   what: string;
   status: string;
+  /**
+   * Last day this order may be used, as YYYY-MM-DD.
+   *
+   * Empty means the approver let it run indefinitely — a decision, not an
+   * omission. Non-empty is judged by `readExpiry`, including when it is not a
+   * date at all.
+   */
+  expires?: string;
+  /**
+   * The autonomy the approver granted.
+   *
+   * Absent on envelopes written before the column existed, and an absent mode
+   * is not a Copilot mode — the same reading an empty allow-list gets: what is
+   * not there does not restrict.
+   */
+  mode?: string;
 };
 
 export type Verdict = {
@@ -127,35 +152,73 @@ export type Verdict = {
   reason: string;
 };
 
+// ─── The window an order may be used in ────────────────────────────────────
+
+/** A date, the way the grid cell and the model both write it. */
+const ISO_DATE = /^\d{4}-\d{2}-\d{2}$/;
+
+/** The calendar day according to the clock where the judgement happens. */
+function clockDay(today: Date): string {
+  const year = today.getFullYear();
+  const month = String(today.getMonth() + 1).padStart(2, "0");
+  const day = String(today.getDate()).padStart(2, "0");
+  return `${year}-${month}-${day}`;
+}
+
+/** What an order's `Valid until` cell actually says. */
+export type ExpiryWindow =
+  /** Empty — the approver let this order run indefinitely. */
+  | { kind: "none" }
+  /** A date, with whether the day it names has already passed. */
+  | { kind: "date"; iso: string; expired: boolean }
+  /** Something in the cell that is not a date, so no window can be judged. */
+  | { kind: "unreadable"; raw: string };
+
 /**
- * Judge an attempted charge against a policy.
+ * Read an order's `Valid until` cell.
  *
- * Every violation is reported rather than the first, because an approver who
- * only hears about the amount will fix the amount and re-run straight into
- * the destination rules.
+ * Three readings, never two. An empty cell is an order approved to run
+ * indefinitely. A date is a window that either has days left or does not.
+ * Anything else is a date nobody can read — and that third case must never
+ * collapse into the first, because "I cannot tell when this ends" is not the
+ * same as "this never ends". It is the rule the condition evaluator already
+ * follows: what cannot be judged is never read as what is permitted.
  *
- * Deliberately does not evaluate price conditions — settling a condition is
- * the hold's job. Keeping the two apart means neither has to know whether the
- * other has run.
+ * The day comes from the clock where this runs. A bare cell carries no
+ * timezone, so the only self-consistent reading is the one the machine
+ * holding the clock agrees on; a cell that named its timezone would be
+ * better, and belongs with the rest of the schema work.
+ *
+ * `today` is a parameter so a boundary can be pinned by a test rather than
+ * by waiting for midnight.
  */
-export function judgeCharge(charge: ChargeAttempt, policy: PolicyEnvelope): Verdict {
+export function readExpiry(raw: string | undefined | null, today: Date = new Date()): ExpiryWindow {
+  const text = (raw ?? "").trim();
+  if (!text) return { kind: "none" };
+  if (!ISO_DATE.test(text)) return { kind: "unreadable", raw: text };
+  // Both sides are YYYY-MM-DD, where lexicographic and chronological order
+  // agree — so the comparison needs no parsing and no timezone.
+  return { kind: "date", iso: text, expired: clockDay(today) > text };
+}
+
+/**
+ * The envelope's own rules: what this order permits.
+ *
+ * Split out from the two questions about whether it may be *used*, because
+ * those two disagree about status and agree about everything else: a charge
+ * may only happen against an order that is armed, a hold may only be opened
+ * against one that is not, and both answer to the same ceiling, the same
+ * destinations, the same window and the same autonomy. One copy of each rule,
+ * called from both, so a rule cannot be written twice and drift.
+ */
+function judgeScope(charge: ChargeAttempt, policy: PolicyEnvelope, today: Date): string[] {
   const violations: string[] = [];
   const endpoint = charge.endpoint ?? "";
   const chargePayee = charge.payee ?? "";
   const allowEndpoint = policy.allowEndpoint ?? "";
   const payee = policy.payee ?? "";
 
-  // 1. Is the policy even armed? Nothing under draft or already settled may
-  //    be charged, and the reason has to say so rather than failing vaguely.
-  if (!SPENDABLE_STATUSES.includes(policy.status)) {
-    violations.push(
-      policy.status === STATUS.pending
-        ? `The policy for "${policy.what}" has not been activated yet.`
-        : `The policy for "${policy.what}" is ${policy.status}, so it no longer permits charges.`
-    );
-  }
-
-  // 2. The ceiling.
+  // 1. The ceiling.
   if (charge.currency !== policy.currency) {
     violations.push(
       `Currency mismatch: the charge is in ${charge.currency} but the ceiling is in ${policy.currency}.`
@@ -166,7 +229,7 @@ export function judgeCharge(charge: ChargeAttempt, policy: PolicyEnvelope): Verd
     );
   }
 
-  // 3. The destination. An empty allow-list means no merchant was named and
+  // 2. The destination. An empty allow-list means no merchant was named and
   //    therefore nothing is restricted — stated plainly rather than implied.
   if (allowEndpoint && endpoint && endpoint !== allowEndpoint) {
     violations.push(
@@ -174,7 +237,7 @@ export function judgeCharge(charge: ChargeAttempt, policy: PolicyEnvelope): Verd
     );
   }
 
-  // 4. The recipient. Deliberately stricter than rule 3, and the reason is
+  // 3. The recipient. Deliberately stricter than rule 2, and the reason is
   //    worth stating because the two rules look alike: an endpoint may be
   //    absent because it is derived from a merchant the order never named, so
   //    requiring the pair costs nothing there. A payee is different — if the
@@ -190,6 +253,69 @@ export function judgeCharge(charge: ChargeAttempt, policy: PolicyEnvelope): Verd
     );
   }
 
+  // 4. The window. The column already said "Valid until"; this is where that
+  //    date stops being a caption. An unreadable one is refused rather than
+  //    read as no expiry, for the reason written on `readExpiry`.
+  const window = readExpiry(policy.expires, today);
+  if (window.kind === "date" && window.expired) {
+    violations.push(
+      `This order passed its valid-until date of ${window.iso}, so nothing may be spent against it.`
+    );
+  } else if (window.kind === "unreadable") {
+    violations.push(
+      `The valid-until date "${window.raw}" is not a date, so the window cannot be judged. Set it to YYYY-MM-DD or leave it empty.`
+    );
+  }
+
+  // 5. The autonomy. Copilot means the agent may not act alone, so the charge
+  //    has to show a human behind it. An attempt naming the agent is refused
+  //    outright; one naming nobody is refused too, because a mode that exists
+  //    to require a human cannot read silence as one. An Autonomous order
+  //    takes either answer — that is what the approver granted it.
+  if (policy.mode === MODE.copilot && charge.initiatedBy !== "human") {
+    violations.push(
+      charge.initiatedBy === "agent"
+        ? `This order runs in Copilot mode, so a human has to approve each charge — this one was started by the agent.`
+        : `This order runs in Copilot mode, so a human has to approve each charge — and this attempt does not say that one did.`
+    );
+  }
+
+  return violations;
+}
+
+/**
+ * Judge an attempted charge against a policy.
+ *
+ * Every violation is reported rather than the first, because an approver who
+ * only hears about the amount will fix the amount and re-run straight into
+ * the destination rules.
+ *
+ * Deliberately does not evaluate price conditions — settling a condition is
+ * the hold's job. Keeping the two apart means neither has to know whether
+ * the other has run.
+ *
+ * `today` exists so a test can pin the edge of the window without waiting for
+ * midnight; every caller outside the tests leaves it out.
+ */
+export function judgeCharge(
+  charge: ChargeAttempt,
+  policy: PolicyEnvelope,
+  today: Date = new Date()
+): Verdict {
+  const violations: string[] = [];
+
+  // 1. Is the policy even armed? Nothing under draft or already settled may
+  //    be charged, and the reason has to say so rather than failing vaguely.
+  if (!SPENDABLE_STATUSES.includes(policy.status)) {
+    violations.push(
+      policy.status === STATUS.pending
+        ? `The policy for "${policy.what}" has not been activated yet.`
+        : `The policy for "${policy.what}" is ${policy.status}, so it no longer permits charges.`
+    );
+  }
+
+  violations.push(...judgeScope(charge, policy, today));
+
   const allowed = violations.length === 0;
 
   return {
@@ -197,6 +323,44 @@ export function judgeCharge(charge: ChargeAttempt, policy: PolicyEnvelope): Verd
     violations,
     reason: allowed
       ? `Charge of ${charge.amount.toFixed(2)} ${charge.currency} is within "${policy.what}".`
+      : violations.join(" "),
+  };
+}
+
+/**
+ * Judge a request to open a hold — the approval card asking PayPal to reserve
+ * a ceiling on an order nobody has approved yet.
+ *
+ * The mirror of `judgeCharge` on exactly one point: a charge may only happen
+ * against an order that is already armed, while a hold may only be opened
+ * against one still awaiting approval, because opening the hold is what arms
+ * it. Everything else is judged identically in both directions — an order
+ * refused as a spend must not be opened as a reservation either, or the
+ * window, the ceiling and the recipient would only start applying after the
+ * money was already committed.
+ */
+export function judgeHoldRequest(
+  charge: ChargeAttempt,
+  policy: PolicyEnvelope,
+  today: Date = new Date()
+): Verdict {
+  const violations: string[] = [];
+
+  if (policy.status !== STATUS.pending) {
+    violations.push(
+      `A hold can only be opened against an order awaiting approval — this one is ${policy.status}.`
+    );
+  }
+
+  violations.push(...judgeScope(charge, policy, today));
+
+  const allowed = violations.length === 0;
+
+  return {
+    allowed,
+    violations,
+    reason: allowed
+      ? `Order of ${charge.amount.toFixed(2)} ${charge.currency} is within "${policy.what}".`
       : violations.join(" "),
   };
 }
