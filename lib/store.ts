@@ -154,6 +154,16 @@ export function ensureHydrated(): Promise<boolean> {
       const remote = normaliseSnapshot(await res.json().catch(() => null));
       if (!remote || (remote.policies.length === 0 && remote.blocked.length === 0)) return false;
 
+      // Re-read after the round trip. The check above ran before the request
+      // went out, and anything written while it was in flight — an order
+      // drafted in the seconds it took — is newer than what is arriving, and
+      // overwriting it would discard the only copy.
+      const now = localSnapshot();
+      if (now && (now.policies.length > 0 || now.blocked.length > 0)) {
+        void pushSnapshot(now);
+        return false;
+      }
+
       window.localStorage.setItem(POLICY_STORAGE_KEY, JSON.stringify(remote.policies));
       window.localStorage.setItem(BLOCKED_STORAGE_KEY, JSON.stringify(remote.blocked));
       return true;

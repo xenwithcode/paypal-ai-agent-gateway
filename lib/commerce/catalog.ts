@@ -7,6 +7,12 @@
 // prices (Amazon's PA-API requires an associates account), so anything shown
 // from here is labelled as a demo catalog in the UI.
 
+// "Today", shared with the judge that reads an order's window: two notions of
+// the day is how one of them says a payment is due while the other says the
+// order has expired. The extension is required for the reason on
+// `allowImportingTsExtensions`: this module is loaded by tests.
+import { calendarDay } from "../policy.ts";
+
 const BASE = "https://dummyjson.com";
 const REVALIDATE_SECONDS = 60;
 
@@ -311,12 +317,50 @@ export type ConditionEvaluation = {
   detail: string;
 };
 
+/**
+ * The date a scheduled condition is due on, or null when it is not one.
+ *
+ * Reads the same expression `evaluateCondition` does, so a list can show *when*
+ * a payment is due without a second, slightly different parser that one day
+ * disagrees with the first about what the operator meant.
+ */
+export function scheduleFrom(condition: string | undefined | null): string | null {
+  const match = (condition ?? "").trim().match(/^on\s+(\S+)$/i);
+  if (!match) return null;
+  return /^\d{4}-\d{2}-\d{2}$/.test(match[1]) ? match[1] : null;
+}
+
 export function evaluateCondition(
   raw: string,
   product: CatalogProduct | null
 ): ConditionEvaluation {
   const expression = raw.trim();
   if (!expression) return { raw, met: true, detail: "No condition — executes immediately." };
+
+  // "on 2026-11-01" — a schedule.
+  //
+  // Judged before the catalog is consulted on purpose: what this compares is
+  // the clock, not a price, so reaching the "no match" answer below would
+  // refuse it for having nothing to compare against — a bill payment for a
+  // service that is not in any catalog, which is what most of them are.
+  const scheduled = expression.match(/^on\s+(\S+)$/i);
+  if (scheduled) {
+    const iso = scheduled[1];
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(iso)) {
+      return {
+        raw,
+        met: null,
+        detail: `"${iso}" is not a date — a scheduled condition reads "on YYYY-MM-DD".`,
+      };
+    }
+    const today = calendarDay();
+    const met = today >= iso;
+    return {
+      raw,
+      met,
+      detail: met ? `Due since ${iso}, and today is ${today}` : `Due on ${iso}`,
+    };
+  }
 
   if (!product) {
     return {

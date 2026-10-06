@@ -357,6 +357,21 @@ export default function AgentGrid({
       const visible = rows ?? SEED_ROWS;
       if (rows) setRowData(rows);
 
+      // A row drafted somewhere else — the recurring form sends the operator
+      // here with the id it just created, because the approval card lives on
+      // this page. Pointing at the order they made a second ago beats asking
+      // them to find it in a table they have not opened yet.
+      const wanted = new URLSearchParams(window.location.search).get("draft");
+      if (wanted !== null && rows) {
+        const id = Number(wanted);
+        if (Number.isFinite(id) && rows.some((row) => row.id === id)) {
+          setSelectedId(id);
+          // The parameter did its job. Leaving it would reopen the same card
+          // on every later visit to this page.
+          window.history.replaceState(null, "", window.location.pathname);
+        }
+      }
+
       // The clock is read here rather than in the initialiser because the
       // initialiser also runs on the server, where it would be a different time
       // — and React reports any disagreement as a hydration mismatch.
@@ -695,9 +710,24 @@ export default function AgentGrid({
     rowsRef.current = rowData;
   }, [rowData]);
 
+  /**
+   * What each order last said, so a pass that has nothing new says nothing.
+   *
+   * A pass runs every eight seconds, and a scheduled payment that is not due
+   * yet answers the same way every time — a line that was news once and noise
+   * after that. The verdict is still applied every pass; only the narration is
+   * held back until it changes, and the capture that ends the waiting is a
+   * different line, so it gets through.
+   */
+  const lastAgentLog = useRef(new Map<number, string>());
+
   const toggleAgent = () => {
     const next = !agentRunning;
     setAgentRunning(next);
+    // A restarted agent announces itself: keeping the old verdicts would make
+    // the first pass silent, which reads as an agent that is running and
+    // doing nothing.
+    if (next) lastAgentLog.current.clear();
     addLog(
       next
         ? "🤖 [AGENT] Running — it may only touch orders you approved, and the server judges every pass before any money moves."
@@ -730,7 +760,10 @@ export default function AgentGrid({
         }
 
         for (const result of data.results ?? []) {
-          addLog(result.log);
+          if (lastAgentLog.current.get(result.id) !== result.log) {
+            addLog(result.log);
+            lastAgentLog.current.set(result.id, result.log);
+          }
           if (typeof result.id !== "number") continue;
           const settled = typeof result.status === "string";
           const price = typeof result.marketPrice === "number";

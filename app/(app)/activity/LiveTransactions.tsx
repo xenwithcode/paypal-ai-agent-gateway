@@ -2,7 +2,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { ArrowLeftRight, TriangleAlert } from "lucide-react";
+import { ArrowLeftRight, MousePointerClick, TriangleAlert } from "lucide-react";
 import type { TransactionsResult } from "@/lib/paypal";
 import { summariseTransactions } from "@/lib/transactionTotals";
 import JsonGrid from "./JsonGrid";
@@ -204,10 +204,21 @@ export default function LiveTransactions() {
             ) : (
               // Discoverability, not decoration: nothing about a grid says it
               // can be clicked, and a vertical reading that only exists after
-              // an unmarked gesture does not exist for most people.
-              <p className="mt-3 text-[11px] text-slate-400">
-                Click any row to read that transaction top to bottom.
-              </p>
+              // an unmarked gesture does not exist for most people. Kept as a
+              // bordered callout rather than a faint line — the affordance has
+              // to be noticed before it can be used.
+              <div className="mt-3 flex items-start gap-2.5 rounded-xl border border-blue-200 bg-blue-50 px-3.5 py-2.5">
+                <MousePointerClick
+                  className="mt-0.5 h-4 w-4 shrink-0 text-blue-500"
+                  strokeWidth={1.75}
+                  aria-hidden="true"
+                />
+                <p className="text-xs leading-relaxed text-blue-800">
+                  <strong className="font-semibold">Click any row</strong> to open that transaction
+                  on its own, read top to bottom. The grid answers <em>what is here</em>; the detail
+                  answers <em>what is in this one</em>.
+                </p>
+              </div>
             )}
 
             {/* Totals are an opinion about the rows rather than a row, so they

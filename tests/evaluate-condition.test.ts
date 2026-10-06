@@ -4,7 +4,8 @@
 // must never read as satisfied. Everything here is about that boundary.
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { evaluateCondition, type CatalogProduct } from "../lib/commerce/catalog.ts";
+import { evaluateCondition, scheduleFrom, type CatalogProduct } from "../lib/commerce/catalog.ts";
+import { calendarDay } from "../lib/policy.ts";
 
 /** A product that exists in the demo catalog, overridable per case. */
 function product(overrides: Partial<CatalogProduct> = {}): CatalogProduct {
@@ -101,4 +102,56 @@ test("in stock requires both stock and the catalog's own status", () => {
 test("an unsupported condition is unverified rather than assumed", () => {
   const result = evaluateCondition("ships before friday", product());
   assert.equal(result.met, null);
+});
+
+// ─── A schedule ────────────────────────────────────────────────────────────
+
+test("a date in the past is due, and says which day it became due", () => {
+  const result = evaluateCondition("on 2000-01-01", null);
+  assert.equal(result.met, true);
+  assert.match(result.detail, /Due since 2000-01-01/);
+});
+
+test("a date in the future is not due yet", () => {
+  const result = evaluateCondition("on 2999-12-31", null);
+  assert.equal(result.met, false);
+  assert.equal(result.detail, "Due on 2999-12-31");
+});
+
+test("the day itself counts as due — the payment is due *on* it", () => {
+  const result = evaluateCondition(`on ${calendarDay()}`, null);
+  assert.equal(result.met, true, "the due day is the day it happens");
+  assert.match(result.detail, /Due since/);
+});
+
+test("a schedule needs no catalog, because it compares the clock", () => {
+  // The rule this operator exists for. Most bills are for services in no
+  // catalog at all, and reaching the "no match" answer would refuse them for
+  // having nothing to compare a *price* against — which is not the question
+  // being asked.
+  const withProduct = evaluateCondition("on 2000-01-01", product());
+  const withoutProduct = evaluateCondition("on 2000-01-01", null);
+  assert.equal(withoutProduct.met, true, "no product, and it still answers");
+  assert.equal(withoutProduct.met, withProduct.met, "and the same answer either way");
+});
+
+test("a schedule that is not a date is unverified rather than unscheduled", () => {
+  // The boundary the whole file is about, applied to a new operator: an
+  // unreadable date must not read as "no date", because that would let it
+  // settle immediately.
+  const result = evaluateCondition("on tomorrow", null);
+  assert.equal(result.met, null);
+  assert.match(result.detail, /is not a date/);
+  assert.match(result.detail, /YYYY-MM-DD/);
+});
+
+test("the list reads the same date the evaluator does", () => {
+  // One expression, one parser: a list that parsed the date its own way would
+  // be the two copies of a rule that eventually disagree.
+  assert.equal(scheduleFrom("on 2026-11-01"), "2026-11-01");
+  assert.equal(scheduleFrom("  on 2026-11-01  "), "2026-11-01");
+  assert.equal(scheduleFrom("on tomorrow"), null, "not a date, so not a schedule");
+  assert.equal(scheduleFrom("price <= 60"), null, "a price condition is not a schedule");
+  assert.equal(scheduleFrom(""), null);
+  assert.equal(scheduleFrom(undefined), null);
 });

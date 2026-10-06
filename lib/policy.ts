@@ -157,11 +157,23 @@ export type Verdict = {
 /** A date, the way the grid cell and the model both write it. */
 const ISO_DATE = /^\d{4}-\d{2}-\d{2}$/;
 
-/** The calendar day according to the clock where the judgement happens. */
-function clockDay(today: Date): string {
-  const year = today.getFullYear();
-  const month = String(today.getMonth() + 1).padStart(2, "0");
-  const day = String(today.getDate()).padStart(2, "0");
+/**
+ * The calendar day at `now`, as YYYY-MM-DD, on the clock where this runs.
+ *
+ * Exported because two places have to agree on what "today" means: the judge
+ * reading an order's window, and the evaluator reading a scheduled condition.
+ * Two notions of the day is how one of them says an order is live while the
+ * other says it is expired.
+ *
+ * Local rather than UTC on purpose: a bare date in a cell carries no
+ * timezone, so the only self-consistent reading is the day the machine holding
+ * the clock agrees on. `now` is a parameter so a boundary can be pinned by a
+ * test instead of by waiting for one.
+ */
+export function calendarDay(now: Date = new Date()): string {
+  const year = now.getFullYear();
+  const month = String(now.getMonth() + 1).padStart(2, "0");
+  const day = String(now.getDate()).padStart(2, "0");
   return `${year}-${month}-${day}`;
 }
 
@@ -198,7 +210,7 @@ export function readExpiry(raw: string | undefined | null, today: Date = new Dat
   if (!ISO_DATE.test(text)) return { kind: "unreadable", raw: text };
   // Both sides are YYYY-MM-DD, where lexicographic and chronological order
   // agree — so the comparison needs no parsing and no timezone.
-  return { kind: "date", iso: text, expired: clockDay(today) > text };
+  return { kind: "date", iso: text, expired: calendarDay(today) > text };
 }
 
 /**
