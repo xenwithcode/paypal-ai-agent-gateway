@@ -34,7 +34,11 @@ export function logTone(log: string): string {
   if (log.includes("🚨") || log.includes("⚠️") || log.includes("❌") || log.includes("— refused")) {
     return "text-red-400 font-bold";
   }
-  if (log.includes("🤖")) return "text-sky-300";
+  // The agent, whether it was reached through a button or through the
+  // microphone. `🔊` is the line the agent *spoke*; keeping it the same colour
+  // as `🤖` means one actor stays followable through a busy console without
+  // reading every word.
+  if (log.includes("🤖") || log.includes("🔊")) return "text-blue-300";
   if (log.includes("🟢")) return "text-emerald-400";
   return "text-slate-200";
 }

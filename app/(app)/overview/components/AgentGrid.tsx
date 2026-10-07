@@ -3,31 +3,20 @@
 
 import { useState, useEffect, useMemo, useCallback, useRef } from "react";
 import { AgGridReact } from "ag-grid-react";
-import {
-  AllCommunityModule,
-  ModuleRegistry,
-  themeQuartz,
-  enableDevValidations,
-  type ColDef,
-} from "ag-grid-community";
+import type { ColDef } from "ag-grid-community";
 
-// AG Grid v33+ is modular: modules must be explicitly registered before use.
-// AllCommunityModule enables every Community feature (cell editors, selection,
-// animations...). It has to run BEFORE any grid is created, and since the
-// registration is global we do it once, here, at module scope.
-ModuleRegistry.registerModules([AllCommunityModule]);
-
-// ⚠️ AG Grid v33+ styles grids through the Theming API (theme={themeQuartz}),
+// ⚠️ AG Grid v33+ styles grids through the Theming API (theme={gridTheme}),
 // which injects its own CSS into the page. Importing the legacy CSS files
 // (ag-grid.css / ag-theme-quartz.css) at the same time mixes the two theming
 // systems and AG Grid raises error #106. That is why we do NOT import them.
+// The `ag-theme-quartz` class kept on the container below is inert and only
+// there for compatibility.
 //
-// We also enable development validations so the console prints the full error
-// text instead of just a code ("error #106"). Guarded by NODE_ENV so it stays
-// out of the production bundle.
-if (process.env.NODE_ENV !== "production") {
-  enableDevValidations();
-}
+// Module registration, the licence key and the palette itself are all in
+// `lib/grid/setup.ts`, because Activity renders a grid too and neither
+// component imports the other — two call sites each registering their own
+// modules is how one table silently loses features one day.
+import { gridTheme } from "@/lib/grid/setup";
 
 // Child visual components
 import ActionBtnRenderer from "./ActionBtnRenderer";
@@ -35,6 +24,10 @@ import WhatCellRenderer from "./WhatCellRenderer";
 import CeilingCellRenderer from "./CeilingCellRenderer";
 import OrderPanel from "./OrderPanel";
 import CandidatePicker from "./CandidatePicker";
+// The microphone CTA. It lives with the shared components because it knows
+// nothing about this page's table — the dashboard tells it what to run.
+import VoiceCommand from "../../components/VoiceCommand";
+import type { VoiceToolCall } from "@/lib/voice/tools";
 
 // Shared status/mode strings (also produced by the API routes on the server),
 // and the window reader — the same function the judge uses, so the cell and
@@ -192,6 +185,9 @@ export default function AgentGrid({
 
   const [logs, setLogs] = useState<string[]>([]);
 
+  /** Armed only while the voice agent is running a command: see `addLog`. */
+  const logSinkRef = useRef<((line: string) => void) | null>(null);
+
   // The Venezuela simulation belongs to the opt-in module, exactly like the
   // sidebar's Pago Móvil link, the /send/bank gate and the bank tab. It was
   // the one VES surface that ignored the switch, which put the niche rail on
@@ -206,6 +202,13 @@ export default function AgentGrid({
   // so the handlers below can honestly list it as a dependency instead of
   // closing over a value that changes every render.
   const addLog = useCallback((message: string) => {
+    // The console is this page's event stream, and one caller needs to *read*
+    // it: the voice agent has to report back what really happened so the
+    // spoken reply can be written from it. Observing the single funnel is how
+    // that happens without asking every handler to return a second copy of its
+    // own outcome — the copy that would eventually disagree with the line
+    // printed above it.
+    logSinkRef.current?.(message);
     const time = new Date().toLocaleTimeString();
     const line = `[${time}] ${message}`;
     setLogs((prev) => [line, ...prev]);
@@ -1141,15 +1144,24 @@ export default function AgentGrid({
     { headerName: "Protection", flex: 1.3, cellRenderer: ActionBtnRenderer },
   ], []);
 
-  const handleGeneratePolicy = async () => {
-    if (!prompt.trim()) return;
+  /**
+   * Draft from a given sentence — typed or spoken, the same code either way.
+   *
+   * Extracted from the button's handler because the voice agent asks for the
+   * same thing with a string it already has: writing the request twice would
+   * mean two places where the "Drafting an order from" line could fall out of
+   * sync with the request that actually went out.
+   */
+  const draftOrderFrom = async (text: string) => {
+    const intent = text.trim();
+    if (!intent) return;
     setLoading(true);
-    addLog(`📨 Drafting an order from: "${prompt}"`);
+    addLog(`📨 Drafting an order from: "${intent}"`);
     try {
       const res = await fetch("/api/agent", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ prompt })
+        body: JSON.stringify({ prompt: intent })
       });
       const data = await res.json();
       if (data.success) {
@@ -1217,6 +1229,102 @@ export default function AgentGrid({
     }
   };
 
+  /** What the button does: draft from whatever is in the box right now. */
+  const handleGeneratePolicy = async () => {
+    await draftOrderFrom(prompt);
+  };
+
+  /**
+   * Run what the voice agent asked for, and hand back what it logged.
+   *
+   * Every branch calls the handler the button already calls. There is no
+   * voice-only path into anything: approving by voice goes through
+   * `handleHoldAction`, which posts to `/api/holds`, where the server judges
+   * the whole envelope exactly as it does for a click — and drafting by voice
+   * goes through `/api/agent`, which parses, searches and evaluates the same
+   * way. The microphone changes who is speaking, never what is permitted.
+   *
+   * The returned lines are what the *console* printed, captured through the
+   * sink, and they are what gets narrated back to the human. Narrating
+   * anything else would mean the voice and the log could tell two stories
+   * about the same event, which on this product is the one thing they may
+   * never do.
+   */
+  const executeVoiceTool = async (calls: VoiceToolCall[]): Promise<string[]> => {
+    const captured: string[] = [];
+    logSinkRef.current = (line) => captured.push(line);
+
+    try {
+      for (const call of calls) {
+        switch (call.name) {
+          case "draftOrder": {
+            await draftOrderFrom(String(call.args.prompt));
+            break;
+          }
+
+          case "getBalance": {
+            // Read live rather than reading the figure on screen: a question
+            // about money deserves the answer PayPal gives now, and
+            // `refresh` deliberately returns null when nothing moved, which
+            // would leave the agent with nothing truthful to say.
+            try {
+              const res = await fetch("/api/paypal/balance", { cache: "no-store" });
+              const data = (await res.json()) as {
+                value?: string;
+                currency?: string;
+                source?: string;
+                reason?: string;
+              };
+              if (res.ok && typeof data.value === "string") {
+                addLog(
+                  data.source === "live"
+                    ? `💰 Account Balance ${data.value} ${data.currency} — read live for the voice agent.`
+                    : `⚠️ [DEMO] Account Balance ${data.value} ${data.currency} — ${data.reason ?? "no live source."}`
+                );
+              } else {
+                addLog("❌ [VOICE] The balance could not be read.");
+              }
+            } catch {
+              addLog("❌ [VOICE] The balance could not be read.");
+            }
+            break;
+          }
+
+          case "setAgent": {
+            const shouldRun = call.args.on === true;
+            if (shouldRun === agentRunning) {
+              addLog(`🤖 [AGENT] It is already ${shouldRun ? "running" : "stopped"} — nothing to change.`);
+            } else {
+              toggleAgent();
+            }
+            break;
+          }
+
+          case "approveOrder":
+          case "captureOrder":
+          case "releaseOrder": {
+            const id = Math.trunc(Number(call.args.rowId));
+            const row = rowData.find((candidate) => candidate.id === id);
+            if (!row) {
+              addLog(`❌ [VOICE] There is no order #${id} on the table.`);
+              break;
+            }
+            const action: HoldAction =
+              call.name === "approveOrder" ? "activate" : call.name === "captureOrder" ? "capture" : "release";
+            await handleHoldAction(action, row);
+            break;
+          }
+        }
+      }
+    } finally {
+      // Always disarmed: a sink left armed would quietly record every future
+      // line of the page into an array nobody owns.
+      logSinkRef.current = null;
+    }
+
+    return captured;
+  };
+
   return (
     <div className="p-6 max-w-6xl mx-auto space-y-6 relative">
 
@@ -1281,9 +1389,16 @@ export default function AgentGrid({
 
       {/* Natural-language intent bar */}
       <div className="bg-white p-6 rounded-2xl border border-slate-200 shadow-sm space-y-3">
-        <label className="block text-sm font-semibold text-slate-700">
-          What should your agent buy? Set a ceiling — and a condition before it may spend.
-        </label>
+        {/* The microphone sits above the Draft button, in the label row: it
+            is a second way in, not a third control squeezing the field, and
+            it reports straight to the same console the rest of this page
+            writes to. */}
+        <div className="flex items-start justify-between gap-4">
+          <label className="block text-sm font-semibold text-slate-700">
+            What should your agent buy? Set a ceiling — and a condition before it may spend.
+          </label>
+          <VoiceCommand rows={rowData} onExecute={executeVoiceTool} onLog={addLog} />
+        </div>
         <div className="flex gap-3">
           <input
             type="text"
@@ -1326,10 +1441,6 @@ export default function AgentGrid({
             Awaiting approval, reserved, settled or refused. Select a row to open it.
           </p>
         </div>
-        {/* The ag-theme-quartz class is no longer required (the Theming API
-            styles the grid through theme={themeQuartz}), but it is harmless and
-            AG Grid tolerates it, so we keep it for compatibility. What actually
-            broke the grid was importing ag-grid.css. */}
         {/* Grows with the viewport: 200px showed four rows and crowded every
             column. Three steps, so a phone still gets a usable table. */}
         <div className="ag-theme-quartz h-[360px] w-full sm:h-[460px] lg:h-[560px]">
@@ -1337,7 +1448,7 @@ export default function AgentGrid({
             ref={gridRef}
             rowData={rowData}
             columnDefs={columnDefs}
-            theme={themeQuartz}
+            theme={gridTheme}
             animateRows={true}
             context={{ onHoldAction: handleHoldAction }}
             rowHeight={52}

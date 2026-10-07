@@ -3,6 +3,15 @@ import type { NextConfig } from "next";
 const nextConfig: NextConfig = {
   reactStrictMode: true,
 
+  // `@google/genai` reaches the Live API over a WebSocket, and webpack resolves
+  // `ws` to Next's own compiled copy — whose `bufferutil` binding does not
+  // export `mask` — so every session died on connect with
+  // "bufferUtil.mask is not a function". Loading the real package from
+  // node_modules fixes it: outside a bundle, `ws` finds no native `bufferutil`
+  // and falls back to its pure-JavaScript one, which works. The text model never
+  // noticed because `generateContent` is plain HTTP.
+  serverExternalPackages: ["@google/genai"],
+
   // Product thumbnails come from the demo catalog's CDN. Only this hostname
   // is allowed — an allow-list, not a wildcard, so an arbitrary URL cannot be
   // pushed through the image optimizer.

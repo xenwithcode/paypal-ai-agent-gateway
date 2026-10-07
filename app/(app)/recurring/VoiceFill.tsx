@@ -183,7 +183,10 @@ export default function VoiceFill({
       <button
         type="button"
         disabled
-        className="inline-flex items-center gap-1.5 rounded-xl border border-slate-300 bg-white px-3.5 py-2 text-xs font-bold text-slate-400"
+        // Same treatment as the dashboard's mic: a disabled voice control is a
+        // waiting voice control, and two buttons that mean the same thing
+        // should not wear two colours.
+        className="inline-flex items-center gap-1.5 rounded-xl border border-blue-200 bg-blue-50 px-3.5 py-2 text-xs font-bold text-blue-600"
       >
         <Loader2 className="h-3.5 w-3.5 animate-spin" strokeWidth={2} aria-hidden="true" />
         Understanding…
@@ -210,7 +213,12 @@ export default function VoiceFill({
       type="button"
       onClick={() => void start()}
       title="Fill the form by speaking. Nothing is sent until you press Add service."
-      className="inline-flex items-center gap-1.5 rounded-xl border border-slate-300 bg-white px-3.5 py-2 text-xs font-bold text-slate-600 transition hover:bg-slate-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500"
+      // The brand's primary action colour, matching "Talk to paypal-ai-agent"
+      // on Overview: these are the same gesture offered on two pages — speak
+      // instead of type — and a reader who learned it once should recognise it
+      // without relearning it. Recording stays red because red means "this is
+      // live and you end it", on both pages.
+      className="inline-flex items-center gap-1.5 rounded-xl border border-blue-600 bg-blue-600 px-3.5 py-2 text-xs font-bold text-white transition hover:bg-blue-700 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500"
     >
       <Mic className="h-3.5 w-3.5" strokeWidth={2} aria-hidden="true" />
       Fill by voice

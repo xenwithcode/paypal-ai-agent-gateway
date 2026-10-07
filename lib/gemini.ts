@@ -47,24 +47,40 @@ function configuredAuth(): Auth | null {
   return null;
 }
 
-// Lazily constructed client: if no credentials are configured the module can
-// still be imported without crashing at server startup.
-let client: GoogleGenAI | null = null;
+// Lazily constructed clients, keyed by location: if no credentials are
+// configured the module can still be imported without crashing at server
+// startup, and the Live API needs the *same* auth pointed at a *different*
+// region (see `lib/voice/live.ts`), so one cache per location is what lets
+// that module reuse this file's rules instead of writing a second copy of
+// them that could drift.
+const clients = new Map<string, GoogleGenAI>();
 
-function getClient(): GoogleGenAI | null {
+/**
+ * A client for `location`, or null when nothing is configured.
+ *
+ * The auth decision — and only that decision — belongs here. `GCP_PROJECT`
+ * wins over `GEMINI_API_KEY`, ADC supplies Vertex's credential, and the key
+ * rides in a header the SDK sets itself.
+ */
+export function genaiClientFor(location: string): GoogleGenAI | null {
   const auth = configuredAuth();
   if (!auth) return null;
-  if (!client) {
-    client =
-      auth.kind === "vertex"
-        ? new GoogleGenAI({
-            vertexai: true,
-            project: auth.project,
-            location: process.env.GCP_LOCATION?.trim() || DEFAULT_LOCATION,
-          })
-        : new GoogleGenAI({ apiKey: auth.apiKey });
-  }
-  return client;
+
+  const cacheKey = `${auth.kind}:${auth.kind === "vertex" ? auth.project : auth.apiKey}:${location}`;
+  const cached = clients.get(cacheKey);
+  if (cached) return cached;
+
+  const created =
+    auth.kind === "vertex"
+      ? new GoogleGenAI({ vertexai: true, project: auth.project, location })
+      : new GoogleGenAI({ apiKey: auth.apiKey });
+
+  clients.set(cacheKey, created);
+  return created;
+}
+
+function getClient(): GoogleGenAI | null {
+  return genaiClientFor(process.env.GCP_LOCATION?.trim() || DEFAULT_LOCATION);
 }
 
 /** Strict JSON schema Gemini must return (Structured Outputs). */
