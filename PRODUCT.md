@@ -73,7 +73,8 @@ Two supporting mechanisms differentiate it further:
 
 ## Brand Commitments
 
-- **`DESIGN.md` is a binding visual reference**, adapted by the maintainer from an outside style study ("Slush — inflatable sticker universe on pastel paper"): light theme, pastel paper canvas, black 1px outlines as the hand-cut signature, pill-shaped controls, saturated sticker palette used as a shared set, oversized crushed-leading display type, no shadows, no gradients.
+- **The visual system is AG Grid Studio's own published design tokens**, adopted 07-oct-2026 because the maintainer saw that palette on ag-grid.com and chose it over the earlier reference. It is defined once — the ramp lives in `tailwind.config.ts`, and `lib/grid/setup.ts` hands the grid the same hex values — so the table and the page can never disagree about what blue means: neutral greys (`#f9fafb` canvas, `#ffffff` surfaces, `#eaecf0` rules), brand blue `#0042a1` for primary actions and `#0e4491` for chrome, and green/amber/red ramps for verdicts. Flat colour on controls: no gradients, no decorative shadows.
+- The earlier reference (`DESIGN.md`, a pastel sticker study the maintainer adapted from an outside style source) was **superseded and removed from the repo on the same date**, because a repo with two binding design systems has none. It is recoverable from git history.
 - **No shadows, no gradients, no sharp corners** on interactive elements — these are hard rules of that system, not preferences.
 - Product name: **PayPal AI Agent Gateway**.
 - Voice: plain and confident. Technical vocabulary must be translated for the user — internal terms like kernel/enforcement are not user-facing language.
@@ -83,7 +84,7 @@ Two supporting mechanisms differentiate it further:
 
 **Present**
 
-- `DESIGN.md` — full style reference with tokens, type scale, components, and do/don't rules.
+- `tailwind.config.ts` — the palette, in one place, as AG Grid Studio's published tokens.
 - `README.md` — English project description including an explicit "what is real and what is simulated" section.
 - `ucp-manifest.json` — one example commerce manifest.
 - `TRABAJO-PROXIMA-SESION.md` — session log, backlog, and phase-2 notes.

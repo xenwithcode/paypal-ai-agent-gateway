@@ -21,7 +21,13 @@ export default function RootLayout({
     // two elements only. Anything wrong inside <body> — a real server/client
     // divergence in a child component — is still reported normally.
     <html lang="en" suppressHydrationWarning>
-      <body suppressHydrationWarning>{children}</body>
+      {/* `bg-slate-50` is the canvas — the same `--color-gray-50` the grid
+          and the cards sit on, read from tailwind.config.ts. The colour was
+          previously a hex in globals.css, which meant the page background was
+          the one surface not governed by the palette. */}
+      <body suppressHydrationWarning className="bg-slate-50">
+        {children}
+      </body>
     </html>
   );
 }

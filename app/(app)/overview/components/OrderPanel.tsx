@@ -520,7 +520,7 @@ export default function OrderPanel({
                       type="button"
                       disabled={busy}
                       onClick={() => onUseAlternative(row, agentPrompt.alternatives[0])}
-                      className="w-full rounded-xl bg-gradient-to-r from-emerald-600 to-green-600 px-5 py-3 text-sm font-bold text-white shadow-sm transition hover:from-emerald-700 hover:to-green-700 disabled:opacity-60"
+                      className="w-full rounded-xl bg-emerald-600 px-5 py-3 text-sm font-bold text-white transition hover:bg-emerald-700 disabled:opacity-60"
                     >
                       Buy {agentPrompt.alternatives[0].title} at{" "}
                       {money(agentPrompt.alternatives[0].price, agentPrompt.alternatives[0].currency)}
@@ -601,7 +601,7 @@ export default function OrderPanel({
                         type="button"
                         disabled={busy}
                         onClick={() => void run("activate")}
-                        className="w-full rounded-xl bg-gradient-to-r from-blue-600 to-indigo-600 px-5 py-3.5 text-sm font-bold text-white shadow-sm transition hover:from-blue-700 hover:to-indigo-700 disabled:opacity-60"
+                        className="w-full rounded-xl bg-blue-600 px-5 py-3.5 text-sm font-bold text-white transition hover:bg-blue-700 disabled:opacity-60"
                       >
                         {conditionText
                           ? `Authorize with PayPal AI Agent — hold ${money(row.limit, row.currency)}`
@@ -618,7 +618,7 @@ export default function OrderPanel({
                   type="button"
                   disabled={busy}
                   onClick={() => void run("capture")}
-                  className="w-full rounded-xl bg-gradient-to-r from-emerald-600 to-green-600 px-5 py-3.5 text-sm font-bold text-white shadow-sm transition hover:from-emerald-700 hover:to-green-700 disabled:opacity-60"
+                  className="w-full rounded-xl bg-emerald-600 px-5 py-3.5 text-sm font-bold text-white transition hover:bg-emerald-700 disabled:opacity-60"
                 >
                   Pay securely with PayPal AI Agent
                 </button>

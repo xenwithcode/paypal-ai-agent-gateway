@@ -78,7 +78,7 @@ function ActionButton({
     "inline-flex items-center gap-1.5 font-bold text-[11px] px-3 py-1.5 rounded-full border transition-all duration-200 active:scale-95 whitespace-nowrap";
   const look =
     variant === "primary"
-      ? "bg-gradient-to-r from-emerald-500 to-green-600 hover:from-emerald-600 hover:to-green-700 text-white border-emerald-400 shadow-sm hover:shadow"
+      ? "bg-emerald-600 hover:bg-emerald-700 text-white border-emerald-700"
       : "bg-white hover:bg-slate-50 text-slate-600 border-slate-300";
   const off = disabled ? "opacity-45 cursor-not-allowed active:scale-100" : "cursor-pointer";
 

@@ -1239,18 +1239,22 @@ export default function AgentGrid({
         </div>
       )}
 
-      {/* Corporate header */}
-      <div className="flex justify-between items-center bg-gradient-to-r from-slate-900 to-indigo-950 text-white p-6 rounded-2xl shadow-lg border border-slate-800">
+      {/* Corporate header. Solid brand blue rather than a slate→indigo
+          gradient: the gradient was the one place on the page using two
+          colours that appear nowhere else, and AG Studio's own header is a
+          single flat blue. The subtitle and the label move to brand-100 so
+          they keep their contrast against it. */}
+      <div className="flex justify-between items-center bg-blue-600 text-white p-6 rounded-2xl shadow-sm border border-blue-700">
         <div>
           <h1 className="text-xl font-bold">PayPal AI Agent Gateway 🛡️</h1>
           {/* "Purchase orders" rather than "spend policies": the README and
               the roadmap both describe the product as purchase orders for
               agents, and a judge who reads them first should meet the same
               vocabulary here. The claim is unchanged. */}
-          <p className="text-xs text-slate-400">Purchase orders an AI agent cannot break</p>
+          <p className="text-xs text-blue-100">Purchase orders an AI agent cannot break</p>
         </div>
         <div className="text-right">
-          <span className="text-xs text-slate-400 block mb-1">
+          <span className="text-xs text-blue-100 block mb-1">
             Account Balance
             {/* The figure without saying where it came from is a figure a
                 reader takes at face value, so the source travels with it. */}

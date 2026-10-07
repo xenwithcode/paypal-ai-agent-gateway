@@ -11,7 +11,11 @@
 
   .scrollbar-thin {
     scrollbar-width: thin;
-    scrollbar-color: #334155 transparent;
+    /* theme() reads the ramp out of tailwind.config.ts rather than restating
+       it — a scrollbar the colour of a different grey would be a second
+       definition of the palette, which is exactly what that file exists to
+       prevent. */
+    scrollbar-color: theme("colors.slate.700") transparent;
   }
 
   .scrollbar-thin::-webkit-scrollbar {
@@ -20,7 +24,7 @@
   }
 
   .scrollbar-thin::-webkit-scrollbar-thumb {
-    background-color: #334155;
+    background-color: theme("colors.slate.700");
     border-radius: 9999px;
   }
 
@@ -41,7 +45,8 @@
 }
 
 body {
-  background-color: #f8fafc;
+  /* The canvas. Set as a class on <body> in app/layout.tsx so that this file
+     never has to know a hex code the config already owns. */
   -webkit-font-smoothing: antialiased;
   text-rendering: optimizeLegibility;
 }
