@@ -3,12 +3,17 @@
 
 import { useEffect, useState } from "react";
 import Image from "next/image";
-import { useRouter } from "next/navigation";
+import Link from "next/link";
 import { CalendarDays, CreditCard, Plus, Repeat, ImageOff, X } from "lucide-react";
 import { appendPolicyRow, readPolicyRows, removePolicyRow, type ManifestRow } from "@/lib/history";
-import { MODE, STATUS } from "@/lib/policy";
+import { MODE, STATUS, calendarDay } from "@/lib/policy";
 import { scheduleFrom } from "@/lib/commerce/catalog";
 import { ensureHydrated } from "@/lib/store";
+import { readEvents, recordEvent } from "@/lib/events";
+import EventConsole from "../components/EventConsole";
+import VoiceFill from "./VoiceFill";
+// Type-only: erasado antes de construir, igual que Balance en TransferPanel.
+import type { SpokenService } from "@/lib/gemini";
 import EmptyState from "../components/EmptyState";
 
 /**
@@ -97,8 +102,45 @@ const SERVICE_HINTS = [
   "YouTube Premium",
 ];
 
+
+/**
+ * What this commitment is waiting for, and — the part that was missing —
+ * **on whom**.
+ *
+ * Both halves matter. "In progress" covers two states that need opposite
+ * things: a row awaiting approval is waiting on *you* and cannot be charged
+ * until you act, while a scheduled one is waiting on the clock and needs
+ * nothing from anybody. Printed the same, they are indistinguishable — which
+ * is how a request made ten seconds ago reads as one that vanished.
+ *
+ * PayPal is not one of the waiters. Its answer arrives during approval, in
+ * its own UI, in the moment you press it; after that nothing is pending on
+ * that side. So the two possible answers to "whose response am I waiting
+ * for?" are you, and the date.
+ */
+function waitingOn(row: ManifestRow): string | null {
+  switch (row.status) {
+    case "Awaiting approval":
+      return "Waiting for your approval — nothing can be charged until you give it.";
+    case "Reserved": {
+      const due = scheduleFrom(row.condition);
+      if (!due) return "Reserved · waiting on its condition.";
+      return due <= calendarDay()
+        ? "Due now — the agent settles it on its next pass."
+        : `Due ${due} — the agent settles it that day.`;
+    }
+    case "Active":
+      return "Running until you remove it.";
+    case "Captured":
+      return "Paid.";
+    case "Released":
+      return "Released — nothing was charged.";
+    default:
+      return null;
+  }
+}
+
 export default function RecurringView() {
-  const router = useRouter();
   const [rows, setRows] = useState<ManifestRow[] | null>(null);
   /** The row waiting for a second click. Nothing is removed on the first. */
   const [confirming, setConfirming] = useState<number | null>(null);
@@ -111,6 +153,10 @@ export default function RecurringView() {
   const [currency, setCurrency] = useState("USD");
   const [due, setDue] = useState("");
   const [formError, setFormError] = useState<string | null>(null);
+  /** Lo que se acaba de crear, para confirmarlo donde mismo en vez de mandar a otra página. */
+  const [justAdded, setJustAdded] = useState<{ name: string; id: number } | null>(null);
+  /** Lo mismo que ve Overview, persistido: lo que el agente hace encaja aquí. */
+  const [events, setEvents] = useState<string[]>([]);
 
   useEffect(() => {
     let cancelled = false;
@@ -119,6 +165,7 @@ export default function RecurringView() {
     void ensureHydrated().then(() => {
       if (cancelled) return;
       setRows(readPolicyRows().filter(isCommitment));
+      setEvents(readEvents());
     });
     return () => {
       cancelled = true;
@@ -126,6 +173,38 @@ export default function RecurringView() {
   }, []);
 
   const refresh = () => setRows(readPolicyRows().filter(isCommitment));
+
+  /**
+   * Say it here as well as there.
+   *
+   * This section writes into the same record Overview's console keeps, which
+   * is the whole point of showing one: an order added here is readable from
+   * the dashboard, and a capture the agent settles over there appears here —
+   * where the commitment was made — instead of nowhere.
+   */
+  /**
+   * What the microphone said, into the fields — and only into the fields.
+   *
+   * Empty strings leave what is already there alone, so a recording that only
+   * caught the service does not erase an amount typed a moment earlier. The
+   * notice says the next step rather than congratulating: the point is that
+   * there is a step left.
+   */
+  const fillFromVoice = (fields: SpokenService) => {
+    setService(fields.service || service);
+    if (fields.url) setUrl(fields.url);
+    if (fields.amount) setAmount(fields.amount);
+    if (fields.currency) setCurrency(fields.currency);
+    if (fields.date) setDue(fields.date);
+    setFormError(null);
+    setNotice("Understood — check the fields, then add it.");
+  };
+
+  const remember = (message: string) => {
+    const line = `[${new Date().toLocaleTimeString()}] ${message}`;
+    recordEvent(line);
+    setEvents(readEvents());
+  };
 
   const remove = (row: ManifestRow) => {
     if (typeof row.id !== "number") return;
@@ -147,6 +226,7 @@ export default function RecurringView() {
 
     setRows((prev) => (prev ?? []).filter((r) => r.id !== row.id));
     setNotice(`Removed "${row.what}". It will not be charged again.`);
+    remember(`✕ [RECURRING] "${row.what}" removed — it will not be charged again.`);
   };
 
   /**
@@ -213,32 +293,74 @@ export default function RecurringView() {
       conditionDetail: `Due on ${due}.`,
     });
 
-    router.push(`/overview?draft=${id}`);
+    // Stay here. The commitment lands in the list below, and sending them to
+    // another page before they have watched it land is what made the last
+    // attempt read as a form that simply vanished. Approval is the next step
+    // and it is offered on the row that just appeared — the same card, the
+    // same link, opened when they choose to open it.
+    setAdding(false);
+    setService("");
+    setUrl("");
+    setAmount("");
+    setDue("");
+    setFormError(null);
+    refresh();
+    setJustAdded({ name, id });
+    remember(`➕ [RECURRING] "${name}" drafted — awaiting approval. Nothing can be charged yet.`);
   };
+
+  const awaiting = (rows ?? []).filter((row) => row.status === "Awaiting approval").length;
 
   return (
     // Fixed height so the list arriving after mount cannot push the page.
     <div className="min-h-[340px] space-y-4">
-      {!adding ? (
-        <div className="flex flex-wrap items-center justify-between gap-3">
+      {justAdded && (
+        <div className="flex flex-wrap items-center justify-between gap-3 rounded-xl border border-emerald-300 bg-emerald-50 px-4 py-3">
+          <p className="text-xs leading-relaxed text-emerald-800">
+            <strong className="font-semibold">&ldquo;{justAdded.name}&rdquo; added</strong> —
+            drafted, not active. It is waiting for your approval, and nothing can be charged
+            until you give it.
+          </p>
+          <Link
+            href={`/overview?draft=${justAdded.id}`}
+            className="shrink-0 rounded-lg bg-emerald-700 px-3 py-1.5 text-[11px] font-bold text-white transition hover:bg-emerald-800 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-emerald-700 focus-visible:ring-offset-2"
+          >
+            Review and approve &rarr;
+          </Link>
+        </div>
+      )}
+      {/* Always on screen. When it was conditional, opening the form
+          unmounted this row — and taking the microphone button with it, which
+          stopped the recording that had just started. */}
+      <div className="flex flex-wrap items-center justify-between gap-3">
           <p className="flex items-center gap-2 text-xs text-slate-500">
             <Repeat className="h-3.5 w-3.5" strokeWidth={1.75} aria-hidden="true" />
             {rows === null
               ? "Loading commitments…"
               : rows.length === 0
                 ? "Nothing committed yet."
-                : `${rows.length} commitment${rows.length === 1 ? "" : "s"} — standing ones run until you remove them, scheduled ones settle on their date.`}
+                : `${rows.length} commitment${rows.length === 1 ? "" : "s"} — standing ones run until you remove them, scheduled ones settle on their date.${awaiting > 0 ? ` ${awaiting} waiting for your approval.` : ""}`}
           </p>
-          <button
-            type="button"
-            onClick={() => setAdding(true)}
-            className="inline-flex items-center gap-1.5 rounded-xl bg-slate-900 px-3.5 py-2 text-xs font-bold text-white transition hover:bg-slate-800 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500"
-          >
-            <Plus className="h-3.5 w-3.5" strokeWidth={2.5} aria-hidden="true" />
-            Add a service
-          </button>
+          <div className="flex flex-wrap items-center gap-2">
+            <VoiceFill
+              onStart={() => setAdding(true)}
+              onFilled={fillFromVoice}
+              onError={setFormError}
+            />
+            {/* Hidden only while the form is open: it *is* the form's CTA,
+                and offering it twice invites pressing the wrong one. */}
+            {!adding && (
+              <button
+                type="button"
+                onClick={() => setAdding(true)}
+                className="inline-flex items-center gap-1.5 rounded-xl bg-slate-900 px-3.5 py-2 text-xs font-bold text-white transition hover:bg-slate-800 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500"
+              >
+                <Plus className="h-3.5 w-3.5" strokeWidth={2.5} aria-hidden="true" />
+                Add a service
+              </button>
+            )}
+          </div>
         </div>
-      ) : null}
 
       {adding && (
         <form
@@ -396,6 +518,7 @@ export default function RecurringView() {
             const isConfirming = confirming === row.id;
             const dueDate = scheduleFrom(row.condition);
             const settled = row.status === "Captured";
+            const waiting = waitingOn(row);
             return (
               <article
                 key={row.id ?? row.what}
@@ -409,6 +532,12 @@ export default function RecurringView() {
                     {row.merchant || "no merchant named"}
                     {row.allowEndpoint ? ` · ${row.allowEndpoint}` : ""}
                   </p>
+                  {/* De quién espera, no solo qué estado tiene: los dos
+                      estados "en curso" necesitan cosas opuestas y se leen
+                      idénticos sin esta línea. */}
+                  {waiting && (
+                    <p className="mt-0.5 text-[11px] font-medium text-slate-500">{waiting}</p>
+                  )}
                 </div>
 
                 <div className="text-right">
@@ -429,6 +558,17 @@ export default function RecurringView() {
                 )}
 
                 <div className="flex shrink-0 items-center gap-2">
+                  {/* La pregunta "¿dónde la apruebo?" respondida en el sitio
+                      donde apareció el compromiso, no en otra página. */}
+                  {typeof row.id === "number" && row.status === "Awaiting approval" && (
+                    <Link
+                      href={`/overview?draft=${row.id}`}
+                      title="Open the approval card — you decide before anything can be charged."
+                      className="inline-flex shrink-0 items-center rounded-full border border-amber-300 bg-amber-50 px-3 py-1 text-[11px] font-bold text-amber-700 transition hover:bg-amber-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-amber-500"
+                    >
+                      Approve
+                    </Link>
+                  )}
                   <span
                     className={`rounded-full border px-2.5 py-1 text-[10px] font-bold uppercase tracking-wide ${
                       STATUS_STYLE[row.status] ?? "border-slate-300 bg-slate-50 text-slate-500"
@@ -473,6 +613,13 @@ export default function RecurringView() {
           })}
         </div>
       )}
+      {/* La caja agéntica. El mismo registro que Overview: este es el lado
+          donde se pide, aquel donde se decide, y los dos leen lo mismo. */}
+      <EventConsole
+        events={events}
+        title="🖥️ Agentic Event Console"
+        emptyNote="Nothing yet — what you add or remove lands here, and so do the agent's decisions from Overview."
+      />
     </div>
   );
 }

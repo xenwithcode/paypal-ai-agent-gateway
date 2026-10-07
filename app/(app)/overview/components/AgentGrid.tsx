@@ -53,6 +53,9 @@ import { POLICY_STORAGE_KEY as STORAGE_KEY, recordBlocked, writePolicyRows } fro
 // The durable copy: asked only when this browser holds nothing, so a return
 // visit never leaves the synchronous read it was already doing.
 import { ensureHydrated } from "@/lib/store";
+// La consola como componente compartido, y lo que recuerda de ella.
+import { readEvents, recordEvent } from "@/lib/events";
+import EventConsole from "../../components/EventConsole";
 // The same switch the sidebar, /fx and the Send rails read. Sharing one hook
 // is what keeps "the FX module is on" meaning the same thing on every surface.
 import { useFxShield } from "../../hooks/useFxShield";
@@ -81,27 +84,6 @@ function isPolicyRow(value: unknown): value is PolicyRow {
   );
 }
 
-/**
- * What colour a line in the console is.
- *
- * Refusals shout whatever produced them, because a charge that was stopped is
- * the event worth catching at a glance. The agent then gets a colour of its
- * own: in a console this busy, following one actor without reading every word
- * is the difference between watching it work and watching text scroll.
- */
-function logTone(log: string): string {
-  if (
-    log.includes("🚨") ||
-    log.includes("⚠️") ||
-    log.includes("❌") ||
-    log.includes("— refused")
-  ) {
-    return "text-red-400 font-bold";
-  }
-  if (log.includes("🤖")) return "text-sky-300";
-  if (log.includes("🟢")) return "text-emerald-400";
-  return "text-slate-200";
-}
 
 /**
  * What the table starts with: a standing allowance, a drafted order whose
@@ -225,7 +207,11 @@ export default function AgentGrid({
   // closing over a value that changes every render.
   const addLog = useCallback((message: string) => {
     const time = new Date().toLocaleTimeString();
-    setLogs((prev) => [`[${time}] ${message}`, ...prev]);
+    const line = `[${time}] ${message}`;
+    setLogs((prev) => [line, ...prev]);
+    // Recordada además de mostrada: F5 se llevaba el registro entero, y un
+    // producto cuya tesis es la auditoría no puede perderlo con un refresco.
+    recordEvent(line);
   }, []);
 
   /**
@@ -426,6 +412,10 @@ export default function AgentGrid({
       // The clock is read here rather than in the initialiser because the
       // initialiser also runs on the server, where it would be a different time
       // — and React reports any disagreement as a hydration mismatch.
+      // The greeting first — a per-session line, never recorded — and then
+      // everything the console already said. A refresh shows the history
+      // rather than an empty box that contradicts the audit the rest of the
+      // product claims to keep.
       setLogs([
         `[${new Date().toLocaleTimeString()}] ${
           restored
@@ -434,6 +424,7 @@ export default function AgentGrid({
               }.`
             : "🗂️ Order table ready — rows are kept in this browser."
         }`,
+        ...readEvents(),
       ]);
 
       // Settle the prices before the operator is asked to act on them. Runs
@@ -1374,13 +1365,13 @@ export default function AgentGrid({
         />
       )}
 
-      {/* Kernel event console */}
-      <div className="bg-slate-950 text-slate-200 p-4 rounded-2xl border border-slate-800 shadow-inner font-mono text-xs space-y-2">
-        <div className="flex justify-between items-center border-b border-slate-800 pb-2 mb-2 text-slate-400">
-          {/* A heading, not a span: the region had visible text but no name
-              a screen reader could navigate to. Tailwind's preflight resets
-              the h2's own margins and weight, so this renders identically. */}
-          <h2 className="text-xs font-normal">🖥️ Agentic Event Console (UCP &amp; Gateway stream)</h2>
+      {/* The console as a shared component: Recurring reads the record this
+          one writes, so there is one place the tone rules and the empty
+          state live rather than two that drift. */}
+      <EventConsole
+        events={logs}
+        actions={
+          <>
           <div className="flex gap-2">
             {/* The agent comes first because it is the only control here that
                 does something real — the other two are demonstrations. Its own
@@ -1412,15 +1403,9 @@ export default function AgentGrid({
               💥 Simulate Fraud
             </button>
           </div>
-        </div>
-        <div className="h-32 overflow-y-auto space-y-1 scrollbar-thin">
-          {logs.map((log, index) => (
-            <div key={index} className={logTone(log)}>
-              {log}
-            </div>
-          ))}
-        </div>
-      </div>
+          </>
+        }
+      />
 
     </div>
   );

@@ -425,3 +425,138 @@ function buildDemoPolicy(prompt: string, availableBalance: string): IntentionPol
     mode: capped >= 500 ? MODE.copilot : MODE.autonomous,
   };
 }
+
+// ─── Spoken input ──────────────────────────────────────────────────────────
+
+/**
+ * What a spoken request filled in for the recurring form.
+ *
+ * Every field can be empty, and an empty string means one thing only: **the
+ * user did not say it**. That is why nothing here is optional in the schema
+ * and why nothing is defaulted — a model that invents an amount to complete a
+ * form has written a number the operator will be asked to approve, and this
+ * product does not put values in front of a human that nobody said out loud.
+ *
+ * Voice *suggests*; the form is still where it is confirmed, and the approval
+ * card is still where it is agreed. Nothing here submits anything.
+ */
+export type SpokenService = {
+  service: string;
+  url: string;
+  amount: string;
+  currency: string;
+  date: string;
+};
+
+export type SpokenResult = {
+  /** The fields, or null when nothing could be understood. */
+  fields: SpokenService | null;
+  source: "model" | null;
+  /** Plain reason when nothing came back. Never a stack trace. */
+  reason: string | null;
+};
+
+const spokenSchema: Schema = {
+  type: Type.OBJECT,
+  properties: {
+    service: {
+      type: Type.STRING,
+      description: "The service as the user named it, e.g. 'Netflix'. Never invented.",
+    },
+    url: {
+      type: Type.STRING,
+      description: "The website for that service if the user gave one. Empty string if not said.",
+    },
+    amount: {
+      type: Type.STRING,
+      description: "Digits only, e.g. '15.99'. Empty string if the user did not say an amount.",
+    },
+    currency: {
+      type: Type.STRING,
+      description: "USD unless the user named PYUSD.",
+    },
+    date: {
+      type: Type.STRING,
+      description:
+        "The next payment date as YYYY-MM-DD, resolving relative dates against today. Empty string if not said.",
+    },
+  },
+  required: ["service", "url", "amount", "currency", "date"],
+};
+
+const SPOKEN_RULES = `You are filling in a form for a recurring payment from what was said aloud.
+
+- service: the service the user named, as they named it. Required.
+- url: the site for that service if they gave one, without a path. "" when not said.
+- amount: digits only, e.g. "15.99". "" when not said.
+- currency: "USD" unless they named PYUSD.
+- date: the next payment date as YYYY-MM-DD. Resolve "next Friday", "the 1st", "el 1 de noviembre" and similar against today's date. "" when not said.
+
+Never invent a value the user did not say. An empty string means "not said" — the form will ask for what is missing. Today is {today}.`;
+
+/**
+ * Understand one spoken request.
+ *
+ * The audio goes straight to the model — no separate transcription step to
+ * disagree with the interpretation of it, and one round trip instead of two.
+ * A transcription service and a parser can each be right while the pair is
+ * wrong; sending the sound itself is one question.
+ *
+ * Never throws: an absent client and a refused call both come back as a
+ * reason, because the caller's fallback is a form the user can type into —
+ * the path that always works, which is why voice is allowed to be optional.
+ */
+export async function parseSpokenService(base64: string, mimeType: string): Promise<SpokenResult> {
+  const ai = getClient();
+  if (!ai) {
+    return { fields: null, source: null, reason: "No Gemini credentials are configured." };
+  }
+
+  const today = new Date().toISOString().slice(0, 10);
+
+  try {
+    const response = await ai.models.generateContent({
+      model: MODEL,
+      contents: [
+        {
+          role: "user",
+          parts: [
+            { inlineData: { mimeType, data: base64 } },
+            { text: SPOKEN_RULES.replace("{today}", today) },
+          ],
+        },
+      ],
+      config: {
+        responseMimeType: "application/json",
+        responseSchema: spokenSchema,
+      },
+    });
+
+    const raw = response.text;
+    if (!raw) throw new Error("the model returned nothing");
+
+    const parsed = JSON.parse(raw) as Partial<SpokenService>;
+    const text = (value: unknown): string => (typeof value === "string" ? value.trim() : "");
+
+    // Normalised here rather than trusted: a model that returns an amount as
+    // a number, or a date in another shape, would put a value in the form the
+    // date input cannot hold — and the operator would have to notice.
+    const date = text(parsed.date);
+    return {
+      fields: {
+        service: text(parsed.service),
+        url: text(parsed.url),
+        amount: text(parsed.amount),
+        currency: parsed.currency === "PYUSD" ? "PYUSD" : "USD",
+        date: /^\d{4}-\d{2}-\d{2}$/.test(date) ? date : "",
+      },
+      source: "model",
+      reason: null,
+    };
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    // The reason is reported, never swallowed: the operator's only other view
+    // of a failed call is the server console.
+    return { fields: null, source: null, reason: `Gemini: ${message}` };
+  }
+}

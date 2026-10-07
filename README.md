@@ -54,8 +54,9 @@ Approve **once**: *≤ 60 USD, this week, these merchants.* The agent then produ
 | **Purchase history + printable report** | Activity lists every order that settled — date, item, condition, endpoint, amount — beside the charges it refused, which are recorded nowhere else. Sample rows carry a `Sample` chip; **Print / save as PDF** produces the report. |
 | **Money that moved, read live** | Activity also asks Transaction Search for the last 30 days and renders the account's own records in AG Grid, with the column groups derived from the response's nesting rather than written by hand — and read in the order a person reads money: *when, how much, what for*, and only then the identifiers. Totals split by direction with fees on their own line, because an amount and the fee taken from it are not the same number. **Clicking any row writes that transaction out top to bottom** — the grid is for scanning many, and the detail is for reading one. *Could not ask*, *asked and it is empty* and *here it is* are three different states — only the last one means you have no transactions. |
 | **A balance that keeps up** | The Account Balance is **PayPal's own figure**, read live — not a number this app invents, and not a ledger of its own that could disagree with it. It is read when the page renders, so after a capture, a release or an authorization the screen re-reads it and says so **only when it changed**: money that moved is worth a line, a figure that stayed where it was is not. |
+| **The event console, remembered** | The Agentic Event Console is one shared component with one record behind it: the dashboard writes to it and **so does Recurring**, so an order added in one place is readable in the other — and F5 no longer erases it. It is narration, not the ledger: a refusal is still recorded as a record, because a line of prose that scrolls away is not an audit. |
 | **Manifests a machine can fetch** | Every stored order is served as a manifest by `GET /api/manifest` — the same document the card in Agentic Commerce shows, built by the same function. `POST /api/manifest` answers the question the other side of a trade asks: *does this payment fit these terms?* It is judged by the same rules a buyer's charge is, plus the one rule only a seller has — nothing below the price is accepted. |
-| **Recurring** | Add a service — its type, its URL, the amount and the date it is due — and it is **drafted, never activated by the form**: it lands as *Awaiting approval* and the card asks before anything can be charged. The date is stored as the order's own condition, so the agent settles it when the day comes and refuses before it — even for a service no catalog has ever heard of, because a schedule is compared against the clock rather than a price. Standing allowances approved from Overview appear beside them; removing one needs a deliberate second click, and a settled row keeps its receipt rather than a button that would erase it. |
+| **Recurring** | Add a service — its type, its URL, the amount and the date it is due — **by typing or by speaking**: the microphone fills the form and stops there, because speech is another way to say something, not a way to have already agreed to it. Either way it is **drafted, never activated**: it lands as *Awaiting approval*, the row says *whose* answer it is waiting for, and the Approve button is on the row itself. The date is stored as the order's own condition, so the agent settles it when the day comes and refuses before it — even for a service no catalog has ever heard of, because a schedule is compared against the clock rather than a price. Standing allowances from Overview appear beside them; removing needs a deliberate second click, and a settled row keeps its receipt rather than a button that would erase it. |
 | **Manifest reader** | Agentic Commerce shows the machine-readable record behind each order — ceiling, endpoint, condition, expiry, mode — with absent fields marked absent, and **View as JSON**. |
 | **Send money** | Three rails: **USD** first, because that is what PayPal settles in, then the stablecoin, then a Venezuelan bank behind the FX opt-in. Name a recipient and an amount, see *recipient gets* / *you pay* before committing, and the recipient is written into the order **before** anything is authorized. |
 
@@ -230,6 +231,8 @@ paypal-ai-agent/
 │   │   ├── hooks/usePaypalBalance.ts # the balance, re-read after money moves
 │   │   ├── overview/               # dashboard: intent bar, AG Grid, approval card, console
 │   │   ├── recurring/  activity/  commerce/  send/   # allowances · ledger · manifests · transfers
+│   │   │   └── VoiceFill.tsx         # optional: fills the form, never submits it
+│   │   ├── components/EventConsole.tsx  # one console, one record, two surfaces
 │   │   └── fx/                     # live rates, converter
 │   ├── api/agent/route.ts          # intent → policy, metered, validated
 │   ├── api/holds/route.ts          # activate · capture · release · evaluate
@@ -239,6 +242,7 @@ paypal-ai-agent/
 │   ├── api/paypal/transactions/route.ts # GET — the account's own record, live
 │   ├── api/paypal/balance/route.ts  # GET — the figure, re-read after something moved it
 │   ├── api/fx/route.ts             # cached live FX proxy
+│   ├── api/recurring/parse/route.ts # speech → the four fields, metered like every model call
 │   ├── api/store/route.ts          # GET · PUT — the durable copy of the two records
 │   ├── api/manifest/route.ts       # GET — every order as a manifest · POST — does this payment fit?
 │   ├── layout.tsx  page.tsx  globals.css
@@ -247,6 +251,7 @@ paypal-ai-agent/
 │   ├── gemini.ts                   # structured-output LLM call
 │   ├── paypal.ts                   # server-only client, balance, order lifecycle, transactions
 │   ├── history.ts                  # the ledger and the policy rows, read and written
+│   ├── events.ts                   # what the console said — local, bounded, survives a reload
 │   ├── gridColumns.ts              # JSON records → columns for many, labelled lines for one
 │   ├── manifests.ts                # one order → the document a counterparty fetches
 │   ├── transactionTotals.ts        # what came in, out, and what it cost — split, never summed as one
@@ -258,7 +263,7 @@ paypal-ai-agent/
 │   ├── fx/{rates,providers}.ts     # conversion math + live feeds
 │   └── shields/                    # InflationShield, PagoMovilEngine
 ├── data/                           # runtime only, gitignored — the durable copy on disk
-├── tests/                          # 148 tests on node:test — transitions, conditions, ceiling bands, window, judgements, ledger, store, rate limit, grid columns, totals, offers
+├── tests/                          # 154 tests on node:test — transitions, conditions, ceiling bands, window, judgements, ledger, store, rate limit, grid columns, totals, offers
 ├── docs/architecture/              # Archify diagram + spec
 ├── PRODUCT.md  DESIGN.md  TRABAJO-PROXIMA-SESION.md
 ├── env.example  LICENSE
