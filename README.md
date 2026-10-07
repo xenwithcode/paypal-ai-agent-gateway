@@ -38,6 +38,7 @@ Approve **once**: *≤ 60 USD, this week, these merchants.* The agent then produ
 | Capability | What you see |
 | --- | --- |
 | **Intent → order** | Type *"white sneakers, size 10, by Friday, only if the price drops to 60 USD"* and get a structured order: what, ceiling, **condition**, valid until, mode. |
+| **Talk to it, by voice** | **🎙️ Talk to paypal-ai-agent**, above *Draft order*. You speak; Gemini Live decides what to ask for and returns it as a tool call; the gateway runs it through **the very handler the button uses**, the console prints every line, and the agent answers **out loud**. Its reply is written from the lines those handlers actually logged — so a refused capture is spoken as a refusal, and a balance question reads PayPal live instead of repeating a number it remembers. The text box is still there: voice is an addition to the keyboard, never a replacement for it. |
 | **Human-in-the-loop approval** | Every rule lands as `Awaiting approval`. The card opens itself after a draft — nothing is live until you authorize. |
 | **Approval card** | Click the product and the order opens as a card: real image, stock, rating, returns and SKU, then **your envelope** — ceiling, condition verdict, the one host it may reach. The catalog is re-read when it opens, so the price being judged is the price now. |
 | **Conditional holds** | An order with a condition reserves its ceiling (`Reserved`), settles only through **Capture** while the condition holds, and returns the money through **Release**. The server re-judges the condition on every capture instead of trusting the verdict from draft time. |
@@ -88,7 +89,10 @@ Approve **once**: *≤ 60 USD, this week, these merchants.* The agent then produ
 
 **Components**
 
-- **`lib/gemini.ts`** — calls Gemini with a `responseSchema`, so the model is forced to return valid JSON rather than prose we parse. The system prompt is English to stay aligned with the UI vocabulary.
+- **`lib/gemini.ts`** — calls Gemini with a `responseSchema`, so the model is forced to return valid JSON rather than prose we parse. The system prompt is English to stay aligned with the UI vocabulary. It also owns the authentication decision and hands out a client for any region, because the text model and the live model are not served from the same one.
+- **`lib/voice/tools.ts`** — the tools the spoken agent may ask for, plus the validation of what it asks. Pure, import-free, and shared by the server (which declares them), the model (which calls them) and the browser (which checks them before acting).
+- **`lib/voice/live.ts`** — the Live API session: audio in, tool calls out, audio back. Server-side only.
+- **`lib/grid/setup.ts`** — module registration, the licence key and the grid's theme, in one place because there are two grids and neither imports the other. Which *modules* get registered is decided by `lib/grid/licence.ts`, which reads a key before anyone hands it to a manager — AG Grid and AG Studio keep separate licence stores, and a Studio key given to the grid prints "Invalid License Key" although the key is valid.
 - **`lib/policy.ts`** — one source of truth for status and mode strings shared by server and grid, so a cell can never drift from what the renderer compares against.
 - **`lib/fx/rates.ts`** — pure conversion math through USD; no fetching, shared by server and browser.
 - **`lib/fx/providers.ts`** — dolarvzla (BCV + intervention) and CoinGecko. Both verified reachable and keyless. **If the BCV feed fails it raises rather than guessing a rate.**
@@ -125,10 +129,30 @@ PAYPAL_ENVIRONMENT=Sandbox
 # Run this once — it opens a browser and writes a credential file:
 #   bash <(curl -sSL https://storage.googleapis.com/cloud-samples-data/adc/setup_adc.sh)
 GCP_PROJECT=your_gcp_project_id
-GCP_LOCATION=us-central1
+# Region and model are NOT independent choices: gemini-3.8-flash 404s from
+# us-central1 and answers from `global`. Verified against the real SDK.
+GCP_LOCATION=global
 
 # ── B) Gemini API (Google AI Studio) ────────────────────────────────────
 GEMINI_API_KEY=your_gemini_api_key
+
+# ── Optional ────────────────────────────────────────────────────────────
+# AG Grid (Enterprise) trial licence — https://www.ag-grid.com/license-pricing/
+# WITHOUT it the app registers Community modules on purpose: registering
+# Enterprise unlicensed makes AG Grid print an eight-line banner on every page,
+# and nothing in the UI is Enterprise-only yet. Enterprise turns on by itself
+# when you set this.
+NEXT_PUBLIC_AG_GRID_LICENSE_KEY=
+# AG Studio trial licence — a DIFFERENT product with a different licence store.
+# A Studio key given to the grid prints "Invalid License Key" although it is
+# valid. It is read but not wired until a Studio component lands.
+NEXT_PUBLIC_AG_STUDIO_LICENSE_KEY=
+
+# The voice agent's Live endpoint — deliberately NOT GCP_LOCATION, because
+# gemini-3.8-live answers from us-central1 and 404s from `global`.
+GEMINI_LIVE_LOCATION=us-central1
+GEMINI_LIVE_MODEL=gemini-3.8-live
+GEMINI_LIVE_VOICE=Aoede
 ```
 
 ```bash
@@ -146,7 +170,7 @@ port is taken, in which case it picks the next free one and says so.
 | `npm run build` | Production build — **stop `dev` first** |
 | `npm start` | Serve the production build |
 | `npm run lint` / `lint:fix` | ESLint |
-| `npm test` | Test suite — transition rules, condition evaluation, the ceiling bands, the window, the charge and hold judgements, history readers. Uses Node's built-in runner, so no test dependency. |
+| `npm test` | Test suite — transition rules, condition evaluation, the ceiling bands, the window, the charge and hold judgements, history readers, the rate limiter, the column derivations, and the contract the spoken agent works to. Uses Node's built-in runner, so no test dependency. |
 
 > ⚠️ `npm run build` and `npm run dev` both write to `.next/`. The build wipes it, so running them together leaves the dev server serving stale artifacts and throwing `MODULE_NOT_FOUND`.
 
@@ -203,7 +227,8 @@ Stated plainly, because a judge deserves to know exactly what they are looking a
 | **PayPal balance** | Transaction Search API v1 (`searchBalances`) through `@paypal/paypal-server-sdk` |
 | **PayPal client** | OAuth 2.0 client-credentials, sandbox by default |
 | **LLM inference** | Google Gemini (`@google/genai`) with `responseMimeType: application/json` + `responseSchema` — structured output enforced by the model |
-| **UI grid** | AG Grid v36 with the Theming API, custom cell renderer, select editor |
+| **UI grid** | AG Grid v36 with the Theming API: custom cell renderer, select editor, and one palette (`lib/grid/setup.ts`) that the table and the page read from together. **Modules are chosen by the licence that is actually configured**: with a Grid/Charts key, Enterprise; with none, Community — because registering Enterprise unlicensed makes AG Grid print an eight-line banner on every page, and nothing in the UI is Enterprise-only yet. An **AG Studio trial key is configured and deliberately not handed to the grid**: the two products keep separate licence stores, and a Studio key fed to `ag-grid-enterprise` prints "Invalid License Key" although the key is valid. Master-Detail and AG Charts become available with a Grid key (`NEXT_PUBLIC_AG_GRID_LICENSE_KEY`), and are covered by the Studio key the moment the grid runs inside a Studio component. |
+| **Voice agent** | Gemini **Live API** (`gemini-3.8-live` on Vertex, `us-central1`) — audio in at PCM16/16 kHz, audio out at 24 kHz, with **function calling** as the bridge back into the app. The browser never sees a credential: it posts to `/api/agent/voice`, which opens a short-lived session and returns only the tool calls to run and the audio to play |
 
 ### Simulated — deterministic, in-process
 
@@ -214,6 +239,7 @@ Stated plainly, because a judge deserves to know exactly what they are looking a
 | **The autonomous agent** | Real: it runs on a timer, **the server judges every pass**, and a capture goes through the same PayPal path as a click — a live one prints its own `captureId`. What is modelled is the *schedule*: it ticks while this page is open, rather than a worker that wakes on its own. |
 | **Transfers and QR** | The conversion maths is real against the live BCV rate. No funds move, and the panel labels itself a preview rather than reporting a settlement. |
 | **Recurring / Activity / Agentic Commerce** | All three are built and read real stored records. Activity now reads **Transaction Search live** for what actually moved, beside two local ledgers — what the policy allowed, and what it refused (the one PayPal never sees) — both backed by the durable copy. What is still local: no `createSubscription` yet, and the manifests are rendered from policy rows rather than exchanged with a counterparty. |
+| **Voice** | The command, the execution and the reply are real: audio goes to a live model, the tool calls run through the same handlers the buttons call, and the server judge in front of `capture` and `activate` is untouched by any of it. What is not built is a *conversation* — this is push to talk: one utterance, one answer, no streaming microphone and no interrupting the agent mid-sentence. A full-duplex WebSocket would change how the audio travels, not what it is allowed to do. |
 
 > Nothing in this README or the UI claims enforcement or settlement that does not exist.
 
@@ -233,8 +259,10 @@ paypal-ai-agent/
 │   │   ├── recurring/  activity/  commerce/  send/   # allowances · ledger · manifests · transfers
 │   │   │   └── VoiceFill.tsx         # optional: fills the form, never submits it
 │   │   ├── components/EventConsole.tsx  # one console, one record, two surfaces
+│   │   ├── components/VoiceCommand.tsx  # mic → command → execute → speak back
 │   │   └── fx/                     # live rates, converter
 │   ├── api/agent/route.ts          # intent → policy, metered, validated
+│   ├── api/agent/voice/route.ts    # speech → tool calls → spoken reply, same meter
 │   ├── api/holds/route.ts          # activate · capture · release · evaluate
 │   ├── api/policy/check/route.ts   # ceiling + recipient + window + mode, every violation
 │   ├── api/catalog/route.ts        # demo-catalog lookup proxy
@@ -248,7 +276,10 @@ paypal-ai-agent/
 │   ├── layout.tsx  page.tsx  globals.css
 ├── lib/
 │   ├── policy.ts                   # STATUS / MODE + transition, charge, hold and offer judgements, ceiling bands
-│   ├── gemini.ts                   # structured-output LLM call
+│   ├── gemini.ts                   # structured-output LLM call + auth for any region
+│   ├── voice/{tools,live}.ts       # what the spoken agent may do · the Live session
+│   ├── grid/setup.ts               # which modules the licence allows, and the grid's palette
+│   ├── grid/licence.ts             # reads a key before it reaches a manager (two stores exist)
 │   ├── paypal.ts                   # server-only client, balance, order lifecycle, transactions
 │   ├── history.ts                  # the ledger and the policy rows, read and written
 │   ├── events.ts                   # what the console said — local, bounded, survives a reload
@@ -263,9 +294,9 @@ paypal-ai-agent/
 │   ├── fx/{rates,providers}.ts     # conversion math + live feeds
 │   └── shields/                    # InflationShield, PagoMovilEngine
 ├── data/                           # runtime only, gitignored — the durable copy on disk
-├── tests/                          # 154 tests on node:test — transitions, conditions, ceiling bands, window, judgements, ledger, store, rate limit, grid columns, totals, offers
+├── tests/                          # 177 tests on node:test — transitions, conditions, ceiling bands, window, judgements, ledger, store, rate limit, grid columns, totals, offers, the spoken tool contract, which licence belongs to which manager
 ├── docs/architecture/              # Archify diagram + spec
-├── PRODUCT.md  DESIGN.md  TRABAJO-PROXIMA-SESION.md
+├── PRODUCT.md  TRABAJO-PROXIMA-SESION.md
 ├── env.example  LICENSE
 ```
 
@@ -333,7 +364,7 @@ Tracked in [`TRABAJO-PROXIMA-SESION.md`](./TRABAJO-PROXIMA-SESION.md).
 
 **Sponsors**
 
-- **[AG Grid](https://ag-grid.com)** — the policy control table: editable columns, a ceiling cell that draws the current price against the limit, a *Valid until* cell that says when the window has closed, custom cell renderers for the product and the approval control, select editor for autonomy mode, Quartz theme through the Theming API.
+- **[AG Grid](https://ag-grid.com)** — the policy control table: editable columns, a ceiling cell that draws the current price against the limit, a *Valid until* cell that says when the window has closed, custom cell renderers for the product and the approval control, select editor for autonomy mode, and the palette — taken from AG Grid's own published design tokens — that the grid and the page share. Enterprise features (Master-Detail, AG Charts) activate with a Grid licence; **AG Studio** (`ag-studio`, `ag-studio-react`) is installed under its own trial licence and is the path to the Studio Agent Framework.
 
 **Supporting**
 
