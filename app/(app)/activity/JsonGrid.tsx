@@ -2,16 +2,13 @@
 "use client";
 
 import { useMemo } from "react";
-import { AllCommunityModule, ModuleRegistry, themeQuartz } from "ag-grid-community";
 import { AgGridReact } from "ag-grid-react";
 import { JSON_COL_DEF, columnDefsFor } from "@/lib/gridColumns";
-
-// AG Grid is modular: a grid only works with the modules it declares. The
-// Overview grid registers the same set, and registration is idempotent — but
-// this page never imports that component, so its registration would not have
-// run here. Each entry point declares what it uses rather than relying on
-// something else having loaded first.
-ModuleRegistry.registerModules([AllCommunityModule]);
+// Registration, licence and palette, shared with the Overview grid. This page
+// never imports that component, so the registration would not have run here —
+// each entry point declares what it uses rather than relying on something
+// else having loaded first, which is why this import exists at all.
+import { gridTheme } from "@/lib/grid/setup";
 
 /**
  * A grid for records nobody here wrote the schema for.
@@ -62,7 +59,7 @@ export default function JsonGrid({
         rowData={rows}
         columnDefs={columnDefs}
         defaultColDef={JSON_COL_DEF}
-        theme={themeQuartz}
+        theme={gridTheme}
         // Fit the columns to what is in them. PayPal's fields vary in width by
         // an order of magnitude (`transactionId` against `value`), and a fixed
         // guess leaves one clipped and the other mostly empty.
