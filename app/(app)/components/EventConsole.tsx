@@ -43,14 +43,33 @@ export function logTone(log: string): string {
   return "text-slate-200";
 }
 
+/**
+ * The name of the console, owned by the component.
+ *
+ * It used to be a prop, and that is how one console ended up with two names:
+ * Overview took the default (`… (UCP & Gateway stream)`) while Recurring
+ * overrode it with the short one — for the *same* record, written by the
+ * dashboard and read by both. Two names for one stream invites a reader to
+ * conclude there are two logs, which is the confusion Fase 12 existed to
+ * remove.
+ *
+ * The suffix also named UCP in a header, where nothing implements it: the
+ * protocol is a narrative decision, not a feature, and the lines already say
+ * who spoke — `🧠`, `🤖`, `📄`, `❌`. A title earns its place by contrasting
+ * with another title, and there is no other console to contrast with.
+ *
+ * Not configurable on purpose. A third surface that wants its own wording is
+ * how this came back; if a section ever genuinely runs a *different* stream,
+ * that is when it gets a name — one definition, not three.
+ */
+const TITLE = "🖥️ Agentic Event Console";
+
 export default function EventConsole({
   events,
-  title = "🖥️ Agentic Event Console (UCP & Gateway stream)",
   actions,
   emptyNote = "Nothing yet.",
 }: {
   events: string[];
-  title?: string;
   /** Buttons that belong to this surface — the dashboard's controls live here. */
   actions?: ReactNode;
   emptyNote?: string;
@@ -61,14 +80,14 @@ export default function EventConsole({
         {/* A heading, not a span: the region had visible text but no name a
             screen reader could navigate to. Tailwind's preflight resets the
             h2's own margins and weight, so this renders identically. */}
-        <h2 className="text-xs font-normal">{title}</h2>
+        <h2 className="text-xs font-normal">{TITLE}</h2>
         {actions && <div className="flex gap-2">{actions}</div>}
       </div>
 
       <div
         role="log"
         aria-live="polite"
-        aria-label={title}
+        aria-label={TITLE}
         className="h-32 overflow-y-auto space-y-1 scrollbar-thin"
       >
         {events.length === 0 ? (

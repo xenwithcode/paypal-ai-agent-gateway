@@ -682,7 +682,7 @@ export default function RecurringView() {
           la materia prima de la que se cargan. */}
       <section
         aria-labelledby="plans-heading"
-        className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm"
+        className="rounded-2xl border border-blue-100 bg-blue-50 p-5 shadow-sm"
       >
         <div className="flex flex-wrap items-start justify-between gap-3">
           <div className="min-w-0">
@@ -769,7 +769,7 @@ export default function RecurringView() {
             <div className="mt-4 overflow-x-auto">
               <table className="w-full min-w-[620px] border-collapse text-left">
                 <thead>
-                  <tr className="border-b border-slate-200">
+                  <tr className="border-b border-blue-200">
                     <th scope="col" className="px-3 py-2 text-[11px] font-semibold uppercase tracking-wide text-slate-500">
                       Plan
                     </th>
@@ -787,7 +787,10 @@ export default function RecurringView() {
                     </th>
                   </tr>
                 </thead>
-                <tbody className="divide-y divide-slate-100">
+                {/* One step darker than the panel (blue-100 was the same value
+                    as the tint and the rule vanished between rows). blue-200
+                    separates the rows without drawing a cage around them. */}
+                <tbody className="divide-y divide-blue-200">
                   {plans.plans.map((plan) => (
                     <tr key={plan.id || plan.name}>
                       <td className="max-w-[260px] px-3 py-2.5">
@@ -824,7 +827,7 @@ export default function RecurringView() {
                         <button
                           type="button"
                           onClick={() => loadPlan(plan)}
-                          className="rounded-full border border-slate-300 bg-white px-3 py-1 text-[11px] font-bold text-slate-600 transition hover:border-slate-900 hover:text-slate-900 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500"
+                          className="rounded-full border border-blue-300 bg-white px-3.5 py-1.5 text-[11px] font-bold text-blue-700 transition hover:border-blue-600 hover:bg-blue-600 hover:text-white hover:shadow-sm active:bg-blue-700 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 focus-visible:ring-offset-2 focus-visible:ring-offset-blue-50"
                           title="Load this plan's name and price into the form above. The URL and the date stay yours."
                         >
                           Use this plan
@@ -851,7 +854,6 @@ export default function RecurringView() {
           donde se pide, aquel donde se decide, y los dos leen lo mismo. */}
       <EventConsole
         events={events}
-        title="🖥️ Agentic Event Console"
         emptyNote="Nothing yet — what you add or remove lands here, and so do the agent's decisions from Overview."
       />
     </div>
