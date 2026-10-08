@@ -304,6 +304,85 @@ export async function searchCandidates(
 }
 
 /**
+ * One candidate, kept after the decision has been made.
+ *
+ * The search used to be disposable: it produced a strip, the operator chose,
+ * and the alternatives were dropped — so a week later the record said which
+ * product an order points at and not what it was chosen *over*. That is the
+ * half of the audit this product claims and could not produce: the agent's
+ * proposal survives only in a console line that scrolls away.
+ *
+ * It is a reduction rather than the whole `CatalogProduct` because it lives
+ * inside every stored row: descriptions, shipping policies and ten image URLs
+ * per candidate would put kilobytes in `data/store.json` and in the browser's
+ * storage for a field nothing reads. What is kept is what a reader needs to
+ * compare the choice — identity, title, price, who made it, and the picture it
+ * was judged by.
+ *
+ * Returns `null` rather than throwing or guessing: a candidate without an id
+ * cannot be matched against `matchedId`/`chosenId`, and a record that cannot
+ * be linked to a choice is not a candidate, it is a stray.
+ */
+export interface CandidateRecord {
+  id: number;
+  title: string;
+  /**
+   * What it cost at draft time. `null` when the catalog published no figure —
+   * never `0`, which would be a price this record invented and a comparison
+   * the reader cannot tell from a real one.
+   */
+  price: number | null;
+  currency: "USD";
+  /**
+   * The cover the picker judged by — `images[0]`, never `thumbnail`.
+   *
+   * The same rule `CatalogProduct.images` states: promoting a ~200px thumbnail
+   * into the picture a human decided with is a record that looks complete and
+   * shows nothing.
+   */
+  image: string | null;
+  /** The small asset, kept separately so the grid cell can use it. Never promoted. */
+  thumbnail: string | null;
+  brand: string | null;
+  category: string;
+  stock: number | null;
+  rating: number | null;
+}
+
+export function candidateRecord(raw: unknown): CandidateRecord | null {
+  if (!raw || typeof raw !== "object" || Array.isArray(raw)) return null;
+  const source = raw as Record<string, unknown>;
+
+  const id = source.id;
+  if (typeof id !== "number" || !Number.isFinite(id)) return null;
+
+  const number = (value: unknown): number | null =>
+    typeof value === "number" && Number.isFinite(value) ? value : null;
+  const text = (value: unknown): string | null =>
+    typeof value === "string" && value ? value : null;
+  const images = Array.isArray(source.images) ? source.images : [];
+
+  return {
+    id,
+    title: typeof source.title === "string" ? source.title : "",
+    price: number(source.price),
+    currency: "USD",
+    image: text(images[0]),
+    thumbnail: text(source.thumbnail),
+    brand: text(source.brand),
+    category: typeof source.category === "string" ? source.category : "",
+    stock: number(source.stock),
+    rating: number(source.rating),
+  };
+}
+
+/** Keep the ones that were really candidates; a stray never reaches a row. */
+export function candidateRecords(raw: unknown): CandidateRecord[] {
+  if (!Array.isArray(raw)) return [];
+  return raw.map(candidateRecord).filter((c): c is CandidateRecord => c !== null);
+}
+
+/**
  * Evaluate a condition against a product. Returns null `met` when it cannot
  * be judged — an unanswerable condition must never read as "passed".
  *

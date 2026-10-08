@@ -19,6 +19,10 @@ import { POLICY_STORAGE_KEY, BLOCKED_STORAGE_KEY, pushToStore } from "./store.ts
 // Type-only import of ManifestRow lives in manifests.ts, so this direction is
 // the only runtime one: history → manifests, and no cycle to resolve.
 import { looksLikeManifest } from "./manifests.ts";
+// Type-only, so nothing of the catalog's fetch code is pulled into a module
+// every reader loads — and with the extension, because this module is reached
+// from a test.
+import type { CandidateRecord } from "./commerce/catalog.ts";
 
 // Re-exported so every existing reader keeps importing from here. The keys
 // moved to the module that syncs them; making callers follow would be churn
@@ -131,6 +135,21 @@ export type StoredRow = {
    * Optional because rows stored before it existed simply carry none.
    */
   payee?: string;
+  /**
+   * What the search returned for this order, kept so the choice survives it.
+   *
+   * The three fields below are written together because they answer one
+   * question — *the agent proposed X, the human took Y, from a list of Z* —
+   * and a row holding two of the three is a record that argues with itself.
+   * Optional because rows stored before they existed carry none, and an
+   * absent `candidates` reads as *no strip was recorded*, not as *none was
+   * found*.
+   */
+  candidates?: CandidateRecord[];
+  /** Which candidate the agent would have taken. */
+  matchedId?: number | null;
+  /** Which candidate the human took; equal to `matchedId` when they agreed. */
+  chosenId?: number | null;
   /** Catalog thumbnail, or null when nothing matched. */
   marketImage?: string | null;
   /** Catalog price at draft time, null when nothing matched. */

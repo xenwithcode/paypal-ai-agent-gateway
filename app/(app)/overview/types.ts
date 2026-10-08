@@ -3,6 +3,7 @@
 // The row as the grid, the approval panel and the hold endpoints all see it.
 // Shared rather than redeclared because a field spelled one way in the table
 // and another in the panel is the bug this project keeps finding.
+import type { CandidateRecord } from "@/lib/commerce/catalog";
 
 /** Catalog price at draft time, null when nothing matched. */
 export interface PolicyRow {
@@ -52,4 +53,19 @@ export interface PolicyRow {
    * empty restriction.
    */
   payee?: string;
+  /**
+   * What the search returned for this order, kept after the choice was made.
+   *
+   * Absent on rows drafted before it existed — which reads as *no record of a
+   * strip*, not as *a strip that was empty*. The two are different claims and
+   * only one of them is one this product can make.
+   */
+  candidates?: CandidateRecord[];
+  /** Which candidate the agent would have taken, so a later reader can compare. */
+  matchedId?: number | null;
+  /**
+   * Which candidate the human took. Equal to `matchedId` when they agreed, and
+   * different from it exactly when somebody overrode the agent.
+   */
+  chosenId?: number | null;
 }

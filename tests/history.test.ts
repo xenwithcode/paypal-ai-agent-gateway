@@ -207,6 +207,67 @@ test("a row missing the fields that define an order is dropped", () => {
   assert.equal(rows[0].status, "Active");
 });
 
+// ─── The choice ────────────────────────────────────────────────────────────
+
+test("the agent's proposal and the human's answer survive the round trip", () => {
+  writeRows([
+    {
+      id: 21,
+      what: "Sports Sneakers Off White & Red",
+      status: "Awaiting approval",
+      limit: 150,
+      currency: "USD",
+      matchedId: 91,
+      chosenId: 92,
+      candidates: [
+        {
+          id: 91,
+          title: "Sports Sneakers Off White & Red",
+          price: 119.99,
+          currency: "USD",
+          image: "https://cdn.example.com/large-1.jpg",
+          thumbnail: null,
+          brand: null,
+          category: "mens-shoes",
+          stock: 8,
+          rating: 4.4,
+        },
+        {
+          id: 92,
+          title: "Sports Sneakers Off White Red",
+          price: 109.99,
+          currency: "USD",
+          image: null,
+          thumbnail: null,
+          brand: null,
+          category: "mens-shoes",
+          stock: 3,
+          rating: 4.1,
+        },
+      ],
+    },
+  ]);
+
+  const rows = readPolicyRows();
+  assert.equal(rows.length, 1, "the extra fields do not stop it being a manifest");
+  assert.equal(rows[0].matchedId, 91);
+  assert.equal(rows[0].chosenId, 92);
+  assert.equal(rows[0].candidates?.length, 2);
+  assert.notEqual(rows[0].chosenId, rows[0].matchedId, "the difference is the override");
+});
+
+test("a row written before the choice was recorded claims no strip at all", () => {
+  writeRows([{ id: 22, what: "Drafted last week", status: "Active", limit: 10, currency: "USD" }]);
+
+  const rows = readPolicyRows();
+  assert.equal(rows.length, 1);
+  // Absent, not empty: "no search was recorded" and "the search found
+  // nothing" are different claims, and only one of them this row can make.
+  assert.equal(rows[0].candidates, undefined);
+  assert.equal(rows[0].matchedId, undefined);
+  assert.equal(rows[0].chosenId, undefined);
+});
+
 // ─── Formatting ────────────────────────────────────────────────────────────
 
 test("totals are grouped per currency, never summed across them", () => {

@@ -18,6 +18,21 @@ test("both arrays pass through as they arrived", () => {
   assert.deepEqual(snapshot, { policies: [row], blocked: [{ id: "b1" }] });
 });
 
+test("a row carrying the choice is passed through whole, not flattened", () => {
+  // The record of who the agent proposed and who the human took sits *inside*
+  // the row as a nested list. Validation that rebuilt rows field by field —
+  // rather than checking them — would drop that list silently, and the audit
+  // would vanish without a single error anywhere.
+  const withChoice = {
+    ...row,
+    matchedId: 91,
+    chosenId: 92,
+    candidates: [{ id: 91, title: "Sports Sneakers", price: 119.99 }],
+  };
+  const snapshot = normaliseSnapshot({ policies: [withChoice], blocked: [] });
+  assert.deepEqual(snapshot?.policies, [withChoice]);
+});
+
 test("two empty arrays is a valid snapshot, not an error", () => {
   // A browser that has done nothing is a real state — it is what a fresh
   // checkout sends — and refusing it would leave the server unable to start.

@@ -680,6 +680,11 @@ export default function AgentGrid({
                 merchant,
                 marketPrice: Number(product.price.toFixed(2)),
                 marketImage: product.thumbnail ?? null,
+                // A swap is an override too. The product may come from a
+                // different search than the stored `candidates`, which is
+                // honest: the record says what the order points at now and
+                // what the agent originally proposed, and they differ.
+                chosenId: product.id,
               }
             : r
         )
@@ -712,6 +717,12 @@ export default function AgentGrid({
         // The picker and the approval card use `images[0]`, which is the only
         // one big enough to judge a product by.
         marketImage: product.thumbnail ?? null,
+        // Which one it was, on the row itself. `matchedId` (the agent's pick)
+        // and `candidates` (what it was picked from) arrive from the server;
+        // this is the only field the human writes, and the difference between
+        // the two ids is the override — the thing this product exists to make
+        // visible, now in a place that survives a refresh.
+        chosenId: product.id,
       };
 
       setRowData((prev) => [...prev, chosen]);

@@ -6,7 +6,7 @@ import { STATUS } from "@/lib/policy";
 // The meter in front of this route. It guards two spends, not one: the model
 // call below and the PayPal balance read that precedes it.
 import { agentRateLimit, keyFromHeaders } from "@/lib/rateLimit";
-import { searchCandidates, evaluateCondition, CATALOG_SOURCE } from "@/lib/commerce/catalog";
+import { searchCandidates, evaluateCondition, candidateRecords, CATALOG_SOURCE } from "@/lib/commerce/catalog";
 // Isolated module that owns the Venezuela inflation-shield logic.
 import { processEmergencyDevaluationShield } from "@/lib/shields/InflationShield";
 
@@ -149,6 +149,15 @@ export async function POST(req: NextRequest) {
           ? `${evaluation.detail} · ${matchedBy} on ${CATALOG_SOURCE.name} (${CATALOG_SOURCE.kind})`
           : evaluation.detail,
         allowEndpoint,
+        // The alternatives this order was drafted from, and which one the
+        // agent proposed. `chosenId` is null because nobody has chosen yet —
+        // the strip below is about to ask, and it writes the id that decided
+        // it when somebody does. Keeping all three on the row is what makes
+        // "the agent proposed X, you took Y, from Z options" a record rather
+        // than a console line that scrolls away.
+        candidates: candidateRecords(candidates),
+        matchedId: product?.id ?? null,
+        chosenId: null,
       },
       // What else the search found. The agent used to keep its ranking to
       // itself — the operator saw the product it preferred and never the ones

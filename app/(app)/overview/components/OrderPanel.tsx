@@ -196,6 +196,26 @@ export default function OrderPanel({
   const conditionMet = result ? result.conditionMet : row.conditionMet;
   const detail = result?.conditionDetail ?? row.conditionDetail;
 
+  /**
+   * The choice, as a record rather than as a console line.
+   *
+   * Absent on rows drafted before the search was stored on the row, and that
+   * absence is left alone: *no strip was recorded* is a different claim from
+   * *no strip existed*, and rendering the second would invent a search that
+   * may never have happened. `took` falls back to what the order points at,
+   * because a swap taken from a later search names a product the original
+   * `candidates` list never held.
+   */
+  const candidates = row.candidates ?? [];
+  const proposed = candidates.find((c) => c.id === row.matchedId) ?? null;
+  const took = candidates.find((c) => c.id === row.chosenId) ?? null;
+  const overridden =
+    row.chosenId !== null &&
+    row.chosenId !== undefined &&
+    row.matchedId !== null &&
+    row.matchedId !== undefined &&
+    row.chosenId !== row.matchedId;
+
   const overCeiling = typeof price === "number" && price > row.limit;
   const conditionText = row.condition.trim();
   // The window, read the way the judge reads it. A date that has passed and a
@@ -471,6 +491,47 @@ export default function OrderPanel({
             <p className="mt-3 rounded-lg bg-slate-50 px-3 py-2 text-xs leading-relaxed text-slate-500">
               {detail}
             </p>
+
+            {/* The three ids the row keeps, said where the approval happens:
+                what the search offered, what the agent proposed, what the
+                human took. This is the override made visible — the whole
+                product's thesis in a sentence, on the card that acts on it. */}
+            {candidates.length > 0 && (
+              <div className="mt-3 rounded-lg border border-slate-200 bg-white px-3 py-2 text-xs">
+                <p className="flex items-center gap-1.5 font-semibold text-slate-700">
+                  <Bot className="h-3.5 w-3.5" strokeWidth={1.75} aria-hidden="true" />
+                  {candidates.length} candidate{candidates.length === 1 ? "" : "s"} found for this
+                  order
+                </p>
+                <p className="mt-1 leading-relaxed text-slate-500">
+                  {proposed ? (
+                    <>
+                      The agent proposed{" "}
+                      <span className="font-medium text-slate-700">&ldquo;{proposed.title}&rdquo;</span>
+                    </>
+                  ) : (
+                    "No pick was recorded for the agent"
+                  )}
+                  {" · "}
+                  {took ? (
+                    <>
+                      you chose{" "}
+                      <span className="font-medium text-slate-700">&ldquo;{took.title}&rdquo;</span>
+                    </>
+                  ) : (
+                    <>
+                      the order points at{" "}
+                      <span className="font-medium text-slate-700">&ldquo;{row.what}&rdquo;</span>
+                    </>
+                  )}
+                </p>
+                {overridden && (
+                  <p className="mt-1 font-semibold text-amber-700">
+                    You overrode the agent&rsquo;s pick — this one was your call.
+                  </p>
+                )}
+              </div>
+            )}
           </section>
 
           {/* ── Human authorization ──────────────────────────────── */}
