@@ -28,7 +28,7 @@ type NavItem = {
 /** Sections every user sees. Global-first: spend governance is the core. */
 const PRIMARY_NAV: NavItem[] = [
   { href: "/overview", label: "Overview", icon: LayoutDashboard, hint: "Intents, policies and the live event console" },
-  { href: "/send", label: "Send money", icon: Send, hint: "Pay a person by PayPal, or settle into a local bank" },
+  { href: "/send", label: "Send money", icon: Send, hint: "Pay a person by PayPal, or prepare a local Pago Móvil" },
   { href: "/recurring", label: "Recurring payments", icon: CreditCard, hint: "Spotify, Netflix, Prime Video and the rest" },
   { href: "/activity", label: "Activity", icon: Activity, hint: "Income, spending, blocked attempts and refunds" },
   { href: "/commerce", label: "Agentic Commerce", icon: ScrollText, hint: "Structured orders a machine can check before money moves" },
@@ -151,7 +151,7 @@ export default function Sidebar() {
               href: "/send/bank",
               label: "Pago Móvil",
               icon: Smartphone,
-              hint: "Send PYUSD and settle into a local bank account",
+              hint: "Preview a Pago Móvil payment at the official BCV rate",
             }}
             active={isActive("/send/bank")}
           />

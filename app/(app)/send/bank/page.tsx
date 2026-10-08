@@ -7,10 +7,10 @@ import { useFxShield } from "../../hooks/useFxShield";
 import PagoMovilPanel from "../components/PagoMovilPanel";
 
 /**
- * Local bank settlement is gated on the FX Shield switch, exactly as Pago
- * Móvil was in the sidebar: it only makes sense where the currency is losing
- * value, so it stays out of the way for everyone else. Deep-linking here with
- * the switch off explains the gate rather than showing a broken page.
+ * The local rail is gated on the FX Shield switch, exactly as its two links
+ * are: it only makes sense where the currency is losing value, so it stays out
+ * of the way for everyone else. Deep-linking here with the switch off explains
+ * the gate rather than showing a broken page.
  */
 export default function SendToBankPage() {
   const { enabled, ready } = useFxShield();
@@ -24,7 +24,7 @@ export default function SendToBankPage() {
       <EmptyState
         icon={ShieldAlert}
         title="This rail is part of the FX module"
-        description="Settling into a local bank only matters where the currency is losing value, so it stays hidden until you switch FX Shield on."
+        description="A local Pago Móvil only matters where the currency is losing value, so it stays hidden until you switch FX Shield on."
         action={{ label: "Open FX Shield", href: "/fx" }}
         note="You are seeing this only because the address was typed directly. The sidebar keeps the link hidden while FX Shield is off."
       />

@@ -13,8 +13,10 @@ const NOTE_STYLE: Record<Note["kind"], string> = {
 };
 
 /**
- * Pago Móvil off-ramp: PYUSD into a Venezuelan bank account, plus a merchant
- * QR scan.
+ * Pago Móvil preview: PYUSD into Bolívares at the live BCV rate, plus a
+ * merchant QR scan. Nothing settles — no bank is connected in this build —
+ * and the panel says so exactly where the action is, rather than letting a
+ * heading promise a rail that does not exist.
  *
  * Every figure comes from the live BCV feed; nothing is hardcoded. What this
  * panel deliberately does NOT do is pretend to have moved money — with no
@@ -72,7 +74,7 @@ export default function PagoMovilPanel() {
   const noRateNote = () =>
     `No live rate available${ratesError ? ` (${ratesError})` : ""} — nothing was prepared.`;
 
-  // 1. Pago Móvil off-ramp
+  // 1. Pago Móvil preview
   const handlePagoMovilSubmit = (e: React.FormEvent) => {
     e.preventDefault();
     if (!phone || !amount || !cedula) return;
@@ -95,7 +97,7 @@ export default function PagoMovilPanel() {
     );
     push(
       "warn",
-      "Preview only — no PayPal credentials are configured, so no money moved."
+      "Preview only — no bank is connected in this build, so no money moved."
     );
     setAmount("");
   };
@@ -136,10 +138,11 @@ export default function PagoMovilPanel() {
       {/* Rate header: provenance is shown next to the number it belongs to. */}
       <div className="flex justify-between items-start rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
         <div>
-          <h3 className="text-lg font-bold text-slate-900">Pago Móvil on/off-ramp</h3>
+          <h3 className="text-lg font-bold text-slate-900">Pago Móvil — preview</h3>
           <p className="mt-1 max-w-[60ch] text-xs leading-relaxed text-slate-500">
-            Converts PYUSD in your PayPal balance into Bolívares in a Venezuelan bank account, and
-            back the other way. The conversion happens here, at the rate shown.
+            Converts PYUSD into Bolívares at the official BCV rate and shows exactly what a Pago
+            Móvil payment would send — recipient, cédula, bank and QR. No bank is connected in
+            this build, so nothing here moves money; the button previews the payment.
           </p>
         </div>
         <div className="text-right shrink-0 ml-4">
@@ -164,13 +167,13 @@ export default function PagoMovilPanel() {
         {/* Left column: transfer form */}
         <form onSubmit={handlePagoMovilSubmit} className="space-y-4 rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
           <h4 className="text-xs font-bold text-slate-400 uppercase tracking-wider">
-            Send Pago Móvil from your PYUSD balance
+            Prepare a Pago Móvil from your PYUSD balance
           </h4>
 
           <div className="grid grid-cols-2 gap-3">
             <div>
               <label htmlFor="pm-bank" className="block text-[11px] font-medium text-slate-600 mb-1">
-                Destination Bank
+                Recipient bank
               </label>
               <select
                 id="pm-bank"
@@ -271,7 +274,8 @@ export default function PagoMovilPanel() {
               Pay by QR
             </h4>
             <p className="text-[11px] text-slate-500">
-              Scan a local merchant QR in Venezuela and pay from your digital dollars
+              A local merchant QR, read against your digital dollars — the scan is simulated in
+              this build
             </p>
           </div>
 
