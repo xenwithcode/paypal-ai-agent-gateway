@@ -1,0 +1,58 @@
+[
+  {
+    "id": "supermercado-express-chacao",
+    "name": "Supermercado Express — new butchery aisle",
+    "city": "Chacao, Miranda",
+    "what": "To open a new butchery aisle",
+    "goalUsd": 50000,
+    "raisedUsd": 42500,
+    "returnPct": 14,
+    "risk": "A",
+    "lat": 10.4945,
+    "lng": -66.855,
+    "investors": 1420,
+    "seed": true
+  },
+  {
+    "id": "finca-cafe-el-saman",
+    "name": "Finca de Café El Samán — industrial roaster",
+    "city": "Yaracuy",
+    "what": "To buy an industrial coffee roaster",
+    "goalUsd": 30000,
+    "raisedUsd": 12600,
+    "returnPct": 20,
+    "risk": "B",
+    "lat": 10.34,
+    "lng": -68.79,
+    "investors": 386,
+    "seed": true
+  },
+  {
+    "id": "distribuidora-medica-caracas",
+    "name": "Distribuidora Médica — working capital",
+    "city": "Caracas",
+    "what": "Working capital for medical supplies",
+    "goalUsd": 20000,
+    "raisedUsd": 20000,
+    "returnPct": 16,
+    "risk": "A",
+    "lat": 10.4806,
+    "lng": -66.9036,
+    "investors": 902,
+    "seed": true
+  },
+  {
+    "id": "agropecuaria-el-cacao",
+    "name": "Agropecuaria El Cacao — irrigation and plant",
+    "city": "Lara",
+    "what": "Drip irrigation and a processing plant",
+    "goalUsd": 45000,
+    "raisedUsd": 5400,
+    "returnPct": 24,
+    "risk": "C",
+    "lat": 10.05,
+    "lng": -69.35,
+    "investors": 118,
+    "seed": true
+  }
+]
