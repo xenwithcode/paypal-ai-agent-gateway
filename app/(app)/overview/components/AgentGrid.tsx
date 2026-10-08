@@ -161,6 +161,17 @@ export default function AgentGrid({
   const [loading, setLoading] = useState(false);
   const [fraudAlert, setFraudAlert] = useState<{ active: boolean; msg: string }>({ active: false, msg: "" });
 
+  /**
+   * Why the last draft did not happen, shown where the draft is typed.
+   *
+   * The console already carries every failure, but the console is a log: a 4xx
+   * reported only there leaves the operator staring at a form that did
+   * nothing, with no idea whether to edit the text, wait, or try again. A
+   * refusal that lives two screens below the button that caused it is a
+   * refusal the button does not appear to have caused.
+   */
+  const [intentError, setIntentError] = useState<string | null>(null);
+
   const [rowData, setRowData] = useState<PolicyRow[]>(SEED_ROWS);
 
   /**
@@ -1169,6 +1180,7 @@ export default function AgentGrid({
     const intent = text.trim();
     if (!intent) return;
     setLoading(true);
+    setIntentError(null);
     addLog(`📨 Drafting an order from: "${intent}"`);
     try {
       const res = await fetch("/api/agent", {
@@ -1230,13 +1242,21 @@ export default function AgentGrid({
         // Distinct from a rejection on purpose: nothing was judged here, so it
         // must not read as the agent turning the order down. The attempt was
         // never reached — it arrived too often, not too much.
-        addLog(`⏳ [LIMIT] ${data.error ?? "Too many requests."}`);
+        const limit = data.error ?? "Too many requests. Wait a moment and try again.";
+        addLog(`⏳ [LIMIT] ${limit}`);
+        setIntentError(limit);
       } else {
-        addLog(`❌ [API] ${data.error ?? "The agent rejected the request."}`);
+        // A 4xx/5xx the button caused. Logged *and* shown: the server's own
+        // reason is what a person can act on, and guessing a second one here
+        // would be the same mistake the console used to make about keys.
+        const refused = data.error ?? `The agent could not answer (HTTP ${res.status}).`;
+        addLog(`❌ [API] ${refused}`);
+        setIntentError(refused);
       }
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
       addLog(`❌ Error connecting to the server: ${message}`);
+      setIntentError(`Could not reach the server — ${message}`);
     } finally {
       setLoading(false);
     }
@@ -1416,15 +1436,32 @@ export default function AgentGrid({
           <input
             type="text"
             value={prompt}
-            onChange={(e) => setPrompt(e.target.value)}
+            onChange={(e) => {
+              setPrompt(e.target.value);
+              // The message is about the request that failed; editing the
+              // request retires it, rather than leaving a stale refusal
+              // next to text the operator has already changed.
+              if (intentError) setIntentError(null);
+            }}
             placeholder="e.g. white sneakers, size 10, by Friday, only if the price drops to 60 USD or less"
             maxLength={500}
+            aria-invalid={intentError ? true : undefined}
             className="flex-1 p-4 border border-slate-200 bg-slate-50 rounded-xl outline-none focus:bg-white focus:ring-2 focus:ring-blue-500 transition"
           />
           <button onClick={handleGeneratePolicy} disabled={loading} className="bg-blue-600 text-white px-6 py-4 rounded-xl font-medium transition hover:bg-blue-700 shadow-sm disabled:opacity-60">
             {loading ? "Drafting..." : "Draft order"}
           </button>
         </div>
+
+        {/* Beside the control that caused it, not only in the console. */}
+        {intentError && (
+          <p
+            role="alert"
+            className="rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-xs font-medium leading-relaxed text-red-700"
+          >
+            {intentError}
+          </p>
+        )}
       </div>
 
       {/* What the search found. It sits between the intent bar and the table

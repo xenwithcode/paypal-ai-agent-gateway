@@ -1,7 +1,7 @@
 // app/(app)/send/components/PagoMovilPanel.tsx
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { convert, formatAsOf, formatSmart, type FxSnapshot } from "@/lib/fx/rates";
 
 type Note = { kind: "ok" | "warn" | "error"; text: string };
@@ -30,6 +30,8 @@ export default function PagoMovilPanel() {
   const [amount, setAmount] = useState("");
   const [qrSimulated, setQrSimulated] = useState(false);
   const [notes, setNotes] = useState<Note[]>([]);
+  /** The pending animation timer, so a second scan replaces it and unmount cancels it. */
+  const qrTimer = useRef<number | undefined>(undefined);
 
   // Live rates proxied through /api/fx (BCV + CoinGecko). If the feed is down
   // we say so instead of inventing a number.
@@ -114,9 +116,20 @@ export default function PagoMovilPanel() {
     push("warn", "Sample data — no camera, no merchant and no payment were involved.");
 
     // The scan animation is a visual, so it is cleared on a timer; only the
-    // label admits what it is.
-    window.setTimeout(() => setQrSimulated(false), 1600);
+    // label admits what it is. The timer is held so it can be cancelled: under
+    // StrictMode the panel mounts twice, and a timer that survives the unmount
+    // calls setState on a component that no longer exists — the leak was
+    // invisible precisely because the animation still looked right.
+    window.clearTimeout(qrTimer.current);
+    qrTimer.current = window.setTimeout(() => {
+      qrTimer.current = undefined;
+      setQrSimulated(false);
+    }, 1600);
   };
+
+  useEffect(() => {
+    return () => window.clearTimeout(qrTimer.current);
+  }, []);
 
   return (
     <div className="mt-6 space-y-6">
