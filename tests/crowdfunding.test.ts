@@ -31,6 +31,7 @@ const project = (overrides: Partial<Project> = {}): Project => ({
   name: "Demo project",
   city: "Caracas",
   what: "Working capital",
+  collateral: "Store inventory",
   goalUsd: 10000,
   raisedUsd: 2500,
   returnPct: 15,
@@ -66,6 +67,9 @@ test("a coordinate outside Venezuela refuses the whole list", () => {
 test("the fields a row cannot do without", () => {
   assert.equal(normaliseProjects("not a list"), null);
   assert.equal(normaliseProjects([project({ name: "" })]), null);
+  // What stands behind the money is not decoration: a project nobody can say
+  // what backs is one nobody should be asked to fund.
+  assert.equal(normaliseProjects([project({ collateral: "" })]), null, "no backing, no listing");
   assert.equal(normaliseProjects([project({ goalUsd: 0 })]), null);
   assert.equal(normaliseProjects([project({ returnPct: 150 })]), null, "a return of 150% is not a return");
   // A grade the type does not allow is exactly what has to reach the

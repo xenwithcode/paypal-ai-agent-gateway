@@ -1,10 +1,12 @@
 // app/(app)/crowdfunding/page.tsx
 // Server entry for Phase 3 — PayPal AI Crowdfunding.
 //
-// Deliberately carries no data of its own: nothing here needs a credential,
-// and the moment it does (a live balance, a project list read server-side),
-// this is where it belongs — the same rule `/fx` follows, so a
-// credential-bearing module is never imported by client code.
+// Reads and validates the shipped seed here, so the grid receives projects
+// that already passed `normaliseProjects` and never has to decide what to do
+// with a malformed one. It also keeps the client bundle free of the file: the
+// page carries the data across, the way `/fx` carries the balance.
+import seed from "@/lib/seeds/crowdfunding.json";
+import { normaliseProjects } from "@/lib/crowdfunding";
 import CrowdfundingView from "./CrowdfundingView";
 
 export const metadata = {
@@ -14,5 +16,15 @@ export const metadata = {
 };
 
 export default function CrowdfundingPage() {
-  return <CrowdfundingView />;
+  const projects = normaliseProjects(seed);
+
+  if (projects === null) {
+    // Shipped data that no longer validates is a bug in the repository, not an
+    // empty market — so it is reported here rather than rendered as one.
+    console.error(
+      "[/crowdfunding] the shipped seed does not normalise; the showcase will show its empty state."
+    );
+  }
+
+  return <CrowdfundingView projects={projects ?? []} />;
 }

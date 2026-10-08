@@ -64,6 +64,17 @@ export type Project = {
   returnPct: number;
   /** The committee's grade: A lower risk, C higher. */
   risk: Risk;
+  /**
+   * What stands behind the money — the collateral the design calls
+   * "nivel de seguridad".
+   *
+   * A grade without a reason is a number the reader has to take on faith, and
+   * "backed by the inventory in the store" is the sentence that answers the
+   * first question anyone asks: *what happens if the business fails?* Required,
+   * because a project whose backing is unknown is a project nobody should be
+   * asked to fund — the UI never invents one to fill the cell.
+   */
+  collateral: string;
   /** Latitude in decimal degrees, inside Venezuela. */
   lat: number;
   /** Longitude in decimal degrees, inside Venezuela (west is negative). */
@@ -123,6 +134,7 @@ export function normaliseProjects(value: unknown): Project[] | null {
     const name = text(raw.name);
     const city = text(raw.city);
     const what = text(raw.what);
+    const collateral = text(raw.collateral);
     const goalUsd = finite(raw.goalUsd);
     const raisedUsd = finite(raw.raisedUsd);
     const returnPct = finite(raw.returnPct);
@@ -130,7 +142,7 @@ export function normaliseProjects(value: unknown): Project[] | null {
     const lng = finite(raw.lng);
     const investors = finite(raw.investors);
 
-    if (!id || !name || !city || !what) return null;
+    if (!id || !name || !city || !what || !collateral) return null;
     if (seen.has(id)) return null;
     if (goalUsd === null || goalUsd <= 0) return null;
     if (raisedUsd === null || raisedUsd < 0) return null;
@@ -154,6 +166,7 @@ export function normaliseProjects(value: unknown): Project[] | null {
       name,
       city,
       what,
+      collateral,
       goalUsd,
       raisedUsd,
       returnPct,
