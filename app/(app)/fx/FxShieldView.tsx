@@ -31,7 +31,7 @@ function parseAmount(formatted: string): number {
   return Number.isFinite(n) ? n : 0;
 }
 
-const CONVERTIBLE: FxCurrency[] = ["VES", "PYUSD", "SOL"];
+const CONVERTIBLE: FxCurrency[] = ["VES", "PYUSD"];
 
 type LoadState =
   | { kind: "loading" }
@@ -84,8 +84,8 @@ export default function FxShieldView({
 
   const rates = state.kind === "ready" ? state.data : null;
 
-  // Balance context. VES sits in a bank account and SOL would need a wallet,
-  // so a quote from either cannot be executed against anything we track.
+  // Balance context. VES sits in a bank account, which is not the balance we
+  // track, so a quote in it cannot be executed against anything we track.
   // Saying so beats silently implying a swap.
   //
   // The balance is only comparable when it is held in the currency being
@@ -219,17 +219,6 @@ export default function FxShieldView({
                   </tr>
                   <tr>
                     <th scope="row" className="px-4 py-3 font-medium text-slate-900">
-                      Solana <span className="font-normal text-slate-400">USD / SOL</span>
-                    </th>
-                    <td className="px-4 py-3 text-right font-mono tabular-nums text-slate-900">
-                      {Number.isFinite(rates.solPerUsd) ? formatSmart(rates.solPerUsd, "USD") : "—"}
-                    </td>
-                    <td className="px-4 py-3 text-right text-slate-400">—</td>
-                    <td className="px-4 py-3 text-slate-500">CoinGecko</td>
-                    <td className="px-4 py-3 text-slate-500">live</td>
-                  </tr>
-                  <tr>
-                    <th scope="row" className="px-4 py-3 font-medium text-slate-900">
                       PYUSD peg <span className="font-normal text-slate-400">USD / PYUSD</span>
                     </th>
                     <td className="px-4 py-3 text-right font-mono tabular-nums text-slate-900">
@@ -335,9 +324,8 @@ export default function FxShieldView({
 
             {!fromIsTracked && (
               <p className="mt-2 rounded-xl border border-slate-200 bg-slate-50 px-3 py-2 text-xs leading-relaxed text-slate-600">
-                PayPal custodies your balance in PYUSD only. {from} is not held here — VES sits in
-                your bank account and SOL would need a wallet — so this is a rate quote, not an
-                executable swap.
+                PayPal custodies your balance in PYUSD only. {from} is not held here — it sits in
+                your bank account — so this is a rate quote, not an executable swap.
               </p>
             )}
 

@@ -3,10 +3,15 @@
 // API route and the browser UI, so it must stay free of fetch and side effects.
 //
 // Everything derives from two published quotes:
-//   VES/USD  ← BCV official rate (dolarvzla CDN)
-//   SOL/USD  ← CoinGecko
-// PYUSD/USD is fetched too, not assumed: it should sit at 1.00, and showing
+//   VES/USD    ← BCV official rate (dolarvzla CDN)
+//   PYUSD/USD  ← CoinGecko
+// PYUSD/USD is fetched, not assumed: it should sit at 1.00, and showing
 // the number means a broken peg is visible instead of silently accepted.
+//
+// Three currencies, and no fourth. A product that settles through PayPal does
+// not quote somebody else's coin: SOL was removed from this file, the provider
+// and the screen on 08-oct, so that "the money enters and leaves through
+// PayPal" is true of the converter too, not only of the pitch.
 
 export interface FxSnapshot {
   /** When our process fetched this, ISO 8601. */
@@ -21,9 +26,6 @@ export interface FxSnapshot {
   vesChangePct?: number;
   previousVesPerUsd?: number;
   previousVesAsOf?: string;
-  /** How many USD buy 1 SOL. */
-  solPerUsd: number;
-  solPerUsdAsOf: string;
   /** How many USD buy 1 PYUSD. Expected ≈ 1. */
   pyusdPerUsd: number;
   pyusdPerUsdAsOf: string;
@@ -34,7 +36,8 @@ export interface FxSnapshot {
   errors: string[];
 }
 
-export type FxCurrency = "VES" | "PYUSD" | "SOL" | "USD";
+/** USD · PYUSD · VES. Nothing else — see the header for why the list stops here. */
+export type FxCurrency = "VES" | "PYUSD" | "USD";
 
 /** USD value of an amount denominated in `currency`. */
 export function toUsd(amount: number, currency: FxCurrency, r: FxSnapshot): number {
@@ -43,8 +46,6 @@ export function toUsd(amount: number, currency: FxCurrency, r: FxSnapshot): numb
       return amount;
     case "VES":
       return amount / r.vesPerUsd;
-    case "SOL":
-      return amount * r.solPerUsd;
     case "PYUSD":
       return amount * r.pyusdPerUsd;
   }
@@ -57,8 +58,6 @@ export function fromUsd(usd: number, currency: FxCurrency, r: FxSnapshot): numbe
       return usd;
     case "VES":
       return usd * r.vesPerUsd;
-    case "SOL":
-      return usd / r.solPerUsd;
     case "PYUSD":
       return usd / r.pyusdPerUsd;
   }
@@ -75,12 +74,11 @@ export function convert(
   return fromUsd(toUsd(amount, from, r), to, r);
 }
 
-export const CURRENCIES: FxCurrency[] = ["VES", "PYUSD", "SOL", "USD"];
+export const CURRENCIES: FxCurrency[] = ["VES", "PYUSD", "USD"];
 
 export const CURRENCY_LABEL: Record<FxCurrency, string> = {
   VES: "Venezuelan Bolívar",
   PYUSD: "PayPal USD",
-  SOL: "Solana",
   USD: "US Dollar",
 };
 
@@ -94,15 +92,15 @@ export function formatAmount(value: number, maxFractionDigits = 2): string {
 }
 
 /**
- * Large VES balances read better without forced decimals, but small SOL
- * amounts need them, so the default is picked by magnitude.
+ * Large VES balances read better without forced decimals; everything else is
+ * money at two decimals. (A fourth-decimal branch existed for SOL and went
+ * with it.)
  */
 export function formatSmart(value: number, currency: FxCurrency): string {
   if (!Number.isFinite(value)) return "—";
   if (currency === "VES" && Math.abs(value) >= 1000) {
     return Math.round(value).toLocaleString("en-US");
   }
-  if (currency === "SOL") return formatAmount(value, 4);
   return formatAmount(value, 2);
 }
 

@@ -2,8 +2,8 @@
 // Server-side fetchers for live FX data. No API keys are used: both sources
 // below were verified reachable and CORS-open before being wired up.
 //
-//   VES/USD  https://rates.dolarvzla.com   BCV + intervention, no key, static JSON
-//   SOL/USD  https://api.coingecko.com     free tier, no key needed for simple/price
+//   VES/USD    https://rates.dolarvzla.com   BCV + intervention, no key, static JSON
+//   PYUSD/USD  https://api.coingecko.com      free tier, no key needed for simple/price
 //
 // Results are cached by Next for 60s so N browser tabs cost one upstream call.
 // CoinGecko's free tier rate-limits aggressively; without this every visitor
@@ -59,10 +59,11 @@ export class FxSourceUnavailable extends Error {
 export async function fetchFxSnapshot(): Promise<FxSnapshot> {
   const errors: string[] = [];
 
-  const [bcv, intervention, sol, pyusd] = await Promise.all([
+  const [bcv, intervention, pyusd] = await Promise.all([
     getJson<BcvPayload>(DOLARVZLA_BCV, "dolarvzla BCV", errors),
     getJson<InterventionPayload>(DOLARVZLA_INTERVENTION, "dolarvzla intervention", errors),
-    getJson<CoinGeckoPayload>(`${COINGECKO}?ids=solana&vs_currencies=usd`, "CoinGecko SOL", errors),
+    // Only the PYUSD peg. SOL was dropped on 08-oct: this product settles in
+    // USD/PYUSD, so the converter no longer quotes a coin of its own.
     getJson<CoinGeckoPayload>(`${COINGECKO}?ids=paypal-usd&vs_currencies=usd`, "CoinGecko PYUSD", errors),
   ]);
 
@@ -75,7 +76,6 @@ export async function fetchFxSnapshot(): Promise<FxSnapshot> {
     );
   }
 
-  const solPerUsd = sol?.solana?.usd;
   const pyusdPerUsd = pyusd?.["paypal-usd"]?.usd;
 
   const snapshot: FxSnapshot = {
@@ -85,9 +85,8 @@ export async function fetchFxSnapshot(): Promise<FxSnapshot> {
     vesChangePct: bcv?.changePercentage?.usd,
     previousVesPerUsd: bcv?.previous?.usd,
     previousVesAsOf: bcv?.previous?.date,
-    // The CoinGecko pair is authoritative for SOL; a miss must be visible.
-    solPerUsd: solPerUsd !== undefined && Number.isFinite(solPerUsd) ? solPerUsd : NaN,
-    solPerUsdAsOf: new Date().toISOString(),
+    // The CoinGecko pair is authoritative for the PYUSD peg; a miss must be
+    // visible rather than quietly replaced by 1.00.
     pyusdPerUsd: pyusdPerUsd !== undefined && Number.isFinite(pyusdPerUsd) ? pyusdPerUsd : NaN,
     pyusdPerUsdAsOf: new Date().toISOString(),
     errors,
