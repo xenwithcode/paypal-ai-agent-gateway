@@ -1,6 +1,14 @@
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32" width="32" height="32">
-  <!-- The brand blue the rest of the app uses (AG Grid --color-brand-600).
-       A shield, because the product is the thing that stops a spend. -->
+  <!--
+    The brand blue the rest of the app uses (AG Grid "color-brand-600"),
+    a shield because the product is the thing that stops a spend, and a
+    check because it stopped it correctly.
+
+    No double hyphens in here: XML forbids them inside a comment, and one
+    pair of them made this file unparseable — the tab fell back to the
+    default black icon while the palette said blue. tests/icon.test.ts
+    pins that, so this comment cannot quietly grow one again.
+  -->
   <rect width="32" height="32" rx="7" fill="#0042a1"/>
   <path
     d="M16 6.5 24 9.4v6.1c0 5.1-3.3 9.3-8 11-4.7-1.7-8-5.9-8-11V9.4L16 6.5Z"
