@@ -6,7 +6,10 @@
 // model can express it and the table can show it, an approver can judge it;
 // fields nobody can inspect do not belong in something a human signs off on.
 import { GoogleGenAI, Type, type Schema } from "@google/genai";
-import { MODE, isMode } from "./policy";
+// The extension is required rather than optional for the same reason
+// `lib/catalog.ts` has one: tests load this module through Node's ESM
+// resolver, which does not guess — see the note on `allowImportingTsExtensions`.
+import { MODE, isMode, resolveExpiry } from "./policy.ts";
 
 const MODEL = process.env.GEMINI_MODEL ?? "gemini-3.8-flash";
 
@@ -190,7 +193,13 @@ export async function parseUserIntention(
     `and an empty condition turns a bounded purchase into an immediate ` +
     `unconditional one. Leave it empty only when the user asked for it to ` +
     `go ahead with no requirement attached.\n` +
-    `- "expires" is a YYYY-MM-DD date, never a phrase.\n` +
+    // "valid until the 27th" came back as tomorrow's date: the model read the
+    // sentence and answered with a deadline of its own. Naming the shape the
+    // rule wants — the *next* occurrence of that day — costs one line and it
+    // is the difference between the cell saying the 27th and saying the 9th.
+    `- "expires" is a YYYY-MM-DD date, never a phrase. A day of the month ` +
+    `("the 27th", "el 27") is the NEXT upcoming occurrence of that day — ` +
+    `never today's date, and never a weekday.\n` +
     `- Keep "what" human readable; fold the identifying attributes into it ` +
     `rather than inventing extra fields.`;
 
@@ -266,13 +275,17 @@ function asString(value: unknown): string {
   return text;
 }
 
-/** ISO date or empty — never let a phrase reach a date field. */
-function asIsoDate(value: unknown): string {
-  const text = asString(value);
-  if (!text) return "";
-  const parsed = new Date(text);
-  if (Number.isNaN(parsed.getTime())) return "";
-  return parsed.toISOString().slice(0, 10);
+/**
+ * ISO date, or whatever arrived when it is not one.
+ *
+ * Deliberately not "ISO or empty": this field bounds an authority, and
+ * `""` means *this order never expires*. Dropping an unreadable phrase here
+ * used to turn a deadline nobody could read into a permission nobody could
+ * revoke. `resolveExpiry` resolves the words people write and returns the
+ * rest unchanged, so `readExpiry` can refuse the charge and say why.
+ */
+function asExpiry(value: unknown): string {
+  return resolveExpiry(asString(value));
 }
 
 /** Enforces the balance cap and the exact types the UI expects. */
@@ -290,7 +303,7 @@ function normalise(policy: unknown, availableBalance: string): IntentionPolicy {
     limit: maxBalance > 0 ? Math.min(limit, maxBalance) : limit,
     currency: asString(source.currency) || "USD",
     condition: asString(source.condition),
-    expires: asIsoDate(source.expires),
+    expires: asExpiry(source.expires),
     // Must match MODE exactly, or the AG Grid select editor shows an empty cell.
     mode: isMode(source.mode) ? source.mode : MODE.copilot,
   };
@@ -437,9 +450,33 @@ function buildDemoPolicy(prompt: string, availableBalance: string): IntentionPol
     limit: capped,
     currency: /pyusd/i.test(prompt) ? "PYUSD" : "USD",
     condition: conditional ? `price <= ${capped}` : "",
-    expires: "",
+    // The fallback reads the deadline out of the sentence instead of out of a
+    // model, so it gets the same treatment the model path gets: a phrase it
+    // can read becomes a date, and a phrase it cannot stays as it was rather
+    // than becoming "no expiry". It has no model to blame for a value, only
+    // prose — so a deadline is only claimed when one is literally there.
+    expires: resolveExpiry(deadlineOf(prompt)),
     mode: capped >= 500 ? MODE.copilot : MODE.autonomous,
   };
+}
+
+/**
+ * The deadline a sentence carries, or "" when it carries none.
+ *
+ * Anchored on the words that turn a clause into a deadline: without one,
+ * "buy this before the sale" and "buy this" are the same request, and the
+ * second one must not be answered with a date.
+ *
+ * Exported because it is the one part of the fallback path that can invent
+ * something: the capture decides what the window will be read against, so it
+ * is pinned by a test rather than left to be discovered by a charge that was
+ * refused — or, worse, by one that was not.
+ */
+export function deadlineOf(prompt: string): string {
+  const match = prompt.match(
+    /\b(?:by|until|till|before|expires?\s+(?:by|on|at)|hasta|antes\s+del(?:a)?)\s+([^,.;!?]{1,40})/i
+  );
+  return (match?.[1] ?? "").trim();
 }
 
 // ─── Spoken input ──────────────────────────────────────────────────────────

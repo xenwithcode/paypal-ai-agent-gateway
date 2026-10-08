@@ -207,10 +207,202 @@ export type ExpiryWindow =
 export function readExpiry(raw: string | undefined | null, today: Date = new Date()): ExpiryWindow {
   const text = (raw ?? "").trim();
   if (!text) return { kind: "none" };
+  // Shaped like a date and actually being one are different questions.
+  // `2026-02-30` matches the pattern and names no day; comparing it
+  // lexicographically would treat a date that never happened as a window
+  // still open, which is the same mistake as reading a phrase as "no
+  // expiry" — only quieter.
   if (!ISO_DATE.test(text)) return { kind: "unreadable", raw: text };
+  if (!isCalendarDate(text)) return { kind: "unreadable", raw: text };
   // Both sides are YYYY-MM-DD, where lexicographic and chronological order
   // agree — so the comparison needs no parsing and no timezone.
   return { kind: "date", iso: text, expired: calendarDay(today) > text };
+}
+
+/** True when `iso` names a day that exists: `2026-02-30` does not. */
+function isCalendarDate(iso: string): boolean {
+  const [year, month, day] = iso.split("-").map(Number);
+  const date = new Date(year, month - 1, day);
+  return (
+    date.getFullYear() === year && date.getMonth() === month - 1 && date.getDate() === day
+  );
+}
+
+// ─── Reading a deadline a human wrote ──────────────────────────────────────
+
+/**
+ * The next occurrence of a weekday, today or later.
+ *
+ * "by Friday" said on a Friday means *today*: a deadline never points at a
+ * day that has already gone, and rolling forward a week instead would quietly
+ * extend an authority the approver meant to end now.
+ */
+function nextWeekday(from: Date, target: number): Date {
+  const days = (target - from.getDay() + 7) % 7;
+  return addDays(from, days);
+}
+
+/** The next day-of-month that exists and has not passed. */
+function nextDayOfMonth(from: Date, day: number): Date {
+  for (let offset = 0; offset < 5; offset++) {
+    const candidate = new Date(from.getFullYear(), from.getMonth() + offset, day);
+    // `new Date(y, m, 31)` in a 30-day month rolls into the next one, so the
+    // day that comes back has to be the day that was asked for.
+    if (candidate.getDate() === day && candidate >= startOfDay(from)) return candidate;
+  }
+  return from;
+}
+
+function startOfDay(date: Date): Date {
+  return new Date(date.getFullYear(), date.getMonth(), date.getDate());
+}
+
+function addDays(date: Date, days: number): Date {
+  return new Date(date.getFullYear(), date.getMonth(), date.getDate() + days);
+}
+
+function isoFrom(date: Date): string {
+  return calendarDay(date);
+}
+
+/** Weekday names, in the two languages this router answers to. */
+const WEEKDAYS: Record<string, number> = {
+  sunday: 0, sun: 0, domingo: 0,
+  monday: 1, mon: 1, lunes: 1,
+  tuesday: 2, tue: 2, martes: 2,
+  wednesday: 3, wed: 3, miercoles: 3, "miércoles": 3,
+  thursday: 4, thu: 4, thur: 4, jueves: 4,
+  friday: 5, fri: 5, viernes: 5,
+  saturday: 6, sat: 6, sabado: 6, "sábado": 6,
+};
+
+const MONTHS: Record<string, number> = {
+  january: 1, jan: 1, enero: 1,
+  february: 2, feb: 2, febrero: 2,
+  march: 3, mar: 3, marzo: 3,
+  april: 4, abr: 4, abril: 4,
+  may: 5, mayo: 5,
+  june: 6, jun: 6, junio: 6,
+  july: 7, jul: 7, julio: 7,
+  august: 8, ago: 8, agosto: 8,
+  september: 9, sep: 9, sept: 9, septiembre: 9,
+  october: 10, oct: 10, octubre: 10,
+  november: 11, nov: 11, noviembre: 11,
+  december: 12, dic: 12, diciembre: 12,
+};
+
+/**
+ * Turn whatever a deadline came back as into a date — or leave it alone.
+ *
+ * This exists because the field had a silent failure with a wide blast
+ * radius: `asIsoDate` read an unreadable phrase as `""`, and `""` means *this
+ * order never expires*. A model answering "Friday" instead of "2026-10-09"
+ * therefore widened the authority it was asked to bound, and nothing between
+ * the model and the grid could tell — the cell simply said "No expiry", which
+ * reads as a fact.
+ *
+ * So the rule here is the one `readExpiry` already states, applied one step
+ * earlier: **what cannot be read is returned as it arrived, never as empty.**
+ * An unresolvable phrase reaches the judge as `unreadable` and the charge is
+ * refused with a message a person can act on — one blocked payment beats an
+ * authority nobody knew had grown.
+ *
+ * Resolved: an ISO date (padded if the day is single-digit), the relative
+ * words a person actually writes — weekdays in English and Spanish, "next
+ * week", "tomorrow", "end of the month", "in 3 days" — a day of the month
+ * ("the 27th", "el 27"), and a month with a day ("December 31").
+ *
+ * `today` is a parameter so every branch can be pinned by a test rather than
+ * by the day the suite happens to run.
+ */
+export function resolveExpiry(
+  raw: string | undefined | null,
+  today: Date = new Date()
+): string {
+  const text = (raw ?? "").trim();
+  if (!text) return "";
+
+  // Already the shape every reader wants. Padding first: `2026-10-9` is the
+  // same day written by something that does not zero-fill, and a cell that
+  // read it as unreadable would block a real deadline over one character.
+  const short = text.match(/^(\d{4})-(\d{1,2})-(\d{1,2})$/);
+  if (short) {
+    const [, year, month, day] = short;
+    return `${year}-${month.padStart(2, "0")}-${day.padStart(2, "0")}`;
+  }
+
+  const lower = text.toLowerCase();
+
+  // 1. Words anchored on today.
+  if (/\b(tomorrow|ma[nñ]ana)\b/.test(lower)) return isoFrom(addDays(today, 1));
+  if (/\b(today|hoy)\b/.test(lower)) return isoFrom(today);
+  if (/\b(next\s+week|la\s+semana\s+que\s+viene|semana\s+que\s+viene|pr[oó]xima\s+semana)\b/.test(lower)) {
+    return isoFrom(addDays(today, 7));
+  }
+  if (/\b(end\s+of\s+(the\s+)?month|fin\s+de\s+mes|final\s+del\s+mes)\b/.test(lower)) {
+    return isoFrom(new Date(today.getFullYear(), today.getMonth() + 1, 0));
+  }
+
+  // 2. A count: "in 3 days", "en 2 semanas".
+  const count = lower.match(
+    /\b(?:in|en)\s+(\d{1,3})\s+(days?|dias?|d[ií]as?|weeks?|semanas?)\b/
+  );
+  if (count) {
+    const amount = Number(count[1]);
+    const weeks = /week|semana/.test(count[2]);
+    return isoFrom(addDays(today, weeks ? amount * 7 : amount));
+  }
+
+  // 3. A weekday — the next one, today included.
+  const weekday = Object.keys(WEEKDAYS).find((name) =>
+    new RegExp(`\\b${name}\\b`).test(lower)
+  );
+  if (weekday) return isoFrom(nextWeekday(today, WEEKDAYS[weekday]));
+
+  // 4. A day of the month: "the 27th", "el 27". Written on the 30th, it means
+  //    next month's — a deadline the calendar has not reached yet.
+  const dayOfMonth =
+    lower.match(/\bthe\s+(\d{1,2})(?:st|nd|rd|th)?\b/) ??
+    lower.match(/\bel\s+(\d{1,2})\b/) ??
+    lower.match(/\b(\d{1,2})(?:st|nd|rd|th)\b/);
+  if (dayOfMonth) {
+    const day = Number(dayOfMonth[1]);
+    if (day >= 1 && day <= 31) return isoFrom(nextDayOfMonth(today, day));
+  }
+
+  // 5. A month with a day: "December 31", "31 de diciembre". Taken as written
+  //    rather than rolled forward — a date that has passed should read as
+  //    passed, not be extended into a year nobody asked for.
+  const monthFirst = lower.match(
+    /\b(january|jan|enero|february|feb|febrero|march|mar|marzo|april|abr|abril|may|mayo|june|jun|junio|july|jul|julio|august|ago|agosto|september|sep|sept|septiembre|october|oct|octubre|november|nov|noviembre|december|dic|diciembre)\s+(\d{1,2})\b/
+  );
+  const dayFirst = lower.match(
+    /\b(\d{1,2})\s+de\s+(?:enero|febrero|marzo|abril|mayo|junio|julio|agosto|septiembre|octubre|noviembre|diciembre)\b/
+  );
+  if (monthFirst || dayFirst) {
+    const month = monthFirst ? MONTHS[monthFirst[1]] : monthIndexOf(lower);
+    const day = monthFirst ? Number(monthFirst[2]) : Number(dayFirst?.[1]);
+    if (month && day >= 1 && day <= 31) {
+      const candidate = new Date(today.getFullYear(), month - 1, day);
+      if (candidate.getDate() === day) return isoFrom(candidate);
+    }
+  }
+
+  // 6. Anything else JavaScript reads as a date, provided it looks like one:
+  //    a bare "27" parses as a year, and taking it would be inventing.
+  if (/[a-z]/i.test(text)) {
+    const parsed = new Date(text);
+    if (!Number.isNaN(parsed.getTime())) return isoFrom(parsed);
+  }
+
+  // Not a date — returned as it arrived so the judge can refuse the charge
+  // and say why. This is the whole reason the function exists.
+  return text;
+}
+
+/** Month index for a Spanish "31 de octubre" — the keys above are mixed. */
+function monthIndexOf(lower: string): number | undefined {
+  return Object.entries(MONTHS).find(([name]) => new RegExp(`\\b${name}\\b`).test(lower))?.[1];
 }
 
 /**
