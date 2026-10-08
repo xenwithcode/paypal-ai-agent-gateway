@@ -15,9 +15,11 @@ import {
   Environment,
   OrdersController,
   PaymentsController,
+  SubscriptionsController,
   TransactionSearchController,
   type BalancesResponse,
 } from "@paypal/paypal-server-sdk";
+import { summarisePlan, type PlansResult } from "./billingPlans.ts";
 
 const PAYPAL_ENVIRONMENT =
   process.env.PAYPAL_ENVIRONMENT === "Production"
@@ -216,6 +218,67 @@ export async function getRecentTransactions(): Promise<TransactionsResult> {
     const why = describePaypalError(error);
     warnOnce(`the PayPal transactions call failed (${why}).`);
     return { rows: [], source: "unavailable", reason: `PayPal: ${why}`, window };
+  }
+}
+
+// ─── Recurring: the plans the account already has ──────────────────────────
+//
+// The roadmap's "then": services offered as PayPal plans rather than as names
+// typed into a form. Two things make this worth a section of its own:
+//
+//   `prefer: 'return=representation'` is load-bearing. With PayPal's default
+//   (`return=minimal`) the answer carries id, status and links and nothing
+//   else — no `billingCycles`, no `paymentPreferences`, so a plan arrives that
+//   cannot say what it costs. The header is the difference between a list of
+//   plans and a list of plan names.
+//
+//   An account with no plans is a real answer, not a failure. It comes back
+//   as `source: "live"` with an empty list, so the screen can say "asked, and
+//   there are none" — which is a different sentence from "could not ask",
+//   and only one of them means the account has nothing in it.
+let warnedAboutPlans = false;
+
+export async function getPlans(): Promise<PlansResult> {
+  const unavailable = (reason: string): PlansResult => ({
+    plans: [],
+    source: "unavailable",
+    reason,
+    total: null,
+  });
+
+  if (!hasRealPaypalCredentials()) {
+    if (!warnedAboutPlans) {
+      warnedAboutPlans = true;
+      console.warn(
+        "\n⚠️  [PayPal] getPlans() is not asking for billing plans.\n" +
+          "    Reason: PayPal credentials are missing or still README placeholders.\n"
+      );
+    }
+    return unavailable("No PayPal credentials configured.");
+  }
+
+  try {
+    const { result } = await new SubscriptionsController(paypalClient).listBillingPlans({
+      prefer: "return=representation",
+      pageSize: 20,
+      page: 1,
+      totalRequired: true,
+    });
+
+    const rows = (result.plans ?? []) as unknown as Record<string, unknown>[];
+    return {
+      plans: rows.map(summarisePlan),
+      source: "live",
+      reason: null,
+      total: typeof result.totalItems === "number" ? result.totalItems : null,
+    };
+  } catch (error) {
+    const why = describePaypalError(error);
+    if (!warnedAboutPlans) {
+      warnedAboutPlans = true;
+      console.warn(`\n⚠️  [PayPal] getPlans() failed (${why}).\n`);
+    }
+    return unavailable(`PayPal: ${why}`);
   }
 }
 

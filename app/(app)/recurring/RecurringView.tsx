@@ -4,10 +4,11 @@
 import { useEffect, useState } from "react";
 import Image from "next/image";
 import Link from "next/link";
-import { CalendarDays, CreditCard, Plus, Repeat, ImageOff, X } from "lucide-react";
+import { CalendarDays, CreditCard, Plus, RefreshCw, Repeat, ImageOff, X } from "lucide-react";
 import { appendPolicyRow, readPolicyRows, removePolicyRow, type ManifestRow } from "@/lib/history";
 import { MODE, STATUS, calendarDay } from "@/lib/policy";
 import { scheduleFrom } from "@/lib/commerce/catalog";
+import { describeCadence, describePrice, type PlanSummary, type PlansResult } from "@/lib/billingPlans";
 import { ensureHydrated } from "@/lib/store";
 import { readEvents, recordEvent } from "@/lib/events";
 import EventConsole from "../components/EventConsole";
@@ -158,6 +159,17 @@ export default function RecurringView() {
   /** Lo mismo que ve Overview, persistido: lo que el agente hace encaja aquí. */
   const [events, setEvents] = useState<string[]>([]);
 
+  /**
+   * The plans PayPal already holds for this account, asked once on mount.
+   *
+   * `null` is deliberately a third state: *asking*. Rendering "no plans yet"
+   * while the request is still in flight is how an empty list gets read as a
+   * fact before it is one. Bumping `plansAsk` re-asks, which is the only
+   * honest answer to a refused request.
+   */
+  const [plans, setPlans] = useState<PlansResult | null>(null);
+  const [plansAsk, setPlansAsk] = useState(0);
+
   useEffect(() => {
     let cancelled = false;
     // Ask the store first: a browser that has never seen this app reads the
@@ -173,6 +185,40 @@ export default function RecurringView() {
   }, []);
 
   const refresh = () => setRows(readPolicyRows().filter(isCommitment));
+
+  // Ask PayPal for the account's plans. The payload is shaped here rather than
+  // trusted: a response that is not the shape this screen reads is reported as
+  // "could not ask", never rendered as an empty account.
+  useEffect(() => {
+    let cancelled = false;
+    void (async () => {
+      let answer: PlansResult;
+      try {
+        const response = await fetch("/api/recurring/plans", { cache: "no-store" });
+        const data = (await response.json()) as Partial<PlansResult> | null;
+        answer =
+          data && Array.isArray(data.plans)
+            ? {
+                plans: data.plans,
+                source: data.source === "live" ? "live" : "unavailable",
+                reason: typeof data.reason === "string" ? data.reason : null,
+                total: typeof data.total === "number" ? data.total : null,
+              }
+            : {
+                plans: [],
+                source: "unavailable",
+                reason: "The plans service returned something this screen cannot read.",
+                total: null,
+              };
+      } catch {
+        answer = { plans: [], source: "unavailable", reason: "The plans service did not answer.", total: null };
+      }
+      if (!cancelled) setPlans(answer);
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [plansAsk]);
 
   /**
    * Say it here as well as there.
@@ -198,6 +244,24 @@ export default function RecurringView() {
     if (fields.date) setDue(fields.date);
     setFormError(null);
     setNotice("Understood — check the fields, then add it.");
+  };
+
+  /**
+   * Take a real plan into the form instead of typing its name and price.
+   *
+   * Only the fields the plan actually carries are filled. The URL is not one
+   * of them — a PayPal plan does not say where the service lives, and
+   * inventing a host here would bound a future payment to a guess.
+   */
+  const loadPlan = (plan: PlanSummary) => {
+    if (plan.name) setService(plan.name);
+    if (plan.price) setAmount(plan.price);
+    if (plan.currency === "USD" || plan.currency === "PYUSD") setCurrency(plan.currency);
+    setAdding(true);
+    setFormError(null);
+    setNotice(
+      `Loaded “${plan.name}” from your PayPal plan ${plan.id}. The service URL and the due date are still yours to give.`
+    );
   };
 
   const remember = (message: string) => {
@@ -613,6 +677,176 @@ export default function RecurringView() {
           })}
         </div>
       )}
+      {/* Los planes que PayPal ya tiene para esta cuenta — leídos en vivo.
+          Sección aparte y después: los compromisos son el contenido, esto es
+          la materia prima de la que se cargan. */}
+      <section
+        aria-labelledby="plans-heading"
+        className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm"
+      >
+        <div className="flex flex-wrap items-start justify-between gap-3">
+          <div className="min-w-0">
+            <h2
+              id="plans-heading"
+              className="flex items-center gap-2 text-sm font-semibold text-slate-900"
+            >
+              <Repeat className="h-4 w-4 text-slate-400" strokeWidth={1.75} aria-hidden="true" />
+              Plans in your PayPal account
+            </h2>
+            <p className="mt-0.5 text-xs text-slate-500">
+              {plans === null
+                ? "Asking PayPal for the billing plans on this account…"
+                : plans.source === "unavailable"
+                  ? "PayPal was not asked — so nothing here says whether the account has plans."
+                  : plans.plans.length === 0
+                    ? "PayPal was asked, and this account has no billing plans."
+                    : `${plans.plans.length}${plans.total !== null ? ` of ${plans.total}` : ""} plan${plans.plans.length === 1 ? "" : "s"}, read live from PayPal.`}
+            </p>
+          </div>
+
+          <span
+            className={`shrink-0 rounded-full border px-2.5 py-1 text-[10px] font-bold uppercase tracking-wide ${
+              plans === null
+                ? "border-slate-200 bg-slate-50 text-slate-500"
+                : plans.source === "unavailable"
+                  ? "border-amber-300 bg-amber-50 text-amber-700"
+                  : "border-emerald-300 bg-emerald-50 text-emerald-700"
+            }`}
+            title={
+              plans?.source === "unavailable" && plans.reason
+                ? plans.reason
+                : "Read through GET /api/recurring/plans on the server — the credentials never reach this page."
+            }
+          >
+            {plans === null ? "Asking" : plans.source === "unavailable" ? "Not asked" : "Live"}
+          </span>
+        </div>
+
+        {plans === null && (
+          <div className="mt-4 space-y-2" aria-hidden="true">
+            <div className="h-3 w-1/3 animate-pulse rounded bg-slate-100" />
+            <div className="h-3 w-1/2 animate-pulse rounded bg-slate-100" />
+          </div>
+        )}
+
+        {plans !== null && plans.source === "unavailable" && (
+          <div className="mt-4 flex flex-wrap items-center justify-between gap-3 rounded-xl border border-amber-200 bg-amber-50 px-4 py-3">
+            <p className="text-xs leading-relaxed text-amber-800">
+              <strong className="font-semibold">Could not ask PayPal.</strong>{" "}
+              {plans.reason ?? "No reason was returned."}
+            </p>
+            <button
+              type="button"
+              onClick={() => setPlansAsk((n) => n + 1)}
+              className="inline-flex shrink-0 items-center gap-1.5 rounded-lg border border-amber-300 bg-white px-3 py-1.5 text-[11px] font-bold text-amber-800 transition hover:bg-amber-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-amber-500"
+            >
+              <RefreshCw className="h-3 w-3" strokeWidth={2.5} aria-hidden="true" />
+              Ask again
+            </button>
+          </div>
+        )}
+
+        {plans !== null && plans.source === "live" && plans.plans.length === 0 && (
+          <div className="mt-4 flex flex-wrap items-center justify-between gap-3 rounded-xl border border-slate-200 bg-slate-50 px-4 py-3">
+            <p className="text-xs leading-relaxed text-slate-600">
+              <strong className="font-semibold">No billing plans on this account yet.</strong>{" "}
+              That is an answer, not a failure — PayPal was asked and had none. You can still add a
+              service above: the form drafts it, and you approve it before anything can be charged.
+            </p>
+            <button
+              type="button"
+              onClick={() => setPlansAsk((n) => n + 1)}
+              className="inline-flex shrink-0 items-center gap-1.5 rounded-lg border border-slate-300 bg-white px-3 py-1.5 text-[11px] font-bold text-slate-600 transition hover:bg-slate-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500"
+            >
+              <RefreshCw className="h-3 w-3" strokeWidth={2.5} aria-hidden="true" />
+              Ask again
+            </button>
+          </div>
+        )}
+
+        {plans !== null && plans.source === "live" && plans.plans.length > 0 && (
+          <>
+            <div className="mt-4 overflow-x-auto">
+              <table className="w-full min-w-[620px] border-collapse text-left">
+                <thead>
+                  <tr className="border-b border-slate-200">
+                    <th scope="col" className="px-3 py-2 text-[11px] font-semibold uppercase tracking-wide text-slate-500">
+                      Plan
+                    </th>
+                    <th scope="col" className="px-3 py-2 text-[11px] font-semibold uppercase tracking-wide text-slate-500">
+                      Cadence
+                    </th>
+                    <th scope="col" className="px-3 py-2 text-[11px] font-semibold uppercase tracking-wide text-slate-500">
+                      Price
+                    </th>
+                    <th scope="col" className="px-3 py-2 text-[11px] font-semibold uppercase tracking-wide text-slate-500">
+                      Status
+                    </th>
+                    <th scope="col" className="px-3 py-2">
+                      <span className="sr-only">Actions</span>
+                    </th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-slate-100">
+                  {plans.plans.map((plan) => (
+                    <tr key={plan.id || plan.name}>
+                      <td className="max-w-[260px] px-3 py-2.5">
+                        <p className="truncate text-xs font-semibold text-slate-900">
+                          {plan.name || "Unnamed plan"}
+                        </p>
+                        {plan.description && (
+                          <p className="truncate text-[11px] text-slate-400">{plan.description}</p>
+                        )}
+                        <p className="truncate font-mono text-[10px] text-slate-400">{plan.id}</p>
+                      </td>
+                      <td
+                        className="px-3 py-2.5 text-xs text-slate-600"
+                        title={
+                          plan.autoBillOutstanding
+                            ? "PayPal retries an outstanding charge before failing the subscription."
+                            : undefined
+                        }
+                      >
+                        {describeCadence(plan)}
+                        {plan.autoBillOutstanding && (
+                          <span className="ml-1 text-[10px] text-slate-400">· auto-bills</span>
+                        )}
+                      </td>
+                      <td className="px-3 py-2.5 font-mono text-xs font-semibold tabular-nums text-slate-900">
+                        {describePrice(plan)}
+                      </td>
+                      <td className="px-3 py-2.5">
+                        <span className="rounded-full border border-slate-200 bg-slate-50 px-2 py-0.5 text-[10px] font-bold uppercase tracking-wide text-slate-600">
+                          {plan.status || "—"}
+                        </span>
+                      </td>
+                      <td className="px-3 py-2.5 text-right">
+                        <button
+                          type="button"
+                          onClick={() => loadPlan(plan)}
+                          className="rounded-full border border-slate-300 bg-white px-3 py-1 text-[11px] font-bold text-slate-600 transition hover:border-slate-900 hover:text-slate-900 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500"
+                          title="Load this plan's name and price into the form above. The URL and the date stay yours."
+                        >
+                          Use this plan
+                        </button>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+            {/* Dicho en voz alta: la diferencia entre este estado y el anterior
+                es una cabecera HTTP, y un juez que la quite verá una lista de
+                nombres sin precio. */}
+            <p className="mt-2 text-[10px] text-slate-400">
+              Read with <code className="rounded bg-slate-100 px-1 py-0.5">Prefer: return=representation</code>.
+              Without it PayPal answers with ids and links only — no billing cycle, no payment
+              preferences, so a plan cannot say what it costs.
+            </p>
+          </>
+        )}
+      </section>
+
       {/* La caja agéntica. El mismo registro que Overview: este es el lado
           donde se pide, aquel donde se decide, y los dos leen lo mismo. */}
       <EventConsole
