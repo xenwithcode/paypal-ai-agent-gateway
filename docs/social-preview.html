@@ -1,0 +1,127 @@
+<!doctype html>
+<!--
+  Source of docs/social-preview.png — GitHub's repo social preview, 1280x640.
+
+  Rendered by headless Chrome at exactly that size (see the doc entry), so
+  what is committed is what was looked at. Colours are the palette from
+  tailwind.config.ts, spelled out because this file is outside the build:
+  slate-900 #101828 · brand blue-600 #0042a1 · slate-300 #d0d5dd ·
+  slate-400 #98a2b3 · slate-500 #667085.
+-->
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <style>
+      * { margin: 0; padding: 0; box-sizing: border-box; }
+      html, body { width: 1280px; height: 640px; overflow: hidden; }
+      body {
+        position: relative;
+        background: #101828;
+        font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto,
+          "Helvetica Neue", Arial, sans-serif;
+        color: #ffffff;
+        display: flex;
+        flex-direction: column;
+        justify-content: center;
+        padding: 72px 80px;
+      }
+
+      /* The one blue, doing the work of a light source rather than a border:
+         a wash from the top right so the panel is not a flat rectangle. */
+      body::after {
+        content: "";
+        position: absolute;
+        top: -220px;
+        right: -160px;
+        width: 720px;
+        height: 720px;
+        border-radius: 999px;
+        background: radial-gradient(circle, rgba(0, 66, 161, 0.55) 0%, rgba(0, 66, 161, 0) 68%);
+        pointer-events: none;
+      }
+
+      .head { display: flex; align-items: center; gap: 28px; position: relative; }
+
+      .mark {
+        width: 104px; height: 104px; border-radius: 24px;
+        background: #0042a1; flex: none;
+        display: flex; align-items: center; justify-content: center;
+        box-shadow: 0 18px 40px rgba(0, 66, 161, 0.45);
+      }
+
+      h1 {
+        font-size: 74px;
+        font-weight: 800;
+        letter-spacing: -0.03em;
+        line-height: 1.02;
+      }
+
+      .tagline {
+        position: relative;
+        margin-top: 34px;
+        font-size: 33px;
+        font-weight: 500;
+        line-height: 1.3;
+        color: #d0d5dd;
+        max-width: 26ch;
+      }
+
+      .tagline strong { color: #ffffff; font-weight: 700; }
+
+      .chips { position: relative; display: flex; gap: 14px; margin-top: 44px; }
+      .chip {
+        font-size: 21px;
+        font-weight: 600;
+        color: #d0d5dd;
+        background: rgba(255, 255, 255, 0.06);
+        border: 1px solid rgba(255, 255, 255, 0.14);
+        border-radius: 999px;
+        padding: 11px 22px;
+      }
+      .chip b { color: #ffffff; font-weight: 700; }
+
+      .foot {
+        position: absolute;
+        left: 80px;
+        bottom: 52px;
+        font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+        font-size: 21px;
+        color: #667085;
+        letter-spacing: 0.01em;
+      }
+    </style>
+  </head>
+  <body>
+    <div class="head">
+      <div class="mark">
+        <!-- The favicon's shield, scaled up: same mark in both places. -->
+        <svg width="62" height="62" viewBox="0 0 32 32" aria-hidden="true">
+          <path
+            d="M16 6.5 24 9.4v6.1c0 5.1-3.3 9.3-8 11-4.7-1.7-8-5.9-8-11V9.4L16 6.5Z"
+            fill="#ffffff" />
+          <path
+            d="m12.2 15.9 2.7 2.7 5-5.2"
+            fill="none"
+            stroke="#0042a1"
+            stroke-width="2.2"
+            stroke-linecap="round"
+            stroke-linejoin="round" />
+        </svg>
+      </div>
+      <h1>PayPal AI<br />Agent Gateway</h1>
+    </div>
+
+    <p class="tagline">
+      <strong>Purchase orders</strong> an AI agent cannot break — a ceiling, a
+      condition, and a human who still decides.
+    </p>
+
+    <div class="chips">
+      <span class="chip">Live <b>PayPal</b> sandbox</span>
+      <span class="chip">Condition-<b>gated</b> spend</span>
+      <span class="chip"><b>Human</b> override</span>
+    </div>
+
+    <div class="foot">github.com/xenwithcode/paypal-ai-agent-gateway</div>
+  </body>
+</html>
