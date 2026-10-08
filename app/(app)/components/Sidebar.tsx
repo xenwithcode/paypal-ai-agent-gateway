@@ -13,6 +13,7 @@ import {
   Coins,
   Smartphone,
   Send,
+  Sprout,
 } from "lucide-react";
 import { useFxShield } from "../hooks/useFxShield";
 
@@ -153,6 +154,23 @@ export default function Sidebar() {
               hint: "Send PYUSD and settle into a local bank account",
             }}
             active={isActive("/send/bank")}
+          />
+        )}
+
+        {/* Phase 3 — the growth rail, directly under FX Shield.
+            Gated by the same switch on purpose: Venezuela is an opt-in
+            pillar, and one switch revealing both of its rails tells the
+            whole story of that pillar — protect the balance, then make it
+            grow — instead of two unrelated links turning up together. */}
+        {fxEnabled && (
+          <NavLink
+            item={{
+              href: "/crowdfunding",
+              label: "Crowdfunding",
+              icon: Sprout,
+              hint: "Fund a real business from $20 and earn in USD",
+            }}
+            active={isActive("/crowdfunding")}
           />
         )}
       </nav>
