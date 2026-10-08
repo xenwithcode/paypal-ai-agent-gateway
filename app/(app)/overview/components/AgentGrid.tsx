@@ -24,6 +24,8 @@ import WhatCellRenderer from "./WhatCellRenderer";
 import CeilingCellRenderer from "./CeilingCellRenderer";
 import OrderPanel from "./OrderPanel";
 import CandidatePicker from "./CandidatePicker";
+// The one chart on this page, and the only figure a balance cannot show.
+import MoneyInFlight from "./MoneyInFlight";
 // The microphone CTA. It lives with the shared components because it knows
 // nothing about this page's table — the dashboard tells it what to run.
 import VoiceCommand from "../../components/VoiceCommand";
@@ -1427,6 +1429,11 @@ export default function AgentGrid({
           onChoose={(product) => void handleChoose(product)}
         />
       )}
+
+      {/* The totals the table below is made of, drawn rather than summed by
+          the reader. Above the table on purpose: seeing the four amounts first
+          is what turns the rows underneath from a list into an explanation. */}
+      <MoneyInFlight rows={rowData} />
 
       {/* AG Grid policy table */}
       <div className="bg-white rounded-2xl border border-slate-200 p-4 shadow-sm sm:p-6">
