@@ -9,7 +9,14 @@
 // obvious way to write this function and the wrong one.
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { MAX_BLOCKED, MAX_POLICIES, normaliseSnapshot } from "../lib/store.ts";
+import {
+  BLOCKED_STORAGE_KEY,
+  MAX_BLOCKED,
+  MAX_POLICIES,
+  POLICY_STORAGE_KEY,
+  normaliseSnapshot,
+  pushToStore,
+} from "../lib/store.ts";
 
 const row = { id: 1, what: "Spotify Premium, monthly", limit: 15, currency: "PYUSD" };
 
@@ -86,4 +93,71 @@ test("exactly at both caps is accepted — the caps are the limit, not below it"
   const snapshot = normaliseSnapshot({ policies, blocked });
   assert.equal(snapshot?.policies.length, MAX_POLICIES);
   assert.equal(snapshot?.blocked.length, MAX_BLOCKED);
+});
+
+// ─── The durable copy catching up ───────────────────────────────────────────
+//
+// `pushToStore` is exercised here with a window and a fetch rather than with a
+// server, because the behaviour under test is not the endpoint: it is what the
+// client does when the endpoint does not answer in time. The first PUT of a
+// session can outlast the whole timeout in `next dev` — the route is being
+// compiled — and without a retry that write is simply lost until something
+// else happens to trigger another.
+test("a write that is not answered is retried once, and only then reported", async () => {
+  const store = new Map<string, string>();
+  store.set(POLICY_STORAGE_KEY, "[]");
+  store.set(BLOCKED_STORAGE_KEY, "[]");
+
+  const attempts: number[] = [];
+  let failures = Infinity; // how many leading calls fail
+  const warnings: unknown[][] = [];
+
+  const globals = globalThis as Record<string, unknown>;
+  const originalWindow = globals.window;
+  const originalFetch = globals.fetch;
+  const originalWarn = console.warn;
+
+  globals.window = {
+    localStorage: {
+      getItem: (key: string) => store.get(key) ?? null,
+      setItem: (key: string, value: string) => void store.set(key, value),
+    },
+    // Runs the callback at once: the debounce and the retry delay both become
+    // synchronous, so the test measures the retry and not the clock.
+    setTimeout: (handler: () => void) => {
+      handler();
+      return 0;
+    },
+    clearTimeout: () => undefined,
+  };
+  globals.fetch = async () => {
+    attempts.push(1);
+    if (attempts.length <= failures) throw new Error("timeout");
+    return {};
+  };
+  console.warn = (...args: unknown[]) => void warnings.push(args);
+
+  try {
+    // One failure, then success: retried, and nobody is told about it.
+    failures = 1;
+    pushToStore(0);
+    await new Promise((resolve) => setTimeout(resolve, 20));
+    assert.equal(attempts.length, 2, "the first failure is retried once");
+    assert.equal(warnings.length, 0, "a retried write is not a reported failure");
+
+    // Never answered: it stops at one retry and says so exactly once.
+    attempts.length = 0;
+    warnings.length = 0;
+    failures = Infinity;
+    pushToStore(0);
+    await new Promise((resolve) => setTimeout(resolve, 20));
+    assert.equal(attempts.length, 2, "one retry, then it stops — never a loop");
+    assert.equal(warnings.length, 1, "reported once, not per attempt");
+  } finally {
+    console.warn = originalWarn;
+    if (originalWindow === undefined) delete globals.window;
+    else globals.window = originalWindow;
+    if (originalFetch === undefined) delete globals.fetch;
+    else globals.fetch = originalFetch;
+  }
 });

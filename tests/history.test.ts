@@ -140,6 +140,38 @@ test("stored refusals without a reason or amount are dropped", () => {
   assert.equal(live.length, 0, "an unreadable refusal must not read as a real one");
 });
 
+test("who refused it travels with the record", () => {
+  // Two refusals that look alike and mean opposite things: one is the envelope
+  // holding, the other is PayPal turning the money away at the counter.
+  recordBlocked({
+    what: "Stake in Finca de Café",
+    amount: 50,
+    currency: "USD",
+    endpoint: "",
+    reason: "HTTP 422 — TRANSACTION_REFUSED",
+    source: "paypal",
+  });
+  recordBlocked({
+    what: "Ordinary charge",
+    amount: 10,
+    currency: "USD",
+    endpoint: "api.example.com",
+    reason: "Amount exceeds the ceiling.",
+  });
+
+  // Found rather than indexed: the ledger unshifts, so which of the two sits
+  // at the top is an implementation detail, not the thing under test.
+  const rows = readBlockedAttempts();
+  const stake = rows.find((row) => row.what.startsWith("Stake"));
+  const ordinary = rows.find((row) => row.what === "Ordinary charge");
+  assert.ok(stake, "the pledge refusal is in the ledger");
+  assert.equal(stake.source, "paypal");
+  assert.equal(stake.sample, false);
+  // Absent, not "policy": records written before the distinction, and the
+  // gateway's own stops, say nothing — and nothing reads as ours.
+  assert.equal(ordinary?.source, undefined);
+});
+
 test("the ledger is bounded so it cannot grow without end", () => {
   for (let i = 0; i < 60; i += 1) {
     recordBlocked({

@@ -56,6 +56,16 @@ export type BlockedAttempt = {
   endpoint: string;
   /** The exact reason the server gave, printed rather than paraphrased. */
   reason: string;
+  /**
+   * Who refused it — the gateway's own rules, or PayPal.
+   *
+   * The two are the same event to a reader ("it did not go through") and two
+   * completely different facts to an operator: one means *your envelope held*,
+   * the other means *the money reached the counter and was turned away there*.
+   * Absent on records written before the distinction existed, which read as
+   * the gateway's — the only kind there was.
+   */
+  source?: "policy" | "paypal";
   sample: boolean;
 };
 

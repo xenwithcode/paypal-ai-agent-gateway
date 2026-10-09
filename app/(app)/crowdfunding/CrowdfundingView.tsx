@@ -21,6 +21,7 @@ import type { PolicyRow } from "../overview/types";
 import {
   appendPolicyRow,
   readPolicyRows,
+  recordBlocked,
   updatePolicyRow,
   type ManifestRow,
 } from "@/lib/history";
@@ -55,6 +56,23 @@ import { recordEvent } from "@/lib/events";
 
 const PILL_AMOUNTS = [20, 50, 100];
 
+/**
+ * Whether the order names the business as the account it pays.
+ *
+ * **Off, for a reason we watched happen twice.** The seed's payees are
+ * `…@example.com` — addresses that exist in no sandbox. PayPal *accepts* them
+ * when the order is created and *refuses* it at authorize with
+ * `TRANSACTION_REFUSED` (HTTP 422), which is exactly what both attempts did.
+ * The control is the same flow in Overview: identical sandbox app, identical
+ * button, no payee — and it authorized on 05-oct. Everything else in the order
+ * is metadata PayPal does not refuse a transaction over.
+ *
+ * The moment a real sandbox business account exists, this flips to `true` and
+ * the payee goes back into the order, the envelope and the copy — the model
+ * field never went anywhere, because it is the production design, not the bug.
+ */
+const DIRECT_TO_BUSINESS = false;
+
 export default function CrowdfundingView({
   projects,
   paypalClientId,
@@ -73,6 +91,8 @@ export default function CrowdfundingView({
   const [paypalNote, setPaypalNote] = useState<string | null>(null);
   /** The last failure already recorded, so one refusal is not logged three times. */
   const lastFailure = useRef<string | null>(null);
+  /** What the button is trying to pay, so a refusal can be recorded with it. */
+  const lastPledge = useRef<{ what: string; amount: number } | null>(null);
 
   /**
    * A payment that did not happen is still an event, and it belongs in the
@@ -88,6 +108,18 @@ export default function CrowdfundingView({
       if (lastFailure.current === reason) return;
       lastFailure.current = reason;
       recordEvent(`❌ [CROWDFUNDING] PayPal refused the pledge: ${reason}`);
+
+      // And into the ledger Activity reads. The section used to claim every
+      // refusal never reached PayPal — this one did, and said so, so the
+      // record carries its source rather than pretending to be a policy stop.
+      recordBlocked({
+        what: lastPledge.current?.what ?? "Crowdfunding pledge",
+        amount: lastPledge.current?.amount ?? 0,
+        currency: "USD",
+        endpoint: "",
+        reason,
+        source: "paypal",
+      });
     },
     []
   );
@@ -132,6 +164,15 @@ export default function CrowdfundingView({
     Number.isFinite(value) && value >= MIN_INVESTMENT_USD && value <= MAX_INVESTMENT_USD;
   const inBolivares = rates && valid ? convert(value, "USD", "VES", rates) : null;
 
+  // Kept in a ref rather than passed down: a refusal arrives from a callback
+  // that has no idea which project was being paid, and a ledger line without
+  // the amount is a line nobody can reconcile.
+  useEffect(() => {
+    if (selected && valid) {
+      lastPledge.current = { what: `Stake in ${selected.name}`, amount: value };
+    }
+  }, [selected, valid, value]);
+
   /**
    * The envelope PayPal will be asked to open.
    *
@@ -152,7 +193,7 @@ export default function CrowdfundingView({
             limit: value,
             currency: "USD",
             allowEndpoint: "",
-            payee: selected.payeeEmail,
+            payee: DIRECT_TO_BUSINESS ? selected.payeeEmail : "",
             what: `Stake in ${selected.name}`,
             status: STATUS.pending,
             expires: selected.deadline,
@@ -397,8 +438,10 @@ export default function CrowdfundingView({
                   ))}
                 </div>
                 <p id="cf-amount-bounds" className="mt-1.5 text-[10px] text-slate-400">
-                  Between ${MIN_INVESTMENT_USD} and ${MAX_INVESTMENT_USD.toLocaleString("en-US")} ·
-                  the money is directed to {selected.payeeEmail}.
+                  Between ${MIN_INVESTMENT_USD} and ${MAX_INVESTMENT_USD.toLocaleString("en-US")} ·{" "}
+                  {DIRECT_TO_BUSINESS
+                    ? `the money is directed to ${selected.payeeEmail}.`
+                    : "paid through this sandbox's own account — each business receives into its own PayPal account in production."}
                 </p>
               </div>
 
@@ -432,7 +475,7 @@ export default function CrowdfundingView({
                   currency="USD"
                   description={`${envelope.what} — closes ${selected.deadline}`}
                   customId={`cf-${selected.id}`}
-                  payeeEmail={selected.payeeEmail}
+                  payeeEmail={DIRECT_TO_BUSINESS ? selected.payeeEmail : ""}
                   policy={envelope}
                   disabled={busy || left <= 0}
                   onAuthorized={(info) => void onAuthorized(info)}

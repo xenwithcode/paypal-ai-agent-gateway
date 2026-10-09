@@ -26,6 +26,22 @@ function SampleChip() {
   );
 }
 
+/**
+ * Who refused it, when that was not us.
+ *
+ * The same event to a reader and two different facts to an operator: a policy
+ * stop means the envelope held; this means the money reached PayPal and was
+ * turned away there — which is also why the section's own sentence had to
+ * change, since it used to claim every refusal stayed out of PayPal.
+ */
+function PayPalChip() {
+  return (
+    <span className="ml-2 inline-block shrink-0 rounded-full border border-amber-300 bg-amber-50 px-1.5 py-0.5 align-middle text-[9px] font-bold uppercase tracking-wider text-amber-700 print:border-amber-400 print:bg-white">
+      Refused by PayPal
+    </span>
+  );
+}
+
 function Thumbnail({ purchase }: { purchase: Purchase }) {
   const [failed, setFailed] = useState(false);
   if (!purchase.thumbnail || failed) {
@@ -207,7 +223,8 @@ export default function ActivityView() {
                 Charges refused
               </h2>
               <p className="mt-0.5 text-xs text-slate-500">
-                A payment that was stopped never reaches PayPal, so this is the only record of it.
+                Stopped by your rules before it reached PayPal, or refused once it got there —
+                either way it never completed, and this is the only record of it.
               </p>
             </div>
 
@@ -218,6 +235,7 @@ export default function ActivityView() {
                     <span className="text-sm font-medium text-slate-800">
                       {attempt.what}
                       {attempt.sample && <SampleChip />}
+                      {attempt.source === "paypal" && <PayPalChip />}
                     </span>
                     <span className="font-mono text-sm font-semibold tabular-nums text-red-700">
                       {formatMoney(attempt.amount, attempt.currency)}
