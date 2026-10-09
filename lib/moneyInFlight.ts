@@ -29,6 +29,12 @@ export const FLIGHT_STATES = {
 
 export type FlightBucket = keyof typeof FLIGHT_STATES;
 
+/** One row sitting inside a segment: what it was, and how much of it. */
+export type FlightMember = {
+  what: string;
+  amount: number;
+};
+
 export type FlightRow = {
   /** Never merged with another currency — see the note on `moneyInFlight`. */
   currency: string;
@@ -36,11 +42,31 @@ export type FlightRow = {
   reserved: number;
   captured: number;
   released: number;
+  /**
+   * What each segment is *made of*, in the order the rows arrived.
+   *
+   * The four totals answer "how much"; without this the reader had to do the
+   * arithmetic by hand against the table to learn **which** orders a segment
+   * is — which is the question hovering a bar actually asks. `Reserved — 600.00
+   * USD · Apple AirPods Max Silver`, and the same pairs are what the detail
+   * view (E3) will expand into, so the field is worth carrying now.
+   *
+   * Every counted row lands here exactly once — including one with no name,
+   * which is listed as `(unnamed)` rather than dropped: a tooltip that omits a
+   * row the total includes is a tooltip whose numbers do not add up.
+   */
+  members: Record<FlightBucket, FlightMember[]>;
 };
 
 /** The minimum shape this module needs. Structural so nothing has to import
  *  a component's types to be able to test the rule. */
-type RowLike = { status: string; limit: number; currency: string };
+type RowLike = {
+  status: string;
+  limit: number;
+  currency: string;
+  /** Absent on rows written before `what` existed — see `members`. */
+  what?: string;
+};
 
 /**
  * Bucket the rows, grouped by currency.
@@ -80,10 +106,23 @@ export function moneyInFlight(rows: readonly RowLike[]): FlightRow[] {
 
     let entry = byCurrency.get(row.currency);
     if (!entry) {
-      entry = { currency: row.currency, awaiting: 0, reserved: 0, captured: 0, released: 0 };
+      entry = {
+        currency: row.currency,
+        awaiting: 0,
+        reserved: 0,
+        captured: 0,
+        released: 0,
+        members: { awaiting: [], reserved: [], captured: [], released: [] },
+      };
       byCurrency.set(row.currency, entry);
     }
     entry[bucket] += row.limit;
+    // The name travels with the money, so a capture moves the row from one
+    // segment's list to the next exactly as it moves between the totals.
+    entry.members[bucket].push({
+      what: typeof row.what === "string" && row.what.trim() ? row.what.trim() : "(unnamed)",
+      amount: row.limit,
+    });
   }
 
   // Sorted so the axis does not reorder itself as rows are added and removed —

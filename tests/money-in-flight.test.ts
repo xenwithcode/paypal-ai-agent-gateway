@@ -11,10 +11,13 @@ import assert from "node:assert/strict";
 import { FLIGHT_STATES, hasMoneyInFlight, moneyInFlight } from "../lib/moneyInFlight.ts";
 import { STATUS } from "../lib/policy.ts";
 
-const row = (over: Partial<{ status: string; limit: number; currency: string }> = {}) => ({
+const row = (
+  over: Partial<{ status: string; limit: number; currency: string; what: string }> = {}
+) => ({
   status: STATUS.reserved,
   limit: 100,
   currency: "USD",
+  what: "An order",
   ...over,
 });
 
@@ -51,8 +54,70 @@ test("each state lands in its own bucket", () => {
   ]);
 
   assert.deepEqual(rows, [
-    { currency: "USD", awaiting: 10, reserved: 20, captured: 40, released: 80 },
+    {
+      currency: "USD",
+      awaiting: 10,
+      reserved: 20,
+      captured: 40,
+      released: 80,
+      members: {
+        awaiting: [{ what: "An order", amount: 10 }],
+        reserved: [{ what: "An order", amount: 20 }],
+        captured: [{ what: "An order", amount: 40 }],
+        released: [{ what: "An order", amount: 80 }],
+      },
+    },
   ]);
+});
+
+test("a segment names the rows it is made of", () => {
+  // The question hovering a bar actually asks — *which* orders make up this
+  // total — which the operator previously had to answer by hand against the
+  // table, one row at a time.
+  const usd = moneyInFlight([
+    row({ what: "Apple AirPods Max Silver", limit: 549.99, status: STATUS.reserved }),
+    row({ what: "Nike Air Zoom", limit: 50.01, status: STATUS.reserved }),
+    row({ what: "Spotify Premium", limit: 10, status: STATUS.pending }),
+  ])[0];
+
+  assert.equal(usd.reserved, 600, "the total is still the total");
+  assert.deepEqual(usd.members.reserved, [
+    { what: "Apple AirPods Max Silver", amount: 549.99 },
+    { what: "Nike Air Zoom", amount: 50.01 },
+  ]);
+  assert.deepEqual(
+    usd.members.reserved.map((member) => member.amount),
+    [549.99, 50.01]
+  );
+  // The names have to add up to the figure they caption, or the tooltip lies
+  // with two numbers in the same sentence.
+  assert.equal(
+    usd.members.reserved.reduce((sum, member) => sum + member.amount, 0),
+    usd.reserved
+  );
+  assert.equal(usd.members.awaiting.length, 1, "and the other segment names its own");
+});
+
+test("a capture moves the name with the money", () => {
+  const before = moneyInFlight([
+    row({ what: "Nike Air Zoom", limit: 60, status: STATUS.reserved }),
+  ])[0];
+  const after = moneyInFlight([
+    row({ what: "Nike Air Zoom", limit: 60, status: STATUS.captured }),
+  ])[0];
+
+  assert.deepEqual(before.members.reserved, [{ what: "Nike Air Zoom", amount: 60 }]);
+  assert.equal(before.members.captured.length, 0, "it is not in two lists at once");
+  assert.equal(after.members.reserved.length, 0);
+  assert.deepEqual(after.members.captured, [{ what: "Nike Air Zoom", amount: 60 }]);
+});
+
+test("a row nobody named is listed as unnamed, never dropped", () => {
+  // Dropping it would make the members add up to less than the total they
+  // caption — a tooltip whose two numbers disagree inside one sentence.
+  const usd = moneyInFlight([row({ what: "   ", limit: 25 })])[0];
+  assert.equal(usd.reserved, 25, "the total still counts it");
+  assert.deepEqual(usd.members.reserved, [{ what: "(unnamed)", amount: 25 }]);
 });
 
 test("a standing allowance holds no money, so it is not in flight", () => {

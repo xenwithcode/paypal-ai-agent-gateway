@@ -47,6 +47,51 @@ const SEGMENTS = [
   { key: "released", label: "Released", fill: "#98a2b3", labelColor: "#101828" },
 ] as const;
 
+/** How many orders a tooltip lists before it folds the rest into a sum. */
+const MAX_TOOLTIP_ROWS = 6;
+
+/**
+ * Hovering a segment: the state, the amount, and **what it is made of**.
+ *
+ * The question a reader asks a bar is not "how much" — the label on the
+ * segment already says that — but *which orders* are in it, which until now
+ * meant counting rows against the table by eye. The names come from
+ * `moneyInFlight`, so what the tooltip lists is exactly what the total sums,
+ * to the cent.
+ *
+ * Returns `undefined` for an empty segment: a tooltip on a slice with no
+ * angle would report `0.00 USD` of nothing.
+ */
+function segmentTooltip(
+  segment: (typeof SEGMENTS)[number],
+  datum: unknown
+): { title: string; data: { label: string; value: string }[] } | undefined {
+  const row = datum as FlightRow | null;
+  if (!row || typeof row[segment.key] !== "number") return undefined;
+  const value = row[segment.key];
+  if (value === 0) return undefined;
+
+  const members = row.members?.[segment.key] ?? [];
+  const shown = members.slice(0, MAX_TOOLTIP_ROWS);
+  const folded = members.slice(MAX_TOOLTIP_ROWS);
+  const per = (amount: number) => `${amount.toFixed(2)} ${row.currency}`;
+
+  return {
+    title: `${segment.label} — ${per(value)}`,
+    data: [
+      ...shown.map((member) => ({ label: member.what, value: per(member.amount) })),
+      ...(folded.length > 0
+        ? [
+            {
+              label: `and ${folded.length} more`,
+              value: per(folded.reduce((sum, member) => sum + member.amount, 0)),
+            },
+          ]
+        : []),
+    ],
+  };
+}
+
 function buildOptions(data: FlightRow[], container: HTMLElement): AgChartOptions {
   return {
     container,
@@ -90,6 +135,16 @@ function buildOptions(data: FlightRow[], container: HTMLElement): AgChartOptions
                 maximumFractionDigits: 2,
               })
             : "",
+      },
+      // The names, on hover: the segment says the amount and this says which
+      // orders it is made of — same rows, same source, so the two numbers in
+      // one sentence cannot disagree.
+      //
+      // The parameter is annotated because `series` is built by a `map` and a
+      // mapped literal has nothing left to infer it from — the same reason the
+      // `formatter` above declares its own `{ value }`.
+      tooltip: {
+        renderer: (params: { datum: unknown }) => segmentTooltip(segment, params.datum),
       },
     })),
     // No explicit `axes`: AG Charts places a category axis on the left and a
@@ -171,7 +226,7 @@ export default function MoneyInFlight({ rows }: { rows: readonly PolicyRow[] }) 
         <p className="mt-0.5 text-xs text-slate-500">
           One bar per currency — never added together. Four states of the same promise: drafted,
           set aside, moved, given back. The balance in the header is what you have; this is what
-          is committed.
+          is committed. Hover a segment to see the orders it holds.
         </p>
       </div>
 

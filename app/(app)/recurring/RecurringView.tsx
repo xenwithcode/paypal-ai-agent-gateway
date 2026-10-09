@@ -55,7 +55,10 @@ function isCommitment(row: ManifestRow): boolean {
 const STATUS_STYLE: Record<string, string> = {
   Active: "border-emerald-300 bg-emerald-50 text-emerald-700",
   Reserved: "border-blue-300 bg-blue-50 text-blue-700",
-  Captured: "border-slate-300 bg-slate-100 text-slate-600",
+  // Emerald, not slate: `Captured` means the money moved, and `/commerce`
+  // already paints it this way. Two screens giving the same state two colours
+  // is a second vocabulary the operator would have to learn to read.
+  Captured: "border-emerald-200 bg-emerald-50 text-emerald-700",
   "Awaiting approval": "border-amber-300 bg-amber-50 text-amber-700",
   Released: "border-slate-300 bg-slate-50 text-slate-500",
 };
