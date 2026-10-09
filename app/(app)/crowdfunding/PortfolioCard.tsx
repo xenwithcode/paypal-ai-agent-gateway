@@ -41,6 +41,13 @@ export default function PortfolioCard({
   // two ways on two screens, which is the bug this line fixes.
   const returnedRow = (row: ManifestRow) => row.status === STATUS.released;
 
+  // The question this card has to answer first: *how much have I put in?*
+  // Every other figure is a state that money can be in, and a reader who asks
+  // the main question used to find $0 — because the position in front of them
+  // had been released, which is true of the states and false of the total.
+  // Historical, so it counts what came back too; the three states below say
+  // where it is now.
+  const investedSoFar = rows.reduce((sum, row) => sum + row.limit, 0);
   const paid = rows.filter(funded).reduce((sum, row) => sum + row.limit, 0);
   const reserved = rows.filter(reservedRow).reduce((sum, row) => sum + row.limit, 0);
   const returned = rows.filter(returnedRow).reduce((sum, row) => sum + row.limit, 0);
@@ -56,6 +63,11 @@ export default function PortfolioCard({
   const projectsCount = new Set(rows.map((row) => row.project).filter(Boolean)).size;
 
   const stats = [
+    {
+      label: "Invested so far",
+      value: investments === null ? "—" : money(investedSoFar),
+      note: "total you have put in",
+    },
     {
       label: "Paid",
       value: investments === null ? "—" : money(paid),
@@ -101,7 +113,10 @@ export default function PortfolioCard({
         </span>
       </div>
 
-      <div className="mt-4 grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-5">
+      {/* Six figures, two rows of three: one column would make each card
+          narrow enough that "$1,234" wraps, and six across would do the same
+          at half the width. */}
+      <div className="mt-4 grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
         {stats.map((stat) => (
           <div key={stat.label} className="rounded-xl border border-slate-100 bg-slate-50 px-4 py-3">
             <p className="text-[11px] font-medium uppercase tracking-wide text-slate-400">
