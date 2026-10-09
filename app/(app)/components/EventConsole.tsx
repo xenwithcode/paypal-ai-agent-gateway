@@ -2,6 +2,7 @@
 "use client";
 
 import type { ReactNode } from "react";
+import { logTone } from "@/lib/events";
 
 /**
  * What the agent has been doing, wherever it happens.
@@ -22,26 +23,6 @@ import type { ReactNode } from "react";
  * without it the console is a visual-only feature on a product that has
  * refused those everywhere else.
  */
-
-/**
- * What colour a line is: refusals shout whatever produced them, because a
- * charge that was stopped is the event worth catching at a glance. The agent
- * then gets a colour of its own — in a console this busy, following one actor
- * without reading every word is the difference between watching it work and
- * watching text scroll.
- */
-export function logTone(log: string): string {
-  if (log.includes("🚨") || log.includes("⚠️") || log.includes("❌") || log.includes("— refused")) {
-    return "text-red-400 font-bold";
-  }
-  // The agent, whether it was reached through a button or through the
-  // microphone. `🔊` is the line the agent *spoke*; keeping it the same colour
-  // as `🤖` means one actor stays followable through a busy console without
-  // reading every word.
-  if (log.includes("🤖") || log.includes("🔊")) return "text-blue-300";
-  if (log.includes("🟢")) return "text-emerald-400";
-  return "text-slate-200";
-}
 
 /**
  * The name of the console, owned by the component.

@@ -54,3 +54,33 @@ export function recordEvent(message: string): void {
     // is the same trade-off every other write here makes.
   }
 }
+
+/**
+ * What colour a line is — the console's second cue, never its only one.
+ *
+ * Four families, and the one that matters is the one that moved money:
+ *
+ *   red     a refusal, whatever produced it
+ *   blue    the agent speaking (button or microphone, one actor)
+ *   emerald **money that settled** — `✅ Captured`, and the lines that really
+ *           move value
+ *   slate   everything else, including permissions
+ *
+ * The emerald rule used to be inverted: `🟢 [POLICY] is now active` — which
+ * reserves nothing and charges nothing — came out green, while an actual
+ * capture printed slate. A console whose colours mean the opposite of its
+ * words is worse than one with no colours, because the reader trusts the
+ * colour first.
+ */
+export function logTone(log: string): string {
+  if (log.includes("🚨") || log.includes("⚠️") || log.includes("❌") || log.includes("— refused")) {
+    return "text-red-400 font-bold";
+  }
+  // The agent, whether it was reached through a button or through the
+  // microphone. `🔊` is the line the agent *spoke*; keeping it the same colour
+  // as `🤖` means one actor stays followable through a busy console without
+  // reading every word.
+  if (log.includes("🤖") || log.includes("🔊")) return "text-blue-300";
+  if (log.includes("✅") || log.includes("🟢")) return "text-emerald-400";
+  return "text-slate-200";
+}

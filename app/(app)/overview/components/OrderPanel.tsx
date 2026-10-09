@@ -165,10 +165,19 @@ export default function OrderPanel({
       // Fall back to what the row is already carrying. A card built on stale
       // data, marked as such below, beats an empty panel at the moment the
       // operator is trying to decide.
+      //
+      // One row is judged rather than remembered: an order with no condition
+      // is decided by the clock alone, and a re-read that failed says nothing
+      // about the clock. Reporting it as "cannot be verified" would turn
+      // *spend now* into *not payable* — withholding the capture button for a
+      // request that had nothing to do with the rule.
+      const hasCondition = Boolean(row.condition.trim());
       setResult({
         product: null,
-        conditionMet: row.conditionMet,
-        conditionDetail: row.conditionDetail,
+        conditionMet: hasCondition ? row.conditionMet : true,
+        conditionDetail: hasCondition
+          ? row.conditionDetail
+          : "No condition — executes immediately.",
         source: null,
         alternatives: [],
       });

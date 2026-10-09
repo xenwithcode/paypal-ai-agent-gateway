@@ -400,7 +400,7 @@ export async function POST(req: NextRequest) {
         status: nextStatus,
         log: held
           ? `🔒 [HOLD] ${policy.limit.toFixed(2)} ${policy.currency} reserved for "${policy.what}" — waiting on ${policy.condition}`
-          : `🟢 [POLICY] "${policy.what}" is now active. Ceiling: ${policy.limit.toFixed(2)} ${policy.currency}.`,
+          : `🔓 [POLICY] "${policy.what}" is now active. Ceiling: ${policy.limit.toFixed(2)} ${policy.currency}.`,
       });
     }
 
