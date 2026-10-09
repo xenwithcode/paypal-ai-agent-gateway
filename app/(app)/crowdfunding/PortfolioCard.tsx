@@ -2,7 +2,12 @@
 "use client";
 
 import type { ManifestRow } from "@/lib/history";
-import type { Project } from "@/lib/crowdfunding";
+import {
+  dividendOn,
+  earnsDividend,
+  type Dividend,
+  type Project,
+} from "@/lib/crowdfunding";
 import { STATUS } from "@/lib/policy";
 
 /**
@@ -18,7 +23,10 @@ import { STATUS } from "@/lib/policy";
  * Three figures, never one: what has actually moved, what is only reserved,
  * and what it earns per day. A pledge that is reserved has not been paid, and
  * calling it "invested" would report money the business has not received —
- * the one lie a financial screen may not tell.
+ * the one lie a financial screen may not tell. The dividend follows the same
+ * discipline: accruing is not paid, so the figure carries its day count and
+ * the note under the card says what the money is still waiting for, rather
+ * than letting an emerald number imply cash in hand.
  *
  * Empty means empty: with no rows the screen says so rather than showing
  * sample positions nobody funded.
@@ -51,15 +59,33 @@ export default function PortfolioCard({
   const paid = rows.filter(funded).reduce((sum, row) => sum + row.limit, 0);
   const reserved = rows.filter(reservedRow).reduce((sum, row) => sum + row.limit, 0);
   const returned = rows.filter(returnedRow).reduce((sum, row) => sum + row.limit, 0);
-  // What the earned part produces per day, from the project's own offer —
-  // shown only for money that actually moved, because reserved funds earn
-  // nothing yet.
-  const perDay = rows
-    .filter(funded)
-    .reduce((sum, row) => {
-      const project = row.project ? byId.get(row.project) : undefined;
-      return sum + (project ? (row.limit * project.returnPct) / 100 / 365 : 0);
-    }, 0);
+  // What a position earns, read through the rule the tests pin: the formula,
+  // the day count and the eligibility all live in `lib/crowdfunding`, so the
+  // figure on screen cannot drift from the one the suite checks — the same
+  // reason `campaignAction` left the component it used to live in.
+  //
+  // `since` is when PayPal set the money aside, not when it settled: a
+  // reservation is a commitment the campaign can still fail, and the note
+  // under this card says exactly that.
+  const dividendOf = (row: ManifestRow): Dividend | null => {
+    if (!earnsDividend(row)) return null;
+    const project = row.project ? byId.get(row.project) : undefined;
+    if (!project) return null;
+    return dividendOn({
+      amountUsd: row.limit,
+      returnPct: project.returnPct,
+      since: row.createdAt ?? row.capturedAt ?? null,
+    });
+  };
+
+  const earning = rows
+    .map((row) => dividendOf(row))
+    .filter((dividend): dividend is Dividend => dividend !== null);
+  // The rate, and what the rate has produced so far: one number says what a
+  // day is worth and the other says how many of them have passed. Either alone
+  // is a figure a reader has to take on faith.
+  const perDay = earning.reduce((sum, dividend) => sum + dividend.perDay, 0);
+  const accrued = earning.reduce((sum, dividend) => sum + dividend.total, 0);
   const projectsCount = new Set(rows.map((row) => row.project).filter(Boolean)).size;
 
   const stats = [
@@ -81,7 +107,12 @@ export default function PortfolioCard({
     {
       label: "Earning now",
       value: investments === null ? "—" : money(perDay, 4),
-      note: "per day, in dollars",
+      note:
+        investments === null
+          ? "per day, in dollars"
+          : earning.length
+            ? `per day · ${money(accrued, 4)} accrued so far`
+            : "per day · nothing reserved or paid yet",
     },
     {
       label: "Returned",
@@ -139,6 +170,7 @@ export default function PortfolioCard({
               const project = row.project ? byId.get(row.project) : undefined;
               const isPaid = funded(row);
               const wasReturned = returnedRow(row);
+              const dividend = dividendOf(row);
               return (
                 <li key={row.id} className="flex flex-wrap items-center justify-between gap-3 px-4 py-2.5">
                   <div className="min-w-0">
@@ -156,9 +188,25 @@ export default function PortfolioCard({
                     </p>
                   </div>
                   <div className="flex shrink-0 items-center gap-2">
-                    <span className="font-mono text-sm font-semibold tabular-nums text-slate-900">
-                      {money(row.limit)}
-                    </span>
+                    {/* The odometer: what this position has accrued, and how
+                        many days it took. It changes when the day changes, so
+                        there is no timer here — a number that moves once a day
+                        does not need something redrawing it every second. */}
+                    <div className="text-right">
+                      <span className="font-mono text-sm font-semibold tabular-nums text-slate-900">
+                        {money(row.limit)}
+                      </span>
+                      {dividend && (
+                        <p
+                          title={`Accrued dividends over ${dividend.days} day${
+                            dividend.days === 1 ? "" : "s"
+                          } at ${project?.returnPct ?? 0}% a year`}
+                          className="font-mono text-[10px] tabular-nums text-emerald-600"
+                        >
+                          +{money(dividend.total, 4)} · {dividend.days}d
+                        </p>
+                      )}
+                    </div>
                     <span
                       className={`rounded-full border px-2 py-0.5 text-[10px] font-bold uppercase tracking-wide ${
                         isPaid
@@ -175,6 +223,15 @@ export default function PortfolioCard({
               );
             })}
         </ul>
+      )}
+
+      {rows.length > 0 && (
+        <p className="mt-3 text-[11px] leading-relaxed text-slate-400">
+          Dividends accrue from the day PayPal set the money aside, on positions that are{" "}
+          <span className="font-semibold text-slate-500">reserved or paid</span> — promised, not
+          paid: a reservation earns only if the campaign reaches its goal, and a released one earns
+          nothing.
+        </p>
       )}
 
       {rows.length === 0 && investments !== null && (

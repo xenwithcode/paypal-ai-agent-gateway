@@ -22,7 +22,7 @@
 // and *what happened while running* — and confusing them is how a repository
 // ends up depending on a file it does not contain.
 
-import type { Verdict } from "./policy.ts";
+import { STATUS, type Verdict } from "./policy.ts";
 
 /** How many projects the showcase will hold before it pages. */
 export const MAX_PROJECTS = 50;
@@ -456,12 +456,16 @@ export function settlementRefusal(
   } — ${left} day${left === 1 ? "" : "s"} left. It is captured when the goal is met, and released if it is not.`;
 }
 
+/** A `Date` as the calendar on this machine reads it: YYYY-MM-DD. */
+function isoOf(date: Date): string {
+  const month = String(date.getMonth() + 1).padStart(2, "0");
+  const day = String(date.getDate()).padStart(2, "0");
+  return `${date.getFullYear()}-${month}-${day}`;
+}
+
 /** `from + days` as YYYY-MM-DD, on the calendar `readExpiry` compares against. */
 function isoPlusDays(from: Date, days: number): string {
-  const d = new Date(from.getFullYear(), from.getMonth(), from.getDate() + days);
-  const month = String(d.getMonth() + 1).padStart(2, "0");
-  const day = String(d.getDate()).padStart(2, "0");
-  return `${d.getFullYear()}-${month}-${day}`;
+  return isoOf(new Date(from.getFullYear(), from.getMonth(), from.getDate() + days));
 }
 
 /**
@@ -477,4 +481,79 @@ export function daysLeft(deadline: string, today: Date = new Date()): number {
   const target = Date.UTC(year, month - 1, day);
   const now = Date.UTC(today.getFullYear(), today.getMonth(), today.getDate());
   return Math.round((target - now) / 86_400_000);
+}
+
+// ─── What a position earns ─────────────────────────────────────────────────
+
+/**
+ * Whether a position accrues.
+ *
+ * `Reserved` and `Captured` — the two states in which PayPal is actually
+ * holding this money for the campaign. `Awaiting approval` holds nothing yet,
+ * `Active` is a standing allowance that reserves nothing by design, and
+ * `Released` is the one to exclude hardest: the money came back, so a card
+ * still accruing on it would be reporting earnings on a refund.
+ *
+ * Said once, here, rather than decided by a filter in the component — the
+ * count and the total have to come from the same answer.
+ */
+export function earnsDividend(row: { status: string }): boolean {
+  return row.status === STATUS.reserved || row.status === STATUS.captured;
+}
+
+export type Dividend = {
+  /** Whole days the position has been earning — 0 before it starts. */
+  days: number;
+  /** `amount × returnPct/100 / 365`, in dollars. */
+  perDay: number;
+  /** `perDay × days`: promised, not paid. The note under the card says so. */
+  total: number;
+};
+
+/**
+ * The dividend, in three figures, never one.
+ *
+ * `(amount × rendimiento/100 / 365) × días` — the operator's own formula,
+ * held here so the figure in the card, the figure in a row and the figure in
+ * a test are the same one. A rate typed into a component is how 14% becomes
+ * 14% a month on one screen and 14% a year on another.
+ *
+ * `since` is the moment PayPal set the money aside, read as a **calendar day
+ * on this machine** and counted with the same arithmetic as the campaign's
+ * window (`daysLeft`). A raw timestamp difference would credit a pledge made
+ * at 23:00 with a day it did not have — and would disagree with the window
+ * about which day today is.
+ *
+ * No clock inside. The figure changes when the day changes; a component
+ * ticking every second would redraw a number that moves once a day, which is
+ * motion that means nothing.
+ *
+ * Unknown start, missing return and non-positive amounts all answer zero,
+ * never a guess: an accrued figure is a promise about money, and the honest
+ * default for a position whose start cannot be read is that none of it counts.
+ */
+export function dividendOn(
+  position: { amountUsd: number; returnPct: number; since?: string | null },
+  today: Date = new Date()
+): Dividend {
+  const amount =
+    Number.isFinite(position.amountUsd) && position.amountUsd > 0 ? position.amountUsd : 0;
+  const rate =
+    Number.isFinite(position.returnPct) && position.returnPct > 0 ? position.returnPct : 0;
+
+  const perDay = (amount * rate) / 100 / 365;
+  const days = daysSince(position.since, today);
+  return { days, perDay, total: perDay * days };
+}
+
+/** Whole days from a stored timestamp to `today`, never negative. */
+function daysSince(since: string | null | undefined, today: Date): number {
+  if (!since) return 0;
+  const started = new Date(since);
+  if (Number.isNaN(started.getTime())) return 0;
+  // `daysLeft` counts *forward to* a deadline, so a start behind us is its
+  // negation — and a start ahead of us lands negative, which clamps to zero
+  // below rather than becoming debt.
+  const days = -daysLeft(isoOf(started), today);
+  return days > 0 ? days : 0;
 }

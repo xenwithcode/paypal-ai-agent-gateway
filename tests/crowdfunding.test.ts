@@ -17,6 +17,8 @@ import {
   campaignIdFromCustomId,
   CROWDFUNDING_PREFIX,
   daysLeft,
+  dividendOn,
+  earnsDividend,
   judgeInvestment,
   MAX_INVESTMENT_USD,
   MAX_PROJECTS,
@@ -32,6 +34,19 @@ import {
 const seed = JSON.parse(
   readFileSync(new URL("../lib/seeds/crowdfunding.json", import.meta.url), "utf8")
 );
+
+/**
+ * A stored timestamp for one calendar day, at noon local.
+ *
+ * Noon rather than midnight because the dividend reads a timestamp as a
+ * calendar day on *this* machine: an ISO string written at 00:00 UTC falls on
+ * the previous day for anyone west of Greenwich, which would make these
+ * assertions depend on the timezone of whoever runs the suite.
+ *
+ * `month` is the 0-based month `Date` itself takes.
+ */
+const stamp = (year: number, month: number, day: number): string =>
+  new Date(year, month, day, 12).toISOString();
 
 const project = (overrides: Partial<Project> = {}): Project => ({
   id: "demo",
@@ -252,6 +267,54 @@ test("a pledge settles only against a campaign that can carry it", () => {
   // Campaign gone: nothing left to settle against, said rather than falling
   // through to a generic path that reads an empty condition as *spend now*.
   assert.match(settlementRefusal(what, null, today) ?? "", /not in the showcase any more/);
+});
+
+test("a dividend is the formula, in three figures and never one", () => {
+  const today = new Date(2026, 9, 8);
+
+  // $3.650 at 10% is exactly $1 a day — and a year of them is $365, so the
+  // arithmetic can be checked by eye rather than trusted.
+  const year = dividendOn({ amountUsd: 3650, returnPct: 10, since: stamp(2025, 9, 8) }, today);
+  assert.equal(year.perDay, 1);
+  assert.equal(year.days, 365);
+  assert.equal(year.total, 365);
+
+  const yesterday = dividendOn({ amountUsd: 3650, returnPct: 10, since: stamp(2026, 9, 7) }, today);
+  assert.equal(yesterday.days, 1, "pledged yesterday, counted once today");
+  assert.equal(yesterday.total, 1);
+
+  const today0 = dividendOn({ amountUsd: 3650, returnPct: 10, since: stamp(2026, 9, 8) }, today);
+  assert.equal(today0.days, 0, "today has not produced a day yet");
+  assert.equal(today0.total, 0);
+});
+
+test("an unknown start or an unknown rate earns nothing, never a guess", () => {
+  const today = new Date(2026, 9, 8);
+  const start = stamp(2026, 9, 4);
+
+  assert.equal(dividendOn({ amountUsd: 100, returnPct: 20 }, today).days, 0, "no start, no count");
+  assert.equal(dividendOn({ amountUsd: 100, returnPct: 20, since: "not a date" }, today).days, 0);
+  assert.equal(dividendOn({ amountUsd: 100, returnPct: 20, since: null }, today).total, 0);
+
+  assert.equal(dividendOn({ amountUsd: 100, returnPct: 0, since: start }, today).perDay, 0);
+  assert.equal(dividendOn({ amountUsd: 100, returnPct: Number.NaN, since: start }, today).perDay, 0);
+  assert.equal(dividendOn({ amountUsd: -5, returnPct: 20, since: start }, today).perDay, 0);
+  assert.equal(dividendOn({ amountUsd: 0, returnPct: 20, since: start }, today).perDay, 0);
+
+  // A start in the future is a mistake to be shown as nothing, not as debt:
+  // negative accrual is a number no reader can reconcile with anything.
+  assert.equal(dividendOn({ amountUsd: 100, returnPct: 20, since: stamp(2026, 9, 10) }, today).total, 0);
+});
+
+test("only money PayPal is holding earns", () => {
+  // The count and the total both ask this, so it is one function rather than
+  // a filter in the card that the suite could never see.
+  assert.equal(earnsDividend({ status: "Reserved" }), true, "set aside, held for the campaign");
+  assert.equal(earnsDividend({ status: "Captured" }), true, "moved, and invested");
+  assert.equal(earnsDividend({ status: "Released" }), false, "the money came back");
+  assert.equal(earnsDividend({ status: "Awaiting approval" }), false, "nothing set aside yet");
+  assert.equal(earnsDividend({ status: "Active" }), false, "a standing allowance reserves nothing");
+  assert.equal(earnsDividend({ status: "Protecting" }), false, "the FX shield, not a position");
 });
 
 test("the promise on the card is one rule, and it has three answers", () => {
