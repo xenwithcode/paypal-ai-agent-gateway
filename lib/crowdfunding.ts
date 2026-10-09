@@ -506,6 +506,16 @@ export type Dividend = {
   days: number;
   /** `amount × returnPct/100 / 365`, in dollars. */
   perDay: number;
+  /**
+   * The same rate as a month — `perDay × 365/12`, which is the annual offer
+   * **÷ 12 exactly**, so a reader can check it against the Return column.
+   *
+   * Shown instead of the daily figure because that is the unit a person
+   * actually weighs a saving against: *"this pays about two dollars a month"*,
+   * not *six cents a day*. The daily rate stays in the maths; only the label
+   * changes.
+   */
+  perMonth: number;
   /** `perDay × days`: promised, not paid. The note under the card says so. */
   total: number;
 };
@@ -532,6 +542,12 @@ export type Dividend = {
  * never a guess: an accrued figure is a promise about money, and the honest
  * default for a position whose start cannot be read is that none of it counts.
  */
+/** Days in a year — the divisor every rate in this module shares. */
+const DAYS_PER_YEAR = 365;
+
+/** Months in a year: a monthly figure is the annual offer ÷ 12, exactly. */
+const MONTHS_PER_YEAR = 12;
+
 export function dividendOn(
   position: { amountUsd: number; returnPct: number; since?: string | null },
   today: Date = new Date()
@@ -541,9 +557,28 @@ export function dividendOn(
   const rate =
     Number.isFinite(position.returnPct) && position.returnPct > 0 ? position.returnPct : 0;
 
-  const perDay = (amount * rate) / 100 / 365;
+  const perDay = (amount * rate) / 100 / DAYS_PER_YEAR;
+  const perMonth = (perDay * DAYS_PER_YEAR) / MONTHS_PER_YEAR;
   const days = daysSince(position.since, today);
-  return { days, perDay, total: perDay * days };
+  return { days, perDay, perMonth, total: perDay * days };
+}
+
+/**
+ * What the offer pays over the campaign's own term.
+ *
+ * A rate "a year" is the only figure that lets a 10-day campaign be compared
+ * with a 60-day one, and it is not the number anybody feels: this is the share
+ * of what you put in that the campaign's own runway produces, at the rate it
+ * offers, for as long as it runs.
+ *
+ * Conditional — it pays only if the campaign funds — and the screen says so
+ * beside it rather than here: a rule that decides how confident to sound is a
+ * rule that will one day be over-confident.
+ */
+export function termReturnPct(project: Pick<Project, "returnPct" | "runwayDays">): number {
+  if (!Number.isFinite(project.returnPct) || project.returnPct < 0) return 0;
+  if (!Number.isFinite(project.runwayDays) || project.runwayDays <= 0) return 0;
+  return (project.returnPct * project.runwayDays) / DAYS_PER_YEAR;
 }
 
 /** Whole days from a stored timestamp to `today`, never negative. */

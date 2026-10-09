@@ -16,6 +16,10 @@
 // A module reachable from a test imports with the extension; a module only
 // ever bundled by Next may keep dropping it.
 import { POLICY_STORAGE_KEY, BLOCKED_STORAGE_KEY, pushToStore } from "./store.ts";
+// Statuses as constants, not as strings typed twice: the portfolio card
+// compares these with `===`, and a sample that spelled "Captured" its own way
+// would be a record only the sample understands.
+import { STATUS } from "./policy.ts";
 // Type-only import of ManifestRow lives in manifests.ts, so this direction is
 // the only runtime one: history → manifests, and no cycle to resolve.
 import { looksLikeManifest } from "./manifests.ts";
@@ -188,6 +192,15 @@ export type StoredRow = {
   authorizationId?: string;
   capturedAt?: string;
   createdAt?: string;
+  /**
+   * Present only on rows this product *shows* rather than rows it recorded.
+   *
+   * A sample is a presentation of what a filled screen looks like — the same
+   * distinction Activity makes with its five seeded purchases — and it must
+   * never reach storage, or a dollar nobody reserved starts moving totals
+   * somewhere else. Readers may trust the flag: nothing in this app writes it.
+   */
+  sample?: boolean;
 };
 
 /**
@@ -359,6 +372,84 @@ export function readPurchases(): Purchase[] {
   );
 
   return [...live, ...sample];
+}
+
+/**
+ * Three positions nobody made — shown only while the showcase is empty.
+ *
+ * The donut, the six figures and the odometer are the argument the
+ * crowdfunding screen makes, and with an empty portfolio every one of them
+ * reads `$0`: a judge would see the machinery and none of what it computes.
+ * Activity solves the same problem the same way — five seeded purchases, each
+ * carrying `sample`.
+ *
+ * Three rules, so a sample can never pass for money:
+ *
+ *  · **It is marked.** `sample: true` rides on every row and the card prints a
+ *    chip beside it — the same chip Activity prints on its purchases.
+ *  · **It is a presentation, not a record.** Built on read, dated relative to
+ *    `now` (a stored sample dates itself the day the repo was published), and
+ *    never written to the policy store — so Overview, Money in flight and the
+ *    ledger never count a dollar that was never reserved.
+ *  · **It is replaced, not merged.** The moment one real position exists,
+ *    these disappear: the operator's totals are never half theirs, half ours.
+ *
+ * Paid, reserved and returned, one each — because those are the three slices
+ * the donut draws, and the third is the state this card has already been wrong
+ * about once.
+ */
+export function sampleInvestments(now: Date = new Date()): ManifestRow[] {
+  const since = (days: number): string => {
+    const date = new Date(now);
+    date.setDate(date.getDate() - days);
+    return date.toISOString();
+  };
+
+  return [
+    {
+      id: -1,
+      what: "Stake in Supermercado Express",
+      merchant: "Chacao, Miranda",
+      limit: 100,
+      currency: "USD",
+      condition: "",
+      allowEndpoint: "",
+      payee: "",
+      status: STATUS.captured,
+      project: "supermercado-express-chacao",
+      createdAt: since(6),
+      capturedAt: since(5),
+      sample: true,
+    },
+    {
+      id: -2,
+      what: "Stake in Finca de Café El Samán",
+      merchant: "Yaracuy",
+      limit: 50,
+      currency: "USD",
+      condition: "",
+      allowEndpoint: "",
+      payee: "",
+      status: STATUS.reserved,
+      project: "finca-cafe-el-saman",
+      createdAt: since(4),
+      sample: true,
+    },
+    {
+      id: -3,
+      what: "Stake in Agropecuaria El Cacao",
+      merchant: "Lara",
+      limit: 25,
+      currency: "USD",
+      condition: "",
+      allowEndpoint: "",
+      payee: "",
+      status: STATUS.released,
+      project: "agropecuaria-el-cacao",
+      createdAt: since(3),
+      sample: true,
+    },
+  ];
 }
 
 export function readBlockedAttempts(): BlockedAttempt[] {

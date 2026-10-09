@@ -47,21 +47,30 @@ export default function ArchitectureAppendix() {
         />
       </div>
 
-      <div className="mt-3 flex flex-wrap items-baseline justify-between gap-2 text-xs text-slate-400">
-        <p className="max-w-[70ch] leading-relaxed">
-          ⚠️ <span className="font-medium text-slate-500">Dated {GENERATED}</span> — several
-          features landed after it (the campaign judge, the charts, the voice agent), so read it as
-          the shape of the system rather than as its current inventory. A refresh is scheduled
-          before the final submission.
+      <div className="mt-3 space-y-1.5 text-xs text-slate-400">
+        <p className="max-w-[80ch] leading-relaxed">
+          🎬 <span className="font-medium text-slate-500">It moves.</span> Hover any box to watch
+          what travels along its edges; press <span className="font-medium text-slate-500">Live</span>{" "}
+          (top right of the diagram) and the flow runs on its own. A diagram that looks still is
+          honouring your system&apos;s <em>reduce motion</em> setting — the toggle is disabled while
+          that is on, which is deliberate.
         </p>
-        <a
-          href={DIAGRAM}
-          target="_blank"
-          rel="noopener noreferrer"
-          className="shrink-0 font-medium text-blue-600 underline-offset-2 hover:underline"
-        >
-          Open full size ↗
-        </a>
+        <div className="flex flex-wrap items-baseline justify-between gap-2">
+          <p className="max-w-[70ch] leading-relaxed">
+            ⚠️ <span className="font-medium text-slate-500">Dated {GENERATED}</span> — several
+            features landed after it (the campaign judge, the charts, the voice agent), so read it
+            as the shape of the system rather than as its current inventory. A refresh is scheduled
+            before the final submission.
+          </p>
+          <a
+            href={DIAGRAM}
+            target="_blank"
+            rel="noopener noreferrer"
+            className="shrink-0 font-medium text-blue-600 underline-offset-2 hover:underline"
+          >
+            Open full size ↗
+          </a>
+        </div>
       </div>
     </div>
   );

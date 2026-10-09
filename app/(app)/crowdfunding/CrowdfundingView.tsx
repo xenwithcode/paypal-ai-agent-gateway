@@ -19,6 +19,7 @@ import {
   judgeInvestment,
   remainingUsd,
   statusOf,
+  termReturnPct,
   type Project,
 } from "@/lib/crowdfunding";
 import { convert, formatAsOf, formatSmart, type FxSnapshot } from "@/lib/fx/rates";
@@ -28,6 +29,7 @@ import {
   appendPolicyRow,
   readPolicyRows,
   recordBlocked,
+  sampleInvestments,
   updatePolicyRow,
   type ManifestRow,
 } from "@/lib/history";
@@ -164,8 +166,14 @@ export default function CrowdfundingView({
 
   // The portfolio reads the same store Overview writes, after it has been
   // asked for — the rule every stored view here follows.
+  //
+  // With nothing real in it, it shows the seeded showcase instead: three
+  // positions nobody funded, each marked, so the figures, the ring and the
+  // odometer can be seen computing something. Replaced, never merged — the
+  // moment a real pledge exists, the totals are the operator's alone.
   const refreshInvestments = useCallback(() => {
-    setInvestments(readPolicyRows().filter((row) => Boolean(row.project)));
+    const live = readPolicyRows().filter((row) => Boolean(row.project));
+    setInvestments(live.length > 0 ? live : sampleInvestments());
   }, []);
 
   useEffect(() => {
@@ -543,7 +551,10 @@ export default function CrowdfundingView({
                   {selected.what} · {selected.city}. Backed by{" "}
                   <span className="font-medium text-slate-700">{selected.collateral.toLowerCase()}</span>
                   , offering <span className="font-medium text-emerald-600">{selected.returnPct}% a year</span>{" "}
-                  in dollars.
+                  in dollars — <span className="font-medium text-slate-700">
+                    about {termReturnPct(selected).toFixed(2)}%
+                  </span>{" "}
+                  over the campaign&apos;s {selected.runwayDays} days, if it funds.
                 </p>
               </div>
               <span className="shrink-0 rounded-full border border-slate-200 bg-slate-50 px-2.5 py-1 text-[10px] font-bold uppercase tracking-wide text-slate-500">

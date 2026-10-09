@@ -77,6 +77,48 @@ function RiskCell(params: { data?: Project }) {
   );
 }
 
+/** The same three colours as the chips, as text — one vocabulary per grade. */
+const RISK_TEXT: Record<Risk, string> = {
+  A: "text-emerald-700",
+  B: "text-blue-700",
+  C: "text-amber-700",
+};
+
+/** How each grade reads in words, beside its letter. */
+const RISK_WORD: Record<Risk, string> = {
+  A: "least risky",
+  B: "mid risk",
+  C: "most risky",
+};
+
+/**
+ * The price beside the reward.
+ *
+ * A rate on its own reads as a ranking: 24% beats 14% until you know the first
+ * is a grade C campaign and the second a grade A one — and the grade *is* in
+ * this table, two columns away, in another format, which a reader comparing
+ * returns never reaches. So it travels with the rate: the reward and its price
+ * in the cell the eye actually lands on.
+ */
+function ReturnCell(params: { data?: Project }) {
+  const project = params.data;
+  if (!project) return <span>—</span>;
+
+  return (
+    <span
+      className="flex h-full min-w-0 flex-col justify-center gap-0.5 px-1"
+      title={`${project.returnPct}% a year. The return is the price of the risk: grade ${project.risk} is ${RISK_WORD[project.risk]}, backed by ${project.collateral.toLowerCase()}.`}
+    >
+      <span className="font-mono text-[13px] font-semibold text-emerald-600">
+        {project.returnPct}% a year
+      </span>
+      <span className={`text-[11px] leading-tight ${RISK_TEXT[project.risk]}`}>
+        Grade {project.risk} · {RISK_WORD[project.risk]}
+      </span>
+    </span>
+  );
+}
+
 export default function ProjectGrid({
   projects,
   onSelected,
@@ -111,10 +153,15 @@ export default function ProjectGrid({
       {
         headerName: "Return",
         field: "returnPct",
+        // Sorted and exported from the number; drawn as two lines. The rate on
+        // its own invites a comparison the data cannot support — a reader who
+        // compares 14% with 24% is comparing two different promises, and the
+        // price of the second one is the grade sitting two columns away. So it
+        // travels with the rate: reward and price in the cell the eye lands on.
         valueFormatter: ({ value }) => (typeof value === "number" ? `${value}% a year` : "—"),
-        cellClass: "font-mono font-semibold text-emerald-600",
-        minWidth: 110,
-        maxWidth: 140,
+        cellRenderer: ReturnCell,
+        minWidth: 130,
+        maxWidth: 165,
         type: "numericColumn",
       },
       {
