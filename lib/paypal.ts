@@ -82,12 +82,33 @@ function describePaypalError(error: unknown): string {
   const failure = error as {
     statusCode?: number;
     message?: string;
-    result?: { name?: string; message?: string };
+    result?: {
+      name?: string;
+      message?: string;
+      details?: Array<{ field?: string; issue?: string; description?: string }>;
+    };
   };
+
+  // The headline alone is what cost an afternoon: PayPal's generic sentence
+  // ("semantically incorrect, or failed business validation") names nothing,
+  // while `name` and `details[]` name the exact refusal — ORDER_NOT_APPROVED
+  // and PAYEE_INVALID are the same sentence and completely different bugs.
+  const headline = failure.result?.message ?? failure.result?.name ?? failure.message ?? "";
+  const named = failure.result?.name && headline !== failure.result.name
+    ? `${headline} [${failure.result.name}]`
+    : headline;
+
+  const detail = (failure.result?.details ?? [])
+    .slice(0, 4)
+    .map((d) => [d.field, d.issue ?? d.description].filter(Boolean).join(": "))
+    .filter(Boolean);
+
   const parts = [
     typeof failure.statusCode === "number" ? `HTTP ${failure.statusCode}` : "",
-    failure.result?.message ?? failure.result?.name ?? failure.message ?? "",
+    named,
+    detail.length ? detail.join(" · ") : "",
   ].filter(Boolean);
+
   return parts.join(" — ") || "no detail returned";
 }
 
@@ -421,8 +442,17 @@ export async function createAuthorizeOrder(input: {
           brandName: "PayPal AI Agent Gateway",
           // The SDK v6 flow approves in-page and never navigates away, but
           // PayPal requires both URLs to be present to accept the order.
-          returnUrl: process.env.PAYPAL_RETURN_URL ?? "http://localhost:3001/paypal/return",
-          cancelUrl: process.env.PAYPAL_CANCEL_URL ?? "http://localhost:3001/paypal/cancel",
+          // Absolute, as PayPal requires — and on *this* app's port: the old
+          // default pointed at 3001 while the dev server runs on 3000, so any
+          // flow that did navigate back landed on a port nothing was listening
+          // on, at a path that did not exist either. Both halves are fixed
+          // here and at `app/paypal/return`.
+          returnUrl:
+            process.env.PAYPAL_RETURN_URL ??
+            `http://localhost:${process.env.PORT ?? "3000"}/paypal/return`,
+          cancelUrl:
+            process.env.PAYPAL_CANCEL_URL ??
+            `http://localhost:${process.env.PORT ?? "3000"}/paypal/cancel`,
         },
       },
     });

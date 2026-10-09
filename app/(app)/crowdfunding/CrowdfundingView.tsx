@@ -1,7 +1,7 @@
 // app/(app)/crowdfunding/CrowdfundingView.tsx
 "use client";
 
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Sprout } from "lucide-react";
 import EmptyState from "../components/EmptyState";
 import ProjectGrid from "./ProjectGrid";
@@ -71,6 +71,26 @@ export default function CrowdfundingView({
   const [pledge, setPledge] = useState<{ kind: "ok" | "error"; text: string } | null>(null);
   const [busy, setBusy] = useState(false);
   const [paypalNote, setPaypalNote] = useState<string | null>(null);
+  /** The last failure already recorded, so one refusal is not logged three times. */
+  const lastFailure = useRef<string | null>(null);
+
+  /**
+   * A payment that did not happen is still an event, and it belongs in the
+   * console Overview reads — not only in a message beside the button that
+   * caused it. The row is never written, because nothing was reserved, so
+   * this line is the only record the product keeps of the attempt, and a
+   * product whose claim is auditing its own money cannot let a refusal leave
+   * without one.
+   */
+  const reportFailure = useCallback(
+    (reason: string) => {
+      setPaypalNote(reason);
+      if (lastFailure.current === reason) return;
+      lastFailure.current = reason;
+      recordEvent(`❌ [CROWDFUNDING] PayPal refused the pledge: ${reason}`);
+    },
+    []
+  );
 
   useEffect(() => {
     let cancelled = false;
@@ -416,7 +436,7 @@ export default function CrowdfundingView({
                   policy={envelope}
                   disabled={busy || left <= 0}
                   onAuthorized={(info) => void onAuthorized(info)}
-                  onUnavailable={(reason) => setPaypalNote(reason)}
+                  onUnavailable={reportFailure}
                 />
                 <p className="text-center text-[11px] leading-relaxed text-slate-400">
                   {left <= 0
