@@ -239,6 +239,11 @@ export default function ProjectGrid({
         // without it a plain click moves the cursor and not the selection, the
         // panel never opens, and nothing on screen says why.
         rowSelection={{ mode: "singleRow", enableClickSelection: true }}
+        // Two-line cells, so the rows are two lines tall. The default row
+        // height clips the second one — which would hide the city under the
+        // project name and the grade under its rate, and a grade nobody can
+        // see is the exact thing this column was changed to show.
+        rowHeight={60}
         onSelectionChanged={(event) => {
           const [row] = event.api.getSelectedRows();
           if (row) onSelected(row);

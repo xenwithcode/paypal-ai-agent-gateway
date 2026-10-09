@@ -476,7 +476,7 @@ export default function CrowdfundingView({
   const left = selected ? daysLeft(selected.deadline) : 0;
 
   return (
-    <div className="space-y-5">
+    <div className="space-y-5 px-6 pb-10 pt-8 md:px-8">
       <Header />
 
       {/* The agent, exactly where the copy promises it: he prepares it, you
@@ -508,7 +508,21 @@ export default function CrowdfundingView({
       {/* What *I* hold, above the catalogue of what I could hold. */}
       <PortfolioCard investments={investments} projects={projects} />
 
-      <ProjectGrid projects={projects} onSelected={setSelected} />
+      {/* The action of the page, named: the table above it answers "what do I
+          have?" and this one answers "what can I do?" — a heading is how a
+          reader scanning from the top finds the second one. */}
+      <section aria-label="Choose a project">
+        <h2 className="text-base font-semibold text-slate-900">
+          Choose the project you want to invest in
+        </h2>
+        <p className="mt-1 max-w-[70ch] text-xs leading-relaxed text-slate-500">
+          Click a row — or a pin on the map below — to open the panel and fund it with PayPal.
+          Or say it out loud, up above, and the agent prepares it for you.
+        </p>
+        <div className="mt-3">
+          <ProjectGrid projects={projects} onSelected={setSelected} />
+        </div>
+      </section>
 
       <p className="text-xs leading-relaxed text-slate-400">
         {projects.length} projects · every row marked <span className="font-semibold">demo</span> is

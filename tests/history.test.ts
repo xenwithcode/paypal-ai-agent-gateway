@@ -15,6 +15,7 @@ import {
   readPurchases,
   recordBlocked,
   removePolicyRow,
+  sampleInvestments,
   totalsByCurrency,
 } from "../lib/history.ts";
 
@@ -329,4 +330,34 @@ test("an unusable date prints as absent rather than as a wrong one", () => {
 test("money always carries two decimals", () => {
   assert.equal(formatMoney(9, "USD"), "9.00 USD");
   assert.equal(formatMoney(549.99, "PYUSD"), "549.99 PYUSD");
+});
+
+test("the sample portfolio is marked, complete and never in the future", () => {
+  const now = new Date(2026, 9, 8, 15, 30);
+  const rows = sampleInvestments(now);
+
+  assert.equal(rows.length, 3);
+  for (const row of rows) {
+    assert.equal(row.sample, true, "every seeded position says it is one");
+    assert.equal(row.currency, "USD");
+    assert.ok(row.project, "each one funds a project the showcase can name");
+    assert.ok(new Date(row.createdAt as string).getTime() <= now.getTime(), "dated, not future");
+  }
+
+  // One of each state the donut draws — paid, set aside, given back — so the
+  // three slices have something to be three.
+  assert.deepEqual(
+    rows.map((row) => row.status).sort(),
+    ["Captured", "Released", "Reserved"]
+  );
+  assert.equal(
+    rows.filter((row) => row.capturedAt).length,
+    1,
+    "only the captured one has been captured"
+  );
+
+  // Unique, and negative: a sample id can never collide with a real row's
+  // Date.now() id, so a real position replaces these instead of doubling up.
+  assert.equal(new Set(rows.map((row) => row.id)).size, 3);
+  assert.ok(rows.every((row) => (row.id as number) < 0));
 });

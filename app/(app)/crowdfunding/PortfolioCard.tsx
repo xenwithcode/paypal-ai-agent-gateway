@@ -96,12 +96,20 @@ export default function PortfolioCard({
   // The rate, and what the rate has produced so far: one number says what a
   // day is worth and the other says how many of them have passed. Either alone
   // is a figure a reader has to take on faith.
-  const perDay = accruals.reduce((sum, entry) => sum + entry.dividend.perDay, 0);
+  // Shown as a month rather than as a day: it is the unit a person weighs a
+  // saving against ("about two dollars a month"), it is the annual offer ÷ 12
+  // exactly — checkable against the Return column — and it ties to what the
+  // page header promises: watch it grow month by month.
+  const perMonth = accruals.reduce((sum, entry) => sum + entry.dividend.perMonth, 0);
   const accrued = accruals.reduce((sum, entry) => sum + entry.dividend.total, 0);
   const portfolioPct = weightedReturnPct(
     accruals.map((entry) => ({ amountUsd: entry.amountUsd, returnPct: entry.project.returnPct }))
   );
   const projectsCount = new Set(rows.map((row) => row.project).filter(Boolean)).size;
+
+  // Every row is a sample only while the operator has no position of their
+  // own — the showcase is replaced, never mixed in.
+  const showingSamples = rows.length > 0 && rows.every((row) => Boolean(row.sample));
 
   // The two totals the drawings are pictures of: everything still on the
   // table (paid + reserved) and everything that ever was (plus returned).
@@ -126,13 +134,13 @@ export default function PortfolioCard({
     },
     {
       label: "Earning now",
-      value: investments === null ? "—" : money(perDay, 4),
+      value: investments === null ? "—" : money(perMonth, 2),
       note:
         investments === null
-          ? "per day, in dollars"
+          ? "per month, in dollars"
           : accruals.length
-            ? `per day · ${money(accrued, 4)} accrued so far`
-            : "per day · nothing reserved or paid yet",
+            ? `per month · ${money(accrued, 4)} accrued so far`
+            : "per month · nothing reserved or paid yet",
     },
     {
       label: "Returned",
@@ -160,7 +168,13 @@ export default function PortfolioCard({
               : "border-slate-200 bg-slate-50 text-slate-500"
           }`}
         >
-          {investments === null ? "Loading" : rows.length ? `${rows.length} position${rows.length === 1 ? "" : "s"}` : "Nothing yet"}
+          {investments === null
+            ? "Loading"
+            : rows.length
+              ? showingSamples
+                ? `${rows.length} sample positions`
+                : `${rows.length} position${rows.length === 1 ? "" : "s"}`
+              : "Nothing yet"}
         </span>
       </div>
 
@@ -180,6 +194,17 @@ export default function PortfolioCard({
           </div>
         ))}
       </div>
+
+      {/* A screen that reports money it never received is the one lie a
+          financial page cannot make up for — so a sample says so, twice: in
+          the chip on each row, and here. */}
+      {showingSamples && (
+        <p className="mt-3 text-[11px] leading-relaxed text-slate-400">
+          <span className="font-semibold text-slate-500">Sample positions.</span> Nobody funded
+          these — they are here so the figures, the ring and the odometer can be seen with money in
+          them. Your first real pledge replaces all three.
+        </p>
+      )}
 
       {/* The ring answers "where is it?", the rows answer "which one?" — two
           views of the same three totals, so they share one grid rather than
@@ -222,11 +247,16 @@ export default function PortfolioCard({
                       </p>
                     </div>
                     <div className="flex shrink-0 items-center gap-2">
-                      {/* The odometer: what this position has accrued, and how
-                          many days it took. It changes when the day changes, so
-                          there is no timer here — a number that moves once a day
-                          does not need something redrawing it every second. */}
+                      {row.sample && (
+                        <span className="rounded-full border border-slate-300 bg-white px-2 py-0.5 text-[10px] font-bold uppercase tracking-wide text-slate-400">
+                          sample
+                        </span>
+                      )}
                       <div className="text-right">
+                        {/* The odometer: what this position has accrued, and how
+                            many days it took. It changes when the day changes,
+                            so there is no timer here — a number that moves once
+                            a day does not need redrawing every second. */}
                         <span className="font-mono text-sm font-semibold tabular-nums text-slate-900">
                           {money(row.limit)}
                         </span>

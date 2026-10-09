@@ -30,6 +30,7 @@ import {
   remainingUsd,
   settlementRefusal,
   statusOf,
+  termReturnPct,
   weightedReturnPct,
   type Project,
 } from "../lib/crowdfunding.ts";
@@ -408,4 +409,32 @@ test("the promise on the card is one rule, and it has three answers", () => {
   assert.equal(campaignAction(project({ raisedUsd: 9999 }), today), "wait");
   // The last day is still a day: a deadline is not passed until it is over.
   assert.equal(campaignAction(project({ raisedUsd: 0, deadline: "2026-10-08" }), today), "wait");
+});
+
+test("the monthly figure is the annual offer divided by twelve", () => {
+  const today = new Date(2026, 9, 8);
+  const month = dividendOn({ amountUsd: 1000, returnPct: 12, since: stamp(2026, 9, 4) }, today);
+
+  // $1,000 at 12% a year is $10 a month — checkable by hand, which is the
+  // point: the card's figure has to be derivable from the rate the Return
+  // column prints, or it is two numbers that disagree in the same screen.
+  assert.equal(month.perMonth, 10);
+  assert.equal(month.perDay, 120 / 365);
+  assert.equal(month.total, (120 / 365) * 4, "the accrual still counts days");
+
+  // The identity, for any rate at all.
+  assert.equal(month.perMonth, (month.perDay * 365) / 12);
+});
+
+test("a campaign pays over its own term, and only over it", () => {
+  assert.equal(termReturnPct({ returnPct: 14, runwayDays: 30 }), (14 * 30) / 365);
+  assert.equal(termReturnPct({ returnPct: 24, runwayDays: 60 }), (24 * 60) / 365);
+
+  // No term or no rate means no total — the panel says "about 0.00%" rather
+  // than inventing a horizon the campaign never promised.
+  assert.equal(termReturnPct({ returnPct: 0, runwayDays: 60 }), 0);
+  assert.equal(termReturnPct({ returnPct: 20, runwayDays: 0 }), 0);
+  assert.equal(termReturnPct({ returnPct: 20, runwayDays: Number.NaN }), 0);
+  assert.equal(termReturnPct({ returnPct: Number.NaN, runwayDays: 30 }), 0);
+  assert.equal(termReturnPct({ returnPct: -5, runwayDays: 30 }), 0);
 });
