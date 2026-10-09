@@ -17,6 +17,7 @@ import {
   removePolicyRow,
   sampleInvestments,
   totalsByCurrency,
+  type Purchase,
 } from "../lib/history.ts";
 
 // The module only touches storage inside its functions, so a stub installed
@@ -304,10 +305,10 @@ test("a row written before the choice was recorded claims no strip at all", () =
 // ─── Formatting ────────────────────────────────────────────────────────────
 
 test("totals are grouped per currency, never summed across them", () => {
-  const purchases = [
-    { id: "a", when: "", what: "", merchant: "", amount: 100, currency: "USD", condition: "", endpoint: "", thumbnail: null, sample: false },
-    { id: "b", when: "", what: "", merchant: "", amount: 50, currency: "USD", condition: "", endpoint: "", thumbnail: null, sample: false },
-    { id: "c", when: "", what: "", merchant: "", amount: 25, currency: "PYUSD", condition: "", endpoint: "", thumbnail: null, sample: false },
+  const purchases: Purchase[] = [
+    { id: "a", when: "", what: "", merchant: "", amount: 100, currency: "USD", condition: "", endpoint: "", thumbnail: null, sample: false, kind: "purchase" },
+    { id: "b", when: "", what: "", merchant: "", amount: 50, currency: "USD", condition: "", endpoint: "", thumbnail: null, sample: false, kind: "investment" },
+    { id: "c", when: "", what: "", merchant: "", amount: 25, currency: "PYUSD", condition: "", endpoint: "", thumbnail: null, sample: false, kind: "purchase" },
   ];
 
   const totals = totalsByCurrency(purchases);

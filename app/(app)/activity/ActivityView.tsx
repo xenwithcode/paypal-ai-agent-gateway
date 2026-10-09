@@ -13,8 +13,10 @@ import {
   type Purchase,
   type BlockedAttempt,
 } from "@/lib/history";
+import { type ActivityKind } from "@/lib/activityByType";
 import { ensureHydrated } from "@/lib/store";
 import LiveTransactions from "./LiveTransactions";
+import ActivityByType from "./ActivityByType";
 
 type Data = { purchases: Purchase[]; blocked: BlockedAttempt[] };
 
@@ -22,6 +24,28 @@ function SampleChip() {
   return (
     <span className="ml-2 inline-block shrink-0 rounded-full border border-slate-300 bg-slate-50 px-1.5 py-0.5 align-middle text-[9px] font-bold uppercase tracking-wider text-slate-500 print:border-slate-400 print:bg-white">
       Sample
+    </span>
+  );
+}
+
+/** The one word that says a settled row was not a purchase. */
+function KindChip({ kind }: { kind: ActivityKind }) {
+  if (kind === "purchase") return null;
+  const label = kind === "investment" ? "Investment" : "Transfer";
+  const look =
+    kind === "investment"
+      ? "border-emerald-200 bg-emerald-50 text-emerald-700"
+      : "border-blue-200 bg-blue-50 text-blue-700";
+  return (
+    <span
+      title={
+        kind === "investment"
+          ? "This settled order funded a campaign — it is a stake, not a purchase."
+          : "This settled order sent money to an account, not to a catalogue."
+      }
+      className={`ml-2 inline-block shrink-0 rounded-full border px-1.5 py-0.5 align-middle text-[9px] font-bold uppercase tracking-wider ${look}`}
+    >
+      {label}
     </span>
   );
 }
@@ -105,7 +129,7 @@ export default function ActivityView() {
           the class: the gap below is measured by space-y, which skips
           `[hidden]` and has no way to see a display:none. */}
       <div hidden className="print:mb-6 print:block">
-        <h1 className="text-2xl font-bold text-slate-900">Purchase report</h1>
+        <h1 className="text-2xl font-bold text-slate-900">Settled orders report</h1>
         <p className="mt-1 text-sm text-slate-600">
           PayPal AI Agent Gateway · generated {generated}
         </p>
@@ -116,6 +140,10 @@ export default function ActivityView() {
           slow store has no business holding up a live read. */}
       <LiveTransactions />
 
+      {/* The summary above the books: what the three sections below add up to,
+          by kind. Reads the same store, after the same hydration. */}
+      <ActivityByType />
+
       {!data ? null : (
         <div className="space-y-6">
           {/* ── Purchases ─────────────────────────────────────────── */}
@@ -124,10 +152,11 @@ export default function ActivityView() {
               <div>
                 <h2 className="flex items-center gap-2 text-sm font-semibold text-slate-900">
                   <ReceiptText className="h-4 w-4 text-slate-400" strokeWidth={1.75} aria-hidden="true" />
-                  Purchases completed
+                  Orders completed
                 </h2>
                 <p className="mt-0.5 text-xs text-slate-500">
-                  Orders that were authorized, met their condition and settled.
+                  Authorized and settled — purchases, investments and transfers together, each
+                  saying which it was.
                 </p>
               </div>
               <button
@@ -170,6 +199,7 @@ export default function ActivityView() {
                           <span className="block truncate font-medium text-slate-800">
                             {purchase.what}
                             {purchase.sample && <SampleChip />}
+                            <KindChip kind={purchase.kind} />
                           </span>
                           <span className="block text-xs text-slate-400">
                             {purchase.merchant || "no merchant named"}

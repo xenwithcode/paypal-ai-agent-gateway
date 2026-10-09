@@ -20,6 +20,9 @@ import { POLICY_STORAGE_KEY, BLOCKED_STORAGE_KEY, pushToStore } from "./store.ts
 // compares these with `===`, and a sample that spelled "Captured" its own way
 // would be a record only the sample understands.
 import { STATUS } from "./policy.ts";
+// One classifier, used by the chart and by this list — a table that calls a
+// stake a purchase and a bar that does not is two answers to one question.
+import { activityKindOf, type ActivityKind } from "./activityByType.ts";
 // Type-only import of ManifestRow lives in manifests.ts, so this direction is
 // the only runtime one: history → manifests, and no cycle to resolve.
 import { looksLikeManifest } from "./manifests.ts";
@@ -49,6 +52,17 @@ export type Purchase = {
   thumbnail: string | null;
   /** True for history this app seeded — never presented as something done. */
   sample: boolean;
+  /**
+   * What kind of spending this was, derived rather than stored.
+   *
+   * A settled order that funded a campaign is not a purchase, and a list of
+   * them headed "Purchases completed" would be a heading that lies about its
+   * own contents. Same rule the bars above use — `activityKindOf` — so the
+   * chart and the table can never disagree about a row.
+   */
+  kind: ActivityKind;
+  /** The campaign it funded, when it funded one. */
+  project?: string;
 };
 
 export type BlockedAttempt = {
@@ -240,7 +254,7 @@ export function readPolicyRows(): ManifestRow[] {
  * Sample chip for exactly that reason. Dates are relative to first run so the
  * report never prints something a judge would clock as stale.
  */
-const SAMPLE_PURCHASES: Purchase[] = [
+const SAMPLE_PURCHASES: Omit<Purchase, "kind">[] = [
   {
     id: "sample-1",
     when: daysAgo(4),
@@ -363,13 +377,15 @@ export function readPurchases(): Purchase[] {
     endpoint: typeof row.allowEndpoint === "string" ? row.allowEndpoint : "",
     thumbnail: typeof row.marketImage === "string" ? row.marketImage : null,
     sample: false,
+    kind: activityKindOf(row),
+    project: typeof row.project === "string" && row.project ? row.project : undefined,
   }));
 
   const sample = SAMPLE_PURCHASES.filter(
     // Never repeat a seed the operator has already seen alongside a live one
     // they made themselves: a real capture of the same order replaces it.
     (seed) => !live.some((row) => row.what === seed.what)
-  );
+  ).map((seed) => ({ ...seed, kind: "purchase" as const }));
 
   return [...live, ...sample];
 }
