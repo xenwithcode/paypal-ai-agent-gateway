@@ -130,9 +130,28 @@ export default function Sidebar() {
         {/* Divider only reads vertically; on mobile the strip stays continuous. */}
         <span aria-hidden="true" className="hidden md:my-3 md:block md:h-px md:bg-slate-200" />
 
+        {/* One name for two rails: this group holds what guards the money and
+            what makes it grow — protecting a balance and funding a business
+            are the same pillar's two halves, and the flagship leads it. */}
         <span className="hidden px-3 pb-1 pt-1 text-[11px] font-semibold uppercase tracking-wider text-slate-400 md:block">
-          Protection
+          Protect &amp; grow
         </span>
+
+        {/* First in its group, on purpose: of everything in this sidebar this
+            is the one screen a visitor has never seen before — a dashboard, a
+            ledger and a payment form exist everywhere; a purchase order an AI
+            agent cannot break, funding a real business, does not. It leads the
+            group rather than the product, so the thesis stays with the gateway
+            while the most interesting name is the first thing read. */}
+        <NavLink
+          item={{
+            href: "/crowdfunding",
+            label: "PayPal-AI-Crowdfunding",
+            icon: Sprout,
+            hint: "Fund a real business from $20 and earn in USD",
+          }}
+          active={isActive("/crowdfunding")}
+        />
 
         {/* FX Shield: visible to everyone, off by default. Not every user lives
             in an inflationary economy, so the rail is opt-in rather than always on. */}
@@ -192,23 +211,6 @@ export default function Sidebar() {
             active={isActive("/send/bank")}
           />
         )}
-
-        {/* Phase 3 — the growth rail, directly under FX Shield.
-            Always visible: the switch decides whether the reader wants the
-            Venezuela pillar, not whether they can find the product. A judge
-            opening this app cold has five links and one flagship — hiding the
-            flagship behind a toggle protects nothing (the page works with the
-            switch off, URL included) and costs the one visit that never
-            happened. The rail that *is* local — Pago Móvil — stays gated. */}
-        <NavLink
-          item={{
-            href: "/crowdfunding",
-            label: "PayPal-AI-Crowdfunding",
-            icon: Sprout,
-            hint: "Fund a real business from $20 and earn in USD",
-          }}
-          active={isActive("/crowdfunding")}
-        />
 
         {/* Appendices — for the reader deciding whether everything above is
             real. Always visible, never gated: documentation is not a feature
