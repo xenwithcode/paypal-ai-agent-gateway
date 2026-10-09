@@ -100,11 +100,19 @@ after PayPal's own approval flow.
 
 ## Known gaps, stated before anyone finds them
 
-1. 🔴 **A PayPal access token appears in the served HTML** on the three pages
-   that read the balance. It is a sandbox token that expires in hours, and it
-   is not in the page's props — but it is a credential in a response, and this
-   README promises otherwise. It is tracked as a red item and has not been
-   patched blind: finding the real origin deserves its own pass.
+1. ✅ **Closed (09-oct) — the PayPal token in the served HTML was development-only.**
+   In `next dev`, Next's RSC instrumentation records the value every server
+   function returns and serialises it into the flight payload — including the
+   raw SDK response, which carries `request.headers.authorization`. That is
+   where the token came from; it was never in the page's props, which is why
+   `/fx` could pass only scalars *and still leak*.
+   **Production does not do this.** With a real build, eight pages were read
+   clean — searched **by value** (every secret in `.env.local`) and **by
+   pattern** (`Bearer …`, PayPal's `A21` prefix, the sandbox host, Google's
+   `AIza`). What ships to the browser on purpose is the **client id**: PayPal's
+   JS SDK identifies the application with it, the way a Stripe publishable key
+   does, and it is not a credential.
+   Reproduce the check any time with **`npm run audit:html`**.
 2. **`PUT /api/store` has no authentication.** Anyone who reaches this server
    can replace two arrays and nothing else. Fine on localhost, not on the
    internet — see *Running it safely*.
@@ -123,6 +131,11 @@ after PayPal's own approval flow.
   tunnel, a port forward or a shared demo URL. Without auth, `/api/store` is
   world-writable and `/api/paypal/orders` will create real orders against your
   sandbox account.
+- **`next dev` and `next start` share `.next`.** Running both in one checkout
+  leaves the built server serving chunks the dev server has rewritten: pages
+  answer 404/500 — and a content check then "passes" by reading an error page,
+  which is exactly how a first run of `audit:html` reported a clean app that
+  was not serving anything. Stop the dev server before auditing a build.
 - **Never paste a key** — not in chat, not in an issue, not in a screenshot,
   not in the demo video, not in a commit. If one ever gets out, **rotate it**;
   deleting the message is not rotating it.

@@ -6,6 +6,13 @@
 import { getBalance } from "@/lib/paypal";
 import FxShieldView from "./FxShieldView";
 
+// Read per request, like `/overview` and `/send`. Without this the page is
+// prerendered, and the balance it shows is the one that existed *when the
+// build ran* — a number labelled "live" that nobody has re-read since. A
+// figure with no provenance is the thing this page exists to avoid, so the
+// page cannot be the place that ships one.
+export const dynamic = "force-dynamic";
+
 export const metadata = {
   title: "FX Shield · PayPal AI Agent Gateway",
 };
