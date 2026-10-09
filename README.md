@@ -305,6 +305,7 @@ paypal-ai-agent/
 
 ## Security notes
 
+- **The agent's authority over money is written down as a policy → [`SECURITY.md`](SECURITY.md).** It states the principle (*the agent requests, the server judges, the human approves*), the three rules a durable consent would have to satisfy, and which levels of autonomy are **built** versus **designed** — including the gaps, so nobody has to discover them.
 - **Secrets stay server-side.** `PAYPAL_*` and `GEMINI_API_KEY` carry no `NEXT_PUBLIC_` prefix and are imported only by server modules. `.env.local` is git-ignored and was verified with `git check-ignore` before the first commit. On the **Vertex AI** path there is no key to leak at all — authentication comes from Application Default Credentials read off the machine, and only the project id (not a secret) appears in `.env.local`.
 - **Input validation.** `/api/agent` rejects malformed JSON, non-string or empty intents, and anything over 500 characters before a model call can happen.
 - **No internal error leakage.** Production returns a generic message; detail goes to the server log only.
@@ -312,6 +313,7 @@ paypal-ai-agent/
 - **Rate limiting on `/api/agent`.** A sliding window in memory — 20 requests a minute per caller, checked **before the body is read**. It guards two spends: the model call and the PayPal balance read behind it. It is a loop detector, not a meter: a person drafting orders never gets near it, an effect that never settles goes through it in seconds. Deliberately in-process and dependency-free — a judge who has no service running must still be able to run `npm run dev`, and a setup instruction that fails is worse than a limit that covers one process. Refusals return `429` with `Retry-After`, and the console prints them as `⏳ [LIMIT]` rather than as the agent turning an order down, because nothing was judged.
 - **The durable copy is a file, and it is not protected.** `PUT /api/store` writes two arrays to `data/store.json` — atomically, size-capped, and with a payload that is refused rather than defaulted if it arrives without the ledger of refused charges (a missing array sent as `[]` would erase it). It carries **no authentication**: it is localhost, holding what one browser would otherwise hold alone. Anyone who can reach this server can replace those two arrays, and nothing else. Auth is the same roadmap item as below.
 - **Not yet implemented:** authentication, CSRF hardening. Required before public hosting — tracked in the roadmap.
+- **Standing consent (level 3 in [`SECURITY.md`](SECURITY.md)) — designed, not built:** charge later without a new approval, through PayPal's own Billing Agreement / vaulted token, inside a per-move and per-month ceiling, recorded as `consentId · ceiling · window · revoked` and revocable in one action that says what happens to what is already reserved.
 
 ---
 
