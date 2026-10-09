@@ -14,13 +14,17 @@ import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import {
   campaignAction,
+  campaignIdFromCustomId,
+  CROWDFUNDING_PREFIX,
   daysLeft,
+  judgeInvestment,
   MAX_INVESTMENT_USD,
   MAX_PROJECTS,
   MIN_INVESTMENT_USD,
   normaliseProjects,
   progressPct,
   remainingUsd,
+  settlementRefusal,
   statusOf,
   type Project,
 } from "../lib/crowdfunding.ts";
@@ -134,6 +138,120 @@ test("a deadline that has passed counts as passed", () => {
   assert.equal(daysLeft("2026-10-07", today), -1);
   assert.equal(daysLeft("2026-10-08", today), 0, "today is the last day");
   assert.equal(Number.isNaN(daysLeft("not a date", today)), true);
+});
+
+test("a pledge is judged against the campaign's own numbers", () => {
+  const today = new Date(2026, 9, 8);
+  // $7,500 missing of a $10,000 goal, closing in a month: room for anything
+  // the band allows, so each rule below fails for its own reason alone.
+  const open = project({ goalUsd: 10000, raisedUsd: 2500, deadline: "2026-11-07" });
+
+  assert.equal(judgeInvestment(20, open, today).allowed, true, "the minimum fits");
+  assert.equal(judgeInvestment(1000, open, today).allowed, true, "the maximum fits");
+
+  const below = judgeInvestment(19.5, open, today);
+  assert.equal(below.allowed, false);
+  assert.match(below.reason, /^The minimum is \$20\.$/);
+
+  const above = judgeInvestment(1000.01, open, today);
+  assert.equal(above.allowed, false);
+  assert.match(above.reason, /^The maximum in one go is \$1,000\.$/);
+
+  const noAmount = judgeInvestment(Number.NaN, open, today);
+  assert.equal(noAmount.allowed, false, "an amount that is not money cannot be judged");
+  assert.match(noAmount.reason, /between \$20 and \$1,000/);
+});
+
+test("a pledge may fill the goal exactly and never past it", () => {
+  const today = new Date(2026, 9, 8);
+  // $250 still missing. The card prints "still missing"; this is the same
+  // figure deciding whether the order may exist.
+  const nearlyFunded = project({ goalUsd: 10000, raisedUsd: 9750, deadline: "2026-11-07" });
+
+  assert.equal(judgeInvestment(250, nearlyFunded, today).allowed, true, "exactly what is missing");
+  assert.equal(judgeInvestment(250.01, nearlyFunded, today).allowed, false, "a cent past it");
+
+  const over = judgeInvestment(1000, nearlyFunded, today);
+  assert.match(over.reason, /Only \$250 is missing/);
+  assert.match(over.reason, /\$10,750/, "and where the total would land");
+
+  const full = judgeInvestment(20, project({ goalUsd: 10000, raisedUsd: 10000 }), today);
+  assert.equal(full.allowed, false);
+  assert.match(full.reason, /has already reached its \$10,000 goal/);
+});
+
+test("a closed campaign refuses, and the last day still counts", () => {
+  const today = new Date(2026, 9, 8);
+  const closed = project({ deadline: "2026-10-07" });
+  const refusal = judgeInvestment(20, closed, today);
+  assert.equal(refusal.allowed, false);
+  assert.match(refusal.reason, /closed on 2026-10-07/);
+
+  const lastDay = project({ deadline: "2026-10-08" });
+  assert.equal(judgeInvestment(20, lastDay, today).allowed, true, "today is still a day");
+});
+
+test("every reason is reported, not the first", () => {
+  const today = new Date(2026, 9, 8);
+  // $15 on a campaign that is $10 from its goal and closed yesterday: the
+  // amount, the goal and the window all fail at once, and a caller who only
+  // hears about the amount fixes the amount and re-runs into the other two.
+  const bad = project({ goalUsd: 10000, raisedUsd: 9990, deadline: "2026-10-07" });
+  const verdict = judgeInvestment(15, bad, today);
+
+  assert.equal(verdict.allowed, false);
+  assert.equal(verdict.violations.length, 3);
+  assert.match(verdict.reason, /The minimum is \$20\./);
+  assert.match(verdict.reason, /Only \$10 is missing/);
+  assert.match(verdict.reason, /closed on 2026-10-07/);
+});
+
+test("an order says which campaign it funds, once", () => {
+  // One field, one meaning: the panel writes this and the server reads it
+  // back, so the order cannot claim two different pledges.
+  assert.equal(CROWDFUNDING_PREFIX, "cf-");
+  assert.equal(campaignIdFromCustomId("cf-el-saman"), "el-saman");
+  assert.equal(campaignIdFromCustomId("cf-  el-saman  "), "el-saman", "ids do not carry padding");
+  assert.equal(
+    campaignIdFromCustomId("cf-"),
+    "",
+    "named a campaign and gave no id — not the same as naming none"
+  );
+  assert.equal(campaignIdFromCustomId("some-paypal-id"), null, "an ordinary order");
+  assert.equal(campaignIdFromCustomId(undefined), null);
+  assert.equal(campaignIdFromCustomId(null), null);
+  assert.equal(campaignIdFromCustomId(42), null);
+});
+
+test("a pledge settles only against a campaign that can carry it", () => {
+  const today = new Date(2026, 9, 8);
+  const what = "Stake in Demo project";
+
+  // Goal met: the condition the reservation waited for is true.
+  assert.equal(settlementRefusal(what, project({ raisedUsd: 10000 }), today), null);
+
+  // Open: set aside, not taken — the sentence the card printed, in the
+  // response the button gets.
+  const waiting = settlementRefusal(what, project({ raisedUsd: 9999 }), today);
+  assert.match(waiting ?? "", /stays reserved/);
+  assert.match(waiting ?? "", /closes 2026-11-07 — 30 days left/);
+  assert.match(waiting ?? "", /captured when the goal is met, and released if it is not/);
+
+  // One day left reads as one day: a refusal that says "1 days" is a refusal
+  // nobody trusts.
+  const tomorrow = settlementRefusal(what, project({ deadline: "2026-10-09" }), today);
+  assert.match(tomorrow ?? "", /1 day left/);
+
+  // Closed without its goal: released, never captured. This is the rule the
+  // Protection column's Capture button would otherwise break.
+  const lost = settlementRefusal(what, project({ raisedUsd: 0, deadline: "2026-10-07" }), today);
+  assert.match(lost ?? "", /cannot be captured/);
+  assert.match(lost ?? "", /closed on 2026-10-07/);
+  assert.match(lost ?? "", /released, not taken/);
+
+  // Campaign gone: nothing left to settle against, said rather than falling
+  // through to a generic path that reads an empty condition as *spend now*.
+  assert.match(settlementRefusal(what, null, today) ?? "", /not in the showcase any more/);
 });
 
 test("the promise on the card is one rule, and it has three answers", () => {

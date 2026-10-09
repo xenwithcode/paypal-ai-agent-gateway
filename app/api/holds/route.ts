@@ -34,16 +34,14 @@ import {
   CATALOG_SOURCE,
 } from "@/lib/commerce/catalog";
 import { captureAuthorization, voidAuthorization } from "@/lib/paypal";
-// The campaign behind an investment, normalised **per pass**: a project's
-// deadline derives from today, and a snapshot taken at module load would
-// freeze it at the day this server started.
-import crowdfundingSeed from "@/lib/seeds/crowdfunding.json";
 import {
   campaignAction,
   daysLeft,
-  normaliseProjects,
-  type Project,
+  settlementRefusal,
 } from "@/lib/crowdfunding";
+// The campaign behind an order, resolved here rather than duplicated: the
+// order route asks the same question of the same catalogue.
+import { findCampaign } from "@/lib/campaigns";
 
 /** PayPal ids are a short alphanumeric run; anything else is not one. */
 const PAYPAL_ID = /^[A-Z0-9]{10,40}$/i;
@@ -103,14 +101,6 @@ interface PolicyInput {
    * now* and captures a pledge the card promised to hold.
    */
   project: string;
-}
-
-/** The project an order funds, or null when the id names none we hold. */
-function findProject(id: string): Project | null {
-  if (!id) return null;
-  return (
-    normaliseProjects(crowdfundingSeed, new Date())?.find((entry) => entry.id === id) ?? null
-  );
 }
 
 /** How each action reads in the past tense, for refusal messages. */
@@ -267,7 +257,7 @@ async function runAutonomousPass(raw: unknown): Promise<NextResponse> {
     // read the pledge's empty condition as *spend now* and take the money the
     // moment somebody pressed ▶.
     if (policy.project) {
-      const project = findProject(policy.project);
+      const project = findCampaign(policy.project);
       if (!project) {
         results.push({
           id: policy.id,
@@ -540,6 +530,16 @@ export async function POST(req: NextRequest) {
     // destination of its own — the funds land where the order already named,
     // which was judged when it was created — but the judge is handed the real
     // envelope rather than a trimmed copy of it.
+    // An investment settles against its campaign, and the campaign is the
+    // first thing asked — it needs no catalog and no PayPal, and the card
+    // promised this rule in words above the button that reaches here.
+    if (policy.project) {
+      const refusal = settlementRefusal(policy.what, findCampaign(policy.project));
+      if (refusal) {
+        return NextResponse.json({ success: false, error: refusal }, { status: 409 });
+      }
+    }
+
     const envelope = judgeCharge(
       {
         amount: policy.limit,

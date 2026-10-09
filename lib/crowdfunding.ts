@@ -22,6 +22,8 @@
 // and *what happened while running* — and confusing them is how a repository
 // ends up depending on a file it does not contain.
 
+import type { Verdict } from "./policy.ts";
+
 /** How many projects the showcase will hold before it pages. */
 export const MAX_PROJECTS = 50;
 
@@ -48,6 +50,35 @@ export const MAX_INVESTMENT_USD = 1000;
  * same one. Nothing is collected yet; the design says where it would come from.
  */
 export const PLATFORM_FEE_PCT = 2;
+
+/**
+ * How a pledge names the campaign it funds inside a PayPal order.
+ *
+ * `customId` is the one field on an order PayPal carries untouched, and the
+ * crowdfunding panel already writes `cf-<project id>` into it. Reading the
+ * campaign back out of that single field — rather than trusting a second
+ * `projectId` the request would have to add — means the order cannot say two
+ * different things about what it funds.
+ *
+ * A prefix the browser chooses is not, by itself, proof of anything: what it
+ * buys is the *opposite*. Naming a campaign is what puts an order under the
+ * band and the goal; an order that names none stays an ordinary purchase
+ * order, because a $5 coffee is a legitimate $5 coffee and only a stake has a
+ * minimum.
+ */
+export const CROWDFUNDING_PREFIX = "cf-";
+
+/**
+ * The campaign an order funds, or `null` when it funds none.
+ *
+ * Returns `""` — not `null` — for `cf-` with nothing after it: an order that
+ * announced a campaign and then named no id is a pledge this product cannot
+ * judge, and reading that as "no campaign" would hand it the ordinary path.
+ */
+export function campaignIdFromCustomId(customId: unknown): string | null {
+  if (typeof customId !== "string" || !customId.startsWith(CROWDFUNDING_PREFIX)) return null;
+  return customId.slice(CROWDFUNDING_PREFIX.length).trim();
+}
 
 export type Risk = "A" | "B" | "C";
 
@@ -280,6 +311,149 @@ export function campaignAction(project: Project, today: Date = new Date()): Camp
   if (statusOf(project) === "FUNDED") return "capture";
   if (daysLeft(project.deadline, today) < 0) return "release";
   return "wait";
+}
+
+// ─── Whether an investment may be made ─────────────────────────────────────
+
+/** Dollars as the panel writes them: `$1,000`, `$7,500`, `$250.01`. */
+function usd(value: number): string {
+  // Rounded to cents first, then shown whole when it *is* whole: a refusal
+  // that rounds "$250.01 missing" to "$250" hides the very cent it is about.
+  const cents = Math.round(value * 100) / 100;
+  const decimals = Number.isInteger(cents) ? 0 : 2;
+  return cents.toLocaleString("en-US", {
+    style: "currency",
+    currency: "USD",
+    minimumFractionDigits: decimals,
+    maximumFractionDigits: decimals,
+  });
+}
+
+/**
+ * Judge a pledge against the campaign it funds.
+ *
+ * Fase 1 applied to a second kind of money. The panel already states three
+ * numbers — the band (`$20`–`$1,000`) and the goal — and until now the only
+ * thing enforcing any of them was an attribute on an input the user can edit.
+ * A promise printed beside a button the server does not keep is the one thing
+ * this product cannot ship, so the server judges the campaign the order names
+ * and answers **409** with the sentence the panel would have said.
+ *
+ * Four rules, all of them the campaign's own numbers:
+ *
+ *   band    below `$20` this is not the product it claims to be; above
+ *           `$1,000` it stops being one for the person putting in twenty.
+ *   goal    `raised + amount` may never pass `goal`. Not clamped: a pledge
+ *           that silently fills past the bar is the same failure as a seed row
+ *           whose `raised` exceeds its `goal`, which this module refuses.
+ *   state   a campaign past its deadline is over — the window says the same
+ *           thing about the envelope, and two rules that agree are the point.
+ *   number  an amount that is not money cannot be judged against any of them.
+ *
+ * Every violation is returned, not the first: a caller who only hears about
+ * the amount fixes the amount and re-runs straight into the goal.
+ *
+ * The figures come from the project the *server* holds. The request only says
+ * which campaign it funds; it does not get to say what that campaign's goal
+ * is, which is the difference between judging a catalogue and repeating one.
+ *
+ * `today` exists so a test can pin the deadline edge without waiting for
+ * midnight; every caller outside the tests leaves it out.
+ */
+export function judgeInvestment(
+  amountUsd: number,
+  project: Project,
+  today: Date = new Date()
+): Verdict {
+  const violations: string[] = [];
+  const countable = Number.isFinite(amountUsd) && amountUsd > 0;
+
+  if (!countable) {
+    violations.push(
+      `No amount was given — an investment has to be a number between $${MIN_INVESTMENT_USD} and $${MAX_INVESTMENT_USD.toLocaleString(
+        "en-US"
+      )}.`
+    );
+  } else {
+    if (amountUsd < MIN_INVESTMENT_USD) {
+      violations.push(`The minimum is $${MIN_INVESTMENT_USD}.`);
+    }
+    if (amountUsd > MAX_INVESTMENT_USD) {
+      violations.push(
+        `The maximum in one go is $${MAX_INVESTMENT_USD.toLocaleString("en-US")}.`
+      );
+    }
+
+    // The goal, against what is still missing. `remainingUsd` never goes
+    // negative, so a campaign already at its goal reports zero missing and
+    // refuses — which is the same answer `raised > goal` gets from
+    // `normaliseProjects`, asked of an order instead of of a file.
+    const missing = remainingUsd(project);
+    if (amountUsd > missing) {
+      violations.push(
+        missing <= 0
+          ? `${project.name} has already reached its ${usd(project.goalUsd)} goal, so it is not taking more.`
+          : `Only ${usd(missing)} is missing at ${project.name} against its ${usd(
+              project.goalUsd
+            )} goal — ${usd(amountUsd)} would take it to ${usd(project.raisedUsd + amountUsd)}.`
+      );
+    }
+  }
+
+  if (daysLeft(project.deadline, today) < 0) {
+    violations.push(
+      `The campaign closed on ${project.deadline}: nothing new can be pledged against it.`
+    );
+  }
+
+  const allowed = violations.length === 0;
+
+  return {
+    allowed,
+    violations,
+    reason: allowed
+      ? `${usd(amountUsd)} is inside the band and fits the ${usd(project.goalUsd)} goal of ${project.name}.`
+      : violations.join(" "),
+  };
+}
+
+/**
+ * Why an investment may not settle right now — or `null` when it may.
+ *
+ * The sentence the card printed above the button (*"captured when the campaign
+ * reaches its goal, and released if it does not close"*) is only true if the
+ * server says it too: the Protection column offers Capture on any `Reserved`
+ * row, and without this rule a pledge for a campaign still twenty days from
+ * closing takes money the campaign never earned.
+ *
+ * `project` may be `null`, meaning the campaign is gone from the showcase. An
+ * order whose campaign cannot be found has nothing left to settle against, and
+ * the answer has to say so rather than fall through to the generic condition
+ * path — which reads an investment's empty condition as *spend now*.
+ *
+ * Lives here, next to `campaignAction`, for the same reason `agentCharge` does
+ * not live inside a route: routes are not tested, so a rule written in one
+ * can be changed without a single assertion noticing.
+ */
+export function settlementRefusal(
+  what: string,
+  project: Project | null,
+  today: Date = new Date()
+): string | null {
+  if (!project) {
+    return `The project behind "${what}" is not in the showcase any more, so nothing can settle it.`;
+  }
+
+  const action = campaignAction(project, today);
+  if (action === "capture") return null;
+  if (action === "release") {
+    return `"${what}" cannot be captured: the campaign closed on ${project.deadline} without reaching its goal, so the pledge is released, not taken.`;
+  }
+
+  const left = daysLeft(project.deadline, today);
+  return `"${what}" stays reserved: the campaign has not reached its goal and closes ${
+    project.deadline
+  } — ${left} day${left === 1 ? "" : "s"} left. It is captured when the goal is met, and released if it is not.`;
 }
 
 /** `from + days` as YYYY-MM-DD, on the calendar `readExpiry` compares against. */

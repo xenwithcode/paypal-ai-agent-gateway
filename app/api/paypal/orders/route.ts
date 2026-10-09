@@ -14,6 +14,8 @@
 
 import { NextRequest, NextResponse } from "next/server";
 import { isMode, isStatus, judgeHoldRequest, type PolicyEnvelope } from "@/lib/policy";
+import { campaignIdFromCustomId, judgeInvestment } from "@/lib/crowdfunding";
+import { findCampaign } from "@/lib/campaigns";
 import {
   authorizeApprovedOrder,
   canTalkToPaypal,
@@ -207,6 +209,37 @@ export async function POST(req: NextRequest) {
           { success: false, error: verdict.reason, violations: verdict.violations },
           { status: 409 }
         );
+      }
+
+      // The campaign this order funds, when it names one — `cf-<project id>`
+      // is how a pledge says so, and it is the same field the panel already
+      // writes, so the order cannot describe two different pledges.
+      //
+      // What the pledge is judged against comes from **this server's copy of
+      // the catalogue**: the band and the goal are the campaign's figures, and
+      // a request that supplied its own would be measuring itself. Refused
+      // before PayPal is asked to create anything, because an order refused
+      // after it exists leaves a record of an attempt the rules never allowed.
+      const campaignId = campaignIdFromCustomId(customId);
+      if (campaignId !== null) {
+        const project = findCampaign(campaignId);
+        if (!project) {
+          // The id is not echoed back: reflecting a request's own payload into
+          // an error message is how reflected-injection bugs are born, and the
+          // sentence says what matters — no such campaign.
+          return NextResponse.json(
+            { success: false, error: "This order names a campaign the showcase does not hold." },
+            { status: 409 }
+          );
+        }
+
+        const investment = judgeInvestment(Number(money), project);
+        if (!investment.allowed) {
+          return NextResponse.json(
+            { success: false, error: investment.reason, violations: investment.violations },
+            { status: 409 }
+          );
+        }
       }
 
       try {

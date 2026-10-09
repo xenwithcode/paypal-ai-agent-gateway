@@ -9,10 +9,12 @@ import PortfolioCard from "./PortfolioCard";
 import VenezuelaMap from "./VenezuelaMap";
 import PayPalAuthorizeButton from "../overview/components/PayPalAuthorizeButton";
 import {
+  CROWDFUNDING_PREFIX,
   MAX_INVESTMENT_USD,
   MIN_INVESTMENT_USD,
   campaignAction,
   daysLeft,
+  judgeInvestment,
   statusOf,
   type Project,
 } from "@/lib/crowdfunding";
@@ -174,10 +176,11 @@ export default function CrowdfundingView({
   }, [refreshInvestments]);
 
   const value = Number(amount);
-  const belowMinimum = Number.isFinite(value) && value > 0 && value < MIN_INVESTMENT_USD;
-  const aboveMaximum = Number.isFinite(value) && value > MAX_INVESTMENT_USD;
-  const valid =
-    Number.isFinite(value) && value >= MIN_INVESTMENT_USD && value <= MAX_INVESTMENT_USD;
+  // One judge, two callers. The panel and the server read the same rule, so
+  // the sentence beside the input cannot be a rule the server does not keep —
+  // which is what F3.4 is: the band and the goal, enforced where the money is.
+  const investment = selected ? judgeInvestment(value, selected) : null;
+  const valid = investment?.allowed === true;
   const inBolivares = rates && valid ? convert(value, "USD", "VES", rates) : null;
 
   // Kept in a ref rather than passed down: a refusal arrives from a callback
@@ -471,15 +474,13 @@ export default function CrowdfundingView({
                   </span>
                 </div>
                 <p className="mt-1.5 border-t border-slate-200 pt-1.5 text-[11px] text-slate-400">
-                  {belowMinimum
-                    ? `The minimum is $${MIN_INVESTMENT_USD}.`
-                    : aboveMaximum
-                      ? `The maximum in one go is $${MAX_INVESTMENT_USD.toLocaleString("en-US")}.`
-                      : !rates
-                        ? ratesError
-                          ? `No live rate (${ratesError}) — a conversion cannot be shown.`
-                          : "Waiting for the official BCV rate…"
-                        : `at ${formatSmart(rates.vesPerUsd, "VES")} VES/USD · BCV ${formatAsOf(rates.vesPerUsdAsOf)}`}
+                  {investment && !investment.allowed
+                    ? investment.reason
+                    : !rates
+                      ? ratesError
+                        ? `No live rate (${ratesError}) — a conversion cannot be shown.`
+                        : "Waiting for the official BCV rate…"
+                      : `at ${formatSmart(rates.vesPerUsd, "VES")} VES/USD · BCV ${formatAsOf(rates.vesPerUsdAsOf)}`}
                 </p>
               </div>
             </div>
@@ -492,10 +493,10 @@ export default function CrowdfundingView({
                   amount={value.toFixed(2)}
                   currency="USD"
                   description={`${envelope.what} — closes ${selected.deadline}`}
-                  customId={`cf-${selected.id}`}
+                  customId={`${CROWDFUNDING_PREFIX}${selected.id}`}
                   payeeEmail={DIRECT_TO_BUSINESS ? selected.payeeEmail : ""}
                   policy={envelope}
-                  disabled={busy || left <= 0}
+                  disabled={busy}
                   onOrderCreated={(orderId) => {
                     lastOrder.current = orderId;
                     recordEvent(
@@ -506,9 +507,8 @@ export default function CrowdfundingView({
                   onUnavailable={reportFailure}
                 />
                 <p className="text-center text-[11px] leading-relaxed text-slate-400">
-                  {left <= 0
-                    ? "The campaign has closed, so no payment can be opened against it."
-                    : "PayPal asks you to approve. The money is reserved, not taken: it is captured only if the campaign reaches its goal."}
+                  PayPal asks you to approve. The money is reserved, not taken: it is captured only
+                  if the campaign reaches its goal.
                 </p>
               </div>
             ) : (
