@@ -14,6 +14,9 @@ import {
   Smartphone,
   Send,
   Sprout,
+  Network,
+  Target,
+  FileText,
 } from "lucide-react";
 import { useFxShield } from "../hooks/useFxShield";
 
@@ -32,6 +35,36 @@ const PRIMARY_NAV: NavItem[] = [
   { href: "/recurring", label: "Recurring payments", icon: CreditCard, hint: "Spotify, Netflix, Prime Video and the rest" },
   { href: "/activity", label: "Activity", icon: Activity, hint: "Income, spending, blocked attempts and refunds" },
   { href: "/commerce", label: "Agentic Commerce", icon: ScrollText, hint: "Structured orders a machine can check before money moves" },
+];
+
+/**
+ * Reading, not operating.
+ *
+ * The three sections above exist to be *used*; these three exist to be read by
+ * someone deciding whether the thing above them is real — the architecture,
+ * who it is for, and what is honestly left. They never light up as work in
+ * progress elsewhere, so they get their own group rather than a row at the
+ * bottom of the product's own navigation.
+ */
+const APPENDICES_NAV: NavItem[] = [
+  {
+    href: "/appendices/architecture",
+    label: "App Architecture",
+    icon: Network,
+    hint: "How the pieces fit, end to end",
+  },
+  {
+    href: "/appendices/target-market",
+    label: "Target Market",
+    icon: Target,
+    hint: "Who this is for, and how big that is",
+  },
+  {
+    href: "/appendices/final-notes",
+    label: "Final Notes",
+    icon: FileText,
+    hint: "What is real, what is simulated, what is left",
+  },
 ];
 
 function cx(...parts: Array<string | false | null | undefined>) {
@@ -176,6 +209,20 @@ export default function Sidebar() {
             active={isActive("/crowdfunding")}
           />
         )}
+
+        {/* Appendices — for the reader deciding whether everything above is
+            real. Always visible, never gated: documentation is not a feature
+            behind an opt-in rail, and a judge who has not turned FX Shield on
+            still has to be able to reach it. */}
+        <span aria-hidden="true" className="hidden md:my-3 md:block md:h-px md:bg-slate-200" />
+
+        <span className="hidden px-3 pb-1 pt-1 text-[11px] font-semibold uppercase tracking-wider text-slate-400 md:block">
+          Appendices
+        </span>
+
+        {APPENDICES_NAV.map((item) => (
+          <NavLink key={item.href} item={item} active={isActive(item.href)} />
+        ))}
       </nav>
 
       {/* Footer */}
