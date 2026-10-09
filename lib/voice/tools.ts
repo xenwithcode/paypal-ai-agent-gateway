@@ -27,7 +27,51 @@ export type VoiceToolName =
   | "setAgent"
   | "approveOrder"
   | "captureOrder"
-  | "releaseOrder";
+  | "releaseOrder"
+  | "investInProject";
+
+/**
+ * Which screen the model is speaking on.
+ *
+ * The toolset follows the screen, because a model offered a command it cannot
+ * run will use it — and an agent that narrates an action nobody can perform is
+ * the failure this whole file exists to prevent. One vocabulary per surface:
+ * the dashboard may draft orders, the showcase may prepare investments, and
+ * neither is told about the other's verbs.
+ */
+export type VoiceSurface = "dashboard" | "crowdfunding";
+
+export const VOICE_SURFACES: readonly VoiceSurface[] = ["dashboard", "crowdfunding"];
+
+export function isVoiceSurface(value: unknown): value is VoiceSurface {
+  return value === "dashboard" || value === "crowdfunding";
+}
+
+/** Which verbs each screen can actually run — the list the model is shown. */
+const TOOLS_BY_SURFACE: Record<VoiceSurface, readonly VoiceToolName[]> = {
+  dashboard: [
+    "draftOrder",
+    "getBalance",
+    "setAgent",
+    "approveOrder",
+    "captureOrder",
+    "releaseOrder",
+  ],
+  crowdfunding: ["getBalance", "investInProject"],
+};
+
+/**
+ * The declarations for one screen.
+ *
+ * Validation still accepts every tool in `VOICE_TOOLS`: a model that asks for
+ * something this surface does not offer is refused *by the handler*, with a
+ * line the human hears, which is a better answer than pretending the call was
+ * never made.
+ */
+export function toolsFor(surface: VoiceSurface): readonly VoiceTool[] {
+  const wanted = new Set(TOOLS_BY_SURFACE[surface]);
+  return VOICE_TOOLS.filter((tool) => wanted.has(tool.name));
+}
 
 /** The JSON wire types, spelled the way the API spells them. `lib/voice/live.ts`
  *  converts these to the SDK's enum once, at the boundary where it is loaded. */
@@ -128,6 +172,22 @@ export const VOICE_TOOLS: readonly VoiceTool[] = [
       required: ["rowId"],
     },
   },
+  {
+    name: "investInProject",
+    description:
+      "Prepare an investment in one of the crowdfunding projects, for the amount the human asked for. " +
+      "It selects that project and fills the panel with the amount; NOTHING IS CHARGED — the human approves it in PayPal, " +
+      "and the server judges the amount against the project's band ($20-$1,000) and its goal first, and may refuse it. " +
+      "Call it once per request. Use the #id from the list of projects provided.",
+    parameters: {
+      type: "OBJECT",
+      properties: {
+        project: { type: "NUMBER", description: "The project's #id from the list." },
+        amount: { type: "NUMBER", description: "How much to invest, in USD." },
+      },
+      required: ["project", "amount"],
+    },
+  },
 ];
 
 const KNOWN = new Set<string>(VOICE_TOOLS.map((tool) => tool.name));
@@ -200,6 +260,23 @@ export function validateVoiceToolCall(raw: unknown): VoiceToolCallVerdict {
     args.rowId = Math.trunc(rowId);
   }
 
+  if (candidate.name === "investInProject") {
+    const project = args.project;
+    if (typeof project !== "number" || !Number.isFinite(project)) {
+      return { ok: false, reason: "The agent did not say which project to invest in." };
+    }
+    args.project = Math.trunc(project);
+
+    const amount = args.amount;
+    if (typeof amount !== "number" || !Number.isFinite(amount) || amount <= 0) {
+      return { ok: false, reason: "The agent did not say how much to invest." };
+    }
+    // Deliberately *not* judged here: the band and the goal are the campaign's
+    // own rules, and they belong to `judgeInvestment` — the same function the
+    // panel and the server call. A shape check stops a malformed call; only
+    // the judge may say no to an amount.
+  }
+
   return { ok: true, call: { id: candidate.id, name: candidate.name as VoiceToolName, args } };
 }
 
@@ -213,6 +290,8 @@ export function describeVoiceToolCall(call: VoiceToolCall): string {
       return `setAgent → ${call.args.on ? "on" : "off"}`;
     case "getBalance":
       return "getBalance";
+    case "investInProject":
+      return `investInProject → project #${String(call.args.project)} · ${String(call.args.amount)} USD`;
     default:
       return `${call.name} → order #${String(call.args.rowId)}`;
   }
@@ -233,8 +312,23 @@ export function describeVoiceToolCall(call: VoiceToolCall): string {
  */
 export const VOICE_MAX_ROWS = 40;
 
+/**
+ * The row shape that travels to the model, spelled once.
+ *
+ * Both describers read it, and so does the route that receives it: three
+ * places that have to agree on what `limit` means on *their* screen — a
+ * ceiling for an order, the still-missing figure for a campaign.
+ */
+export type VoiceRow = {
+  id: number;
+  what: string;
+  status: string;
+  limit: number;
+  currency: string;
+};
+
 export function describeRowsForVoice(
-  rows: readonly { id: number; what: string; status: string; limit: number; currency: string }[],
+  rows: readonly VoiceRow[],
   max: number = VOICE_MAX_ROWS
 ): string {
   if (rows.length === 0) return "There are no orders on the table right now.";
@@ -246,6 +340,44 @@ export function describeRowsForVoice(
 
   if (rows.length > shown.length) {
     lines.push(`(+${rows.length - shown.length} more orders not listed — ask the human to name it)`);
+  }
+
+  return lines.join("\n");
+}
+
+/**
+ * The *projects*, the way the model needs to read them.
+ *
+ * The same row shape on a different screen, because `what` here carries the
+ * name, the city and the offer — the showcase's own words — and `limit` is
+ * **not a ceiling**: it is what the campaign is still missing, which is the
+ * number that decides whether there is room for this investment at all.
+ *
+ * A word that means the wrong thing on this screen is worse than no word: the
+ * model repeats what it is told, and "ceiling 7500 USD" would describe a
+ * campaign as though it were an allowance.
+ */
+export function describeProjectsForVoice(
+  rows: readonly VoiceRow[],
+  max: number = VOICE_MAX_ROWS
+): string {
+  if (rows.length === 0) return "There are no projects in the showcase right now.";
+
+  const shown = rows.slice(0, max);
+  const lines = shown.map((row) => {
+    const missing =
+      row.limit > 0
+        ? `${row.limit.toLocaleString("en-US", { maximumFractionDigits: 2 })}${
+            row.currency ? ` ${row.currency}` : ""
+          } still missing`
+        : "goal reached";
+    return `#${row.id} ${row.what} — ${row.status} — ${missing}`;
+  });
+
+  if (rows.length > shown.length) {
+    lines.push(
+      `(+${rows.length - shown.length} more projects not listed — ask the human to name it)`
+    );
   }
 
   return lines.join("\n");

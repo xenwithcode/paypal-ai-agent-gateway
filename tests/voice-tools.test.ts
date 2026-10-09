@@ -14,8 +14,11 @@ import {
   VOICE_TOOLS,
   VOICE_MAX_PROMPT,
   VOICE_MAX_ROWS,
+  describeProjectsForVoice,
   describeRowsForVoice,
   describeVoiceToolCall,
+  isVoiceSurface,
+  toolsFor,
   validateVoiceToolCall,
 } from "../lib/voice/tools.ts";
 
@@ -48,6 +51,7 @@ test("every declared tool is one the gateway will run", () => {
     "captureOrder",
     "draftOrder",
     "getBalance",
+    "investInProject",
     "releaseOrder",
     "setAgent",
   ]);
@@ -195,4 +199,127 @@ test("the whole table fits when it is small", () => {
   ]);
   assert.equal(prose, "#2 Sports Sneakers — Awaiting approval — ceiling 100 USD");
   assert.doesNotMatch(prose, /more orders/);
+});
+
+test("an investment names a project and an amount, and both have to be numbers", () => {
+  assert.equal(
+    validateVoiceToolCall({ id: "c", name: "investInProject", args: { project: 2, amount: 50 } }).ok,
+    true
+  );
+
+  // Between two positions the nearest is the wrong answer — truncated to the
+  // one that exists, exactly as a `rowId` is.
+  const fractional = validateVoiceToolCall({
+    id: "c",
+    name: "investInProject",
+    args: { project: 1.9, amount: 50 },
+  });
+  assert.equal(fractional.ok && fractional.call.args.project, 1);
+
+  const refused: Record<string, unknown>[] = [
+    { amount: 50 },
+    { project: "finca-cafe-el-saman", amount: 50 },
+    { project: 1 },
+    { project: 1, amount: "50" },
+    { project: 1, amount: 0 },
+    { project: 1, amount: -20 },
+    { project: 1, amount: Number.NaN },
+  ];
+  for (const args of refused) {
+    const verdict = validateVoiceToolCall({ id: "c", name: "investInProject", args });
+    assert.equal(verdict.ok, false, `${JSON.stringify(args)} should be refused`);
+  }
+});
+
+test("the voice layer checks the shape; only the judge refuses an amount", () => {
+  // $5 is below the band and $5.000 is past the goal of any campaign here —
+  // and both are still *well-formed* requests. Judging them is
+  // `judgeInvestment`'s job, on the panel and again on the server: a
+  // validator that said no would be a second, diverging copy of the rule.
+  for (const amount of [5, 5000]) {
+    const verdict = validateVoiceToolCall({
+      id: "c",
+      name: "investInProject",
+      args: { project: 1, amount },
+    });
+    assert.equal(verdict.ok, true, `${amount} USD is a shape this layer accepts`);
+  }
+});
+
+test("each screen is offered only the tools it can run", () => {
+  const names = (surface: Parameters<typeof toolsFor>[0]) =>
+    toolsFor(surface).map((tool) => tool.name);
+
+  assert.deepEqual(names("crowdfunding"), ["getBalance", "investInProject"]);
+  assert.equal(names("dashboard").includes("investInProject"), false, "the dashboard cannot invest");
+  assert.equal(
+    names("crowdfunding").includes("draftOrder"),
+    false,
+    "the showcase cannot draft orders"
+  );
+
+  // Every surface's list is still real declarations, validated the same way.
+  for (const surface of ["dashboard", "crowdfunding"] as const) {
+    for (const tool of toolsFor(surface)) {
+      assert.equal(validateVoiceToolCall(validCallFor(tool.name)).ok, true);
+    }
+  }
+
+  assert.equal(isVoiceSurface("crowdfunding"), true);
+  assert.equal(isVoiceSurface("dashboard"), true);
+  assert.equal(isVoiceSurface("overview"), false, "an unknown surface must not be trusted");
+});
+
+test("a spoken investment reads as one console line", () => {
+  assert.equal(
+    describeVoiceToolCall({ id: "c", name: "investInProject", args: { project: 1, amount: 50 } }),
+    "investInProject → project #1 · 50 USD"
+  );
+});
+
+test("projects are described as campaigns, never as allowances", () => {
+  const prose = describeProjectsForVoice([
+    {
+      id: 0,
+      what: "Finca de Café El Samán — Yaracuy — 20% a year",
+      status: "OPEN",
+      limit: 17400,
+      currency: "USD",
+    },
+    {
+      id: 1,
+      what: "Distribuidora Médica — Caracas — 16% a year",
+      status: "FUNDED",
+      limit: 0,
+      currency: "USD",
+    },
+  ]);
+
+  const lines = prose.split("\n");
+  assert.equal(
+    lines[0],
+    "#0 Finca de Café El Samán — Yaracuy — 20% a year — OPEN — 17,400 USD still missing"
+  );
+  assert.equal(lines[1], "#1 Distribuidora Médica — Caracas — 16% a year — FUNDED — goal reached");
+  // The one word that would mean the wrong thing here: a campaign has a goal,
+  // not a ceiling — and the model repeats whatever it is told.
+  assert.doesNotMatch(prose, /ceiling/);
+});
+
+test("an empty showcase says so, and a long one folds", () => {
+  assert.equal(
+    describeProjectsForVoice([]),
+    "There are no projects in the showcase right now."
+  );
+
+  const many = Array.from({ length: 3 }, (_, index) => ({
+    id: index,
+    what: `Project ${index}`,
+    status: "OPEN",
+    limit: 100,
+    currency: "USD",
+  }));
+  const folded = describeProjectsForVoice(many, 2);
+  assert.equal(folded.split("\n").length, 3);
+  assert.match(folded, /\(\+1 more projects not listed/);
 });

@@ -5,7 +5,11 @@ import { useEffect, useRef, useState } from "react";
 import { Loader2, Mic, Square } from "lucide-react";
 // Types only, so nothing credential-bearing is in this bundle: the SDK lives
 // behind the route, never here.
-import { describeVoiceToolCall, type VoiceToolCall } from "@/lib/voice/tools";
+import {
+  describeVoiceToolCall,
+  type VoiceSurface,
+  type VoiceToolCall,
+} from "@/lib/voice/tools";
 
 type Phase = "idle" | "listening" | "thinking" | "speaking";
 
@@ -139,11 +143,21 @@ function playReply(
  */
 export default function VoiceCommand({
   rows,
+  surface = "dashboard",
   onExecute,
   onLog,
 }: {
   /** The table as it stands, so the model can name a row by its id. */
   rows: readonly { id: number; what: string; status: string; limit: number; currency: string }[];
+  /**
+   * Which screen this is.
+   *
+   * Sent with the recording, because it decides both halves of the turn on
+   * the server: the prose the model reads and the tools it is offered. Two
+   * surfaces, two briefs — a model offered a command nobody will execute
+   * tends to execute it anyway.
+   */
+  surface?: VoiceSurface;
   /** Run what the model asked for and return the lines those handlers logged. */
   onExecute: (calls: VoiceToolCall[]) => Promise<string[]>;
   /** The console's own entry point. */
@@ -235,7 +249,7 @@ export default function VoiceCommand({
       // Rows are sent whole: the server decides how many fit in what the
       // model can act on and says out loud how many did not, rather than the
       // browser quietly dropping the tail of the table.
-      const asked = await post({ step: "command", audio, rows });
+      const asked = await post({ step: "command", audio, rows, surface });
       if (!asked.success) {
         fail(String(asked.error ?? "The agent could not hear that."));
         return;

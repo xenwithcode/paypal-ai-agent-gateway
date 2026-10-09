@@ -1347,6 +1347,14 @@ export default function AgentGrid({
             await handleHoldAction(action, row);
             break;
           }
+
+          default:
+            // A tool that exists, on a screen that cannot run it. The model is
+            // only offered this surface's verbs, but if it asks anyway, silence
+            // would read as a command that happened.
+            addLog(
+              `❌ [VOICE] "${call.name}" is not something this screen does — here the agent drafts orders and settles them.`
+            );
         }
       }
     } finally {

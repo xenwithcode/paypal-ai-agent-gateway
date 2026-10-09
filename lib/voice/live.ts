@@ -27,8 +27,10 @@ import { GoogleGenAI, Modality, type FunctionDeclaration, type LiveServerMessage
 // different region than the text model is.
 import { genaiClientFor } from "@/lib/gemini";
 import {
-  VOICE_TOOLS,
+  isVoiceSurface,
+  toolsFor,
   validateVoiceToolCall,
+  type VoiceSurface,
   type VoiceToolCall,
 } from "@/lib/voice/tools";
 
@@ -208,18 +210,24 @@ function accept(raw: { id?: string; name?: string; args?: Record<string, unknown
 }
 
 /**
- * The declarations, converted to the SDK's own types exactly once.
+ * The declarations, converted to the SDK's own types.
+ *
+ * Per surface, and built on demand: a model offered a command it cannot run
+ * will use it, so the showcase never sees `draftOrder` and the dashboard never
+ * sees `investInProject`.
  *
  * `lib/voice/tools.ts` spells the schema the way the wire format spells it
  * (`"OBJECT"`, `"STRING"`) so that it stays loadable by a test with no
  * credentials on the machine; the SDK's `Type` is a string enum holding those
  * same values, so this is a change of spelling, not of meaning.
  */
-const DECLARATIONS = VOICE_TOOLS.map((tool) => ({
-  name: tool.name,
-  description: tool.description,
-  parameters: tool.parameters,
-})) as FunctionDeclaration[];
+function declarationsFor(surface: VoiceSurface): FunctionDeclaration[] {
+  return toolsFor(surface).map((tool) => ({
+    name: tool.name,
+    description: tool.description,
+    parameters: tool.parameters,
+  })) as FunctionDeclaration[];
+}
 
 const SPEECH = { voiceConfig: { prebuiltVoiceConfig: { voiceName: VOICE } } };
 
@@ -232,16 +240,35 @@ const SPEECH = { voiceConfig: { prebuiltVoiceConfig: { voiceName: VOICE } } };
  * this application exists to prevent — so the instruction that forbids it
  * belongs here, where the model is configured, not in a prompt someone could
  * later "improve" away.
+ *
+ * Two surfaces, two briefs: the verbs each one is offered are the verbs that
+ * screen can run, so the model is never asked to choose between a command
+ * nobody will execute and silence.
  */
-function commandInstructions(rows: string): string {
-  return [
-    "You are the voice of PayPal AI Agent Gateway, a spend governor for AI agents. The human speaks; you decide what to ask the gateway for.",
+function commandInstructions(surface: VoiceSurface, rows: string): string {
+  const shared = [
     "",
     "Rules:",
     "1. When the human asks you to DO something, call exactly one tool. Never claim an action happened — the gateway executes it and tells you what really occurred.",
     "2. When the human asks about money or status, call the tool that reads it. Never state a figure from memory.",
     "3. Otherwise answer in one short spoken sentence, twenty words or fewer. No lists, no markdown, no greetings.",
-    "4. If you cannot tell which order they mean, ask — one short question. Do not guess an id.",
+    "4. If you cannot tell which record they mean, ask — one short question. Do not guess an id.",
+  ];
+
+  if (surface === "crowdfunding") {
+    return [
+      "You are the voice of PayPal AI Crowdfunding, where a person funds a real business in Venezuela from $20 and earns a share in USD. The human speaks; you decide which project to prepare an investment in, and for how much.",
+      ...shared,
+      "5. An investment you ask for is only *prepared* — the panel fills with that project and amount, the server judges it against the campaign's band and goal, and the human approves it in PayPal. Say it that way: you prepare it, they approve it.",
+      "",
+      "Projects in the showcase right now:",
+      rows,
+    ].join("\n");
+  }
+
+  return [
+    "You are the voice of PayPal AI Agent Gateway, a spend governor for AI agents. The human speaks; you decide what to ask the gateway for.",
+    ...shared,
     "",
     "Orders on the table right now:",
     rows,
@@ -289,16 +316,23 @@ export type VoiceCommandOutcome = {
 export async function askVoiceAgent(input: {
   /** Base64 PCM16 mono at 16 kHz — the rate Live takes natively. */
   audio: string;
-  /** `describeRowsForVoice` output: the model cannot act on a row it cannot see. */
+  /** `describeRowsForVoice` / `describeProjectsForVoice` output: the model cannot act on a record it cannot see. */
   rows: string;
+  /** Which screen this turn belongs to. Unknown values fall back to the dashboard. */
+  surface?: VoiceSurface;
 }): Promise<VoiceCommandOutcome> {
+  // Normalised here rather than trusted from the route: this module owns the
+  // vocabulary, and a surface nobody can run would send the model a tool list
+  // the handler has no case for.
+  const surface = isVoiceSurface(input.surface) ? input.surface : "dashboard";
+
   const result = await runTurn(
     {
       responseModalities: [Modality.AUDIO],
-      tools: [{ functionDeclarations: DECLARATIONS }],
+      tools: [{ functionDeclarations: declarationsFor(surface) }],
       outputAudioTranscription: {},
       speechConfig: SPEECH,
-      systemInstruction: { parts: [{ text: commandInstructions(input.rows) }] },
+      systemInstruction: { parts: [{ text: commandInstructions(surface, input.rows) }] },
     },
     (session) =>
       session.sendClientContent({

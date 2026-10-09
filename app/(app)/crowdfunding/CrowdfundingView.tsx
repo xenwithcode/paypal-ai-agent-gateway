@@ -4,6 +4,8 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Sprout } from "lucide-react";
 import EmptyState from "../components/EmptyState";
+import VoiceCommand from "../components/VoiceCommand";
+import type { VoiceToolCall } from "@/lib/voice/tools";
 import ProjectGrid from "./ProjectGrid";
 import PortfolioCard from "./PortfolioCard";
 import VenezuelaMap from "./VenezuelaMap";
@@ -15,6 +17,7 @@ import {
   campaignAction,
   daysLeft,
   judgeInvestment,
+  remainingUsd,
   statusOf,
   type Project,
 } from "@/lib/crowdfunding";
@@ -174,6 +177,122 @@ export default function CrowdfundingView({
       cancelled = true;
     };
   }, [refreshInvestments]);
+
+  // What the model is told about, in the shape the voice route accepts.
+  //
+  // `limit` here is **what the campaign is still missing** — the number that
+  // decides whether there is room for this investment — and `what` carries the
+  // showcase's own words (name, city, offer), so the model names a project the
+  // way the grid prints it instead of inventing a slug it cannot spell.
+  const voiceRows = useMemo(
+    () =>
+      projects.map((project, index) => ({
+        id: index,
+        what: `${project.name} — ${project.city} — ${project.returnPct}% a year`,
+        status: statusOf(project),
+        limit: remainingUsd(project),
+        currency: "USD",
+      })),
+    [projects]
+  );
+
+  /**
+   * What the spoken agent may do on this screen.
+   *
+   * The rule is the same one the buttons follow: the model *requests*, this
+   * handler **prepares**, and nothing is charged — the human approves it in
+   * PayPal. The amount is judged by `judgeInvestment`, the very function the
+   * panel and the server call, so a refusal spoken out loud is the refusal the
+   * button would have shown: the voice gets a microphone in front of the same
+   * door, not a wider one.
+   */
+  const executeVoiceTool = useCallback(
+    async (calls: VoiceToolCall[]): Promise<string[]> => {
+      const captured: string[] = [];
+      const say = (line: string) => {
+        captured.push(line);
+        // The console lives on Overview and this screen has none of its own,
+        // so a refusal here is narrated into the shared ledger — otherwise a
+        // spoken attempt would leave no record a human could read later.
+        recordEvent(line);
+      };
+
+      for (const call of calls) {
+        switch (call.name) {
+          case "investInProject": {
+            const index = Math.trunc(Number(call.args.project));
+            const amount = Number(call.args.amount);
+            const project = projects[index];
+
+            if (!project) {
+              say(`❌ [VOICE] There is no project #${index} in the showcase.`);
+              break;
+            }
+
+            const verdict = judgeInvestment(amount, project);
+            if (!verdict.allowed) {
+              say(`❌ [VOICE] ${verdict.reason}`);
+              break;
+            }
+
+            setSelected(project);
+            setAmount(String(amount));
+            say(
+              `🎙️ [VOICE] ${money(amount)} prepared for "${project.name}" — the panel is ready; approving it in PayPal is the part only you can do.`
+            );
+
+            // The panel sits below the map: fill the row *and* put it in
+            // front of the human, because a panel filled off-screen is a
+            // panel nobody approves.
+            window.setTimeout(() => {
+              document
+                .querySelector(`[aria-label="Invest in ${project.name}"]`)
+                ?.scrollIntoView({ behavior: "smooth", block: "center" });
+            }, 80);
+            break;
+          }
+
+          case "getBalance": {
+            // Read live rather than repeating a figure on screen: a question
+            // about money deserves the answer PayPal gives now.
+            try {
+              const res = await fetch("/api/paypal/balance", { cache: "no-store" });
+              const data = (await res.json()) as {
+                value?: string;
+                currency?: string;
+                source?: string;
+                reason?: string;
+              };
+              say(
+                res.ok && typeof data.value === "string"
+                  ? data.source === "live"
+                    ? `💰 Account Balance ${data.value} ${data.currency} — read live for the voice agent.`
+                    : `⚠️ [DEMO] Account Balance ${data.value} ${data.currency} — ${
+                        data.reason ?? "no live source."
+                      }`
+                  : "❌ [VOICE] The balance could not be read."
+              );
+            } catch {
+              say("❌ [VOICE] The balance could not be read.");
+            }
+            break;
+          }
+
+          default:
+            // A tool that exists, on a screen that cannot run it. Said out
+            // loud rather than dropped: the model is only offered what this
+            // surface has, and if it asks anyway, silence would read as a
+            // command that happened.
+            say(
+              `❌ [VOICE] "${call.name}" is not something this screen does — here the agent prepares investments.`
+            );
+        }
+      }
+
+      return captured;
+    },
+    [projects]
+  );
 
   const value = Number(amount);
   // One judge, two callers. The panel and the server read the same rule, so
@@ -351,6 +470,32 @@ export default function CrowdfundingView({
   return (
     <div className="space-y-5">
       <Header />
+
+      {/* The agent, exactly where the copy promises it: he prepares it, you
+          approve it. Both sentences are here on purpose — the instruction is
+          the product's invitation, the second line is what this build can
+          honestly do today. */}
+      <section
+        aria-label="Talk to the PayPal agent"
+        className="flex flex-wrap items-center justify-between gap-4 rounded-2xl border border-blue-100 bg-blue-50/60 px-5 py-4"
+      >
+        <div className="min-w-0 max-w-[70ch]">
+          <p className="text-xs leading-relaxed text-slate-600">
+            Tell the PayPal agent which projects interest you and how much you want to invest; he
+            will handle everything for you.
+          </p>
+          <p className="mt-1 text-[11px] leading-relaxed text-slate-400">
+            He chooses the project, checks it against the rules and fills the panel — the payment
+            is approved by you, in PayPal.
+          </p>
+        </div>
+        <VoiceCommand
+          rows={voiceRows}
+          surface="crowdfunding"
+          onExecute={executeVoiceTool}
+          onLog={recordEvent}
+        />
+      </section>
 
       {/* What *I* hold, above the catalogue of what I could hold. */}
       <PortfolioCard investments={investments} projects={projects} />
@@ -562,10 +707,13 @@ function Header() {
         PayPal AI Crowdfunding
       </h1>
       <p className="max-w-[70ch] text-sm leading-relaxed text-slate-500">
-        Finance a real business in Venezuela from ${MIN_INVESTMENT_USD} and receive your share in USD
-        — outside the bank, which lends less to a whole country than its digital economy moves in a
-        week. You choose where your money goes; the platform audits the business and holds it to the
-        terms before a cent is released.
+        <span className="font-semibold text-slate-700">
+          It&apos;s where your PayPal money becomes truly &quot;smart.&quot;
+        </span>{" "}
+        Finance a real business in Venezuela from ${MIN_INVESTMENT_USD} to $
+        {MAX_INVESTMENT_USD.toLocaleString("en-US")} and receive your share in USD. You choose
+        where your money goes; and watch it grow month by month. You can do it yourself, or let
+        the PayPal-AI-Agent do it for you.
       </p>
     </header>
   );

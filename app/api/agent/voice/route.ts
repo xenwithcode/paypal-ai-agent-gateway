@@ -22,7 +22,11 @@
 import { NextRequest, NextResponse } from "next/server";
 import { agentRateLimit, keyFromHeaders } from "@/lib/rateLimit";
 import { askVoiceAgent, speakAbout, voiceUnavailableReason } from "@/lib/voice/live";
-import { describeRowsForVoice } from "@/lib/voice/tools";
+import {
+  describeProjectsForVoice,
+  describeRowsForVoice,
+  isVoiceSurface,
+} from "@/lib/voice/tools";
 
 /**
  * Largest recording accepted, as base64 characters.
@@ -119,9 +123,19 @@ export async function POST(req: NextRequest) {
         );
       }
 
+      // Which screen this turn belongs to decides both halves: the prose the
+      // model reads (`ceiling` means nothing about a campaign) and the tools
+      // it is offered. Anything unrecognised falls back to the dashboard —
+      // the surface with the tools this gateway has always had.
+      const surface = isVoiceSurface(body.surface) ? body.surface : "dashboard";
+      const described = readRows(rows);
       const outcome = await askVoiceAgent({
         audio,
-        rows: describeRowsForVoice(readRows(rows)),
+        rows:
+          surface === "crowdfunding"
+            ? describeProjectsForVoice(described)
+            : describeRowsForVoice(described),
+        surface,
       });
 
       return NextResponse.json({
