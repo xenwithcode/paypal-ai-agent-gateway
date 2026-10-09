@@ -1478,11 +1478,6 @@ export default function AgentGrid({
         />
       )}
 
-      {/* The totals the table below is made of, drawn rather than summed by
-          the reader. Above the table on purpose: seeing the four amounts first
-          is what turns the rows underneath from a list into an explanation. */}
-      <MoneyInFlight rows={rowData} />
-
       {/* AG Grid policy table */}
       <div className="bg-white rounded-2xl border border-slate-200 p-4 shadow-sm sm:p-6">
         {/* The table was the only region on this page with no name. A heading
@@ -1534,6 +1529,18 @@ export default function AgentGrid({
           onDiscard={discardOrder}
         />
       )}
+
+      {/* The totals the table is made of, drawn rather than summed by the
+          reader — and *after* the table, not above it.
+
+          It used to sit above, with the reasoning that seeing the four amounts
+          first would turn the rows below into an explanation. That reasoning
+          holds for a dashboard you *read*, and this page is not one: you
+          compose an order and decide rows here, so a summary arriving before
+          its evidence was a detour — the numbers meant nothing until the table
+          underneath explained them. Rows first, then what they add up to, then
+          what happened: evidence, aggregate, narration. */}
+      <MoneyInFlight rows={rowData} />
 
       {/* The console as a shared component: Recurring reads the record this
           one writes, so there is one place the tone rules and the empty
