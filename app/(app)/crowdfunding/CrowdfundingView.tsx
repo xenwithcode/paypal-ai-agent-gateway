@@ -93,6 +93,16 @@ export default function CrowdfundingView({
   const lastFailure = useRef<string | null>(null);
   /** What the button is trying to pay, so a refusal can be recorded with it. */
   const lastPledge = useRef<{ what: string; amount: number } | null>(null);
+  /**
+   * The order PayPal created for this attempt.
+   *
+   * Kept from the moment it exists rather than from the moment it fails: when
+   * authorization is refused, that id is the only handle on the record PayPal
+   * now holds, and without it a refusal can only be argued about from its
+   * sentence. With it, the order can be read back — payer, status, payee —
+   * which is the difference between a guess and a diagnosis.
+   */
+  const lastOrder = useRef<string | null>(null);
 
   /**
    * A payment that did not happen is still an event, and it belongs in the
@@ -103,7 +113,12 @@ export default function CrowdfundingView({
    * without one.
    */
   const reportFailure = useCallback(
-    (reason: string) => {
+    (rawReason: string) => {
+      // The order id travels with the sentence: a refusal without the record it
+      // refused can only be argued about from the wording.
+      const reason = lastOrder.current
+        ? `${rawReason} · order ${lastOrder.current}`
+        : rawReason;
       setPaypalNote(reason);
       if (lastFailure.current === reason) return;
       lastFailure.current = reason;
@@ -478,6 +493,12 @@ export default function CrowdfundingView({
                   payeeEmail={DIRECT_TO_BUSINESS ? selected.payeeEmail : ""}
                   policy={envelope}
                   disabled={busy || left <= 0}
+                  onOrderCreated={(orderId) => {
+                    lastOrder.current = orderId;
+                    recordEvent(
+                      `🧾 [CROWDFUNDING] PayPal order ${orderId} created — ${money(value)} for "${selected.name}", waiting for your approval.`
+                    );
+                  }}
                   onAuthorized={(info) => void onAuthorized(info)}
                   onUnavailable={reportFailure}
                 />

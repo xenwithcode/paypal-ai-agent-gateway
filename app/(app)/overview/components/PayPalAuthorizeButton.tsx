@@ -71,6 +71,15 @@ type Props = {
    * rules that have since changed.
    */
   policy: PolicyEnvelope;
+  /**
+   * The order PayPal accepted for approval, before the payer sees it.
+   *
+   * Optional, and worth passing: when approval or authorization fails later,
+   * that id is the only handle on the record PayPal now holds — without it a
+   * refusal has nothing to be inspected against, and the diagnosis stops at
+   * the sentence in the error.
+   */
+  onOrderCreated?: (orderId: string) => void;
   /** Runs after PayPal approved and we hold the authorization. */
   onAuthorized: (result: AuthorizeResult) => void | Promise<void>;
   /** The flow could not run — the caller switches back to its own button. */
@@ -118,6 +127,7 @@ export default function PayPalAuthorizeButton({
   customId,
   payeeEmail,
   policy,
+  onOrderCreated,
   onAuthorized,
   onUnavailable,
   disabled = false,
@@ -128,9 +138,9 @@ export default function PayPalAuthorizeButton({
 
   // Read by the SDK's callbacks, which are created once and would otherwise
   // keep the props of whichever render created them.
-  const handlers = useRef({ onAuthorized, onUnavailable });
+  const handlers = useRef({ onOrderCreated, onAuthorized, onUnavailable });
   useEffect(() => {
-    handlers.current = { onAuthorized, onUnavailable };
+    handlers.current = { onOrderCreated, onAuthorized, onUnavailable };
   });
 
   useEffect(() => {
@@ -182,6 +192,10 @@ export default function PayPalAuthorizeButton({
           if (!data.success || !data.orderId) {
             throw new Error(data.error ?? "The order could not be created.");
           }
+          // Reported through the ref the way the other handlers are: this runs
+          // inside a callback the SDK owns, and a prop captured at render time
+          // would be the one from the render that built this effect.
+          handlers.current.onOrderCreated?.(data.orderId);
           return { orderId: data.orderId };
         };
 
