@@ -61,6 +61,21 @@ type Props = {
  * The panel reports where it is; it never narrates a transfer that did not
  * happen.
  */
+/**
+ * PayPal's refusal, in the words that say what to check first.
+ *
+ * `TRANSACTION_REFUSED` is what PayPal returns when an order names a payee no
+ * account stands behind — and the sentence it sends back names nothing at all,
+ * which is how a person ends up debugging their own code for a typo in an
+ * address. Said plainly here, because this panel is where that address is
+ * typed. Any other failure is returned untouched: guessing at causes this did
+ * not see would be worse than the silence it replaces.
+ */
+function explainRefusal(reason: string, payee?: string): string {
+  if (!reason.includes("TRANSACTION_REFUSED") || !payee) return reason;
+  return `${reason} — most often because ${payee} has no PayPal account behind it.`;
+}
+
 export default function TransferPanel({ currency, balance, paypalClientId }: Props) {
   const [recipient, setRecipient] = useState("");
   const [amount, setAmount] = useState("");
@@ -244,12 +259,22 @@ export default function TransferPanel({ currency, balance, paypalClientId }: Pro
               type="email"
               inputMode="email"
               autoComplete="email"
-              placeholder="maria@example.com"
+              placeholder="name@personal.example.com"
               value={recipient}
               onChange={(e) => setRecipient(e.target.value)}
               maxLength={254}
+              aria-describedby="tp-recipient-hint"
               className="w-full rounded-xl border border-slate-200 bg-white p-2.5 text-xs outline-none focus:border-blue-400 focus:ring-2 focus:ring-blue-100"
             />
+            {/* The placeholder used to read `maria@example.com`, which is the
+                address a person types — and PayPal refuses it at authorization,
+                because no account stands behind it. The hint names the rule
+                before somebody spends an approval finding it out. */}
+            <p id="tp-recipient-hint" className="mt-1 text-[10px] leading-snug text-slate-400">
+              The recipient must have a PayPal account. In this sandbox that means one of your test
+              accounts from the developer dashboard — any other address is refused when the payment
+              is authorized.
+            </p>
           </div>
 
           <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
@@ -379,7 +404,7 @@ export default function TransferPanel({ currency, balance, paypalClientId }: Pro
                 // judges exactly what this card showed.
                 policy={draft.envelope}
                 onAuthorized={handleAuthorized}
-                onUnavailable={(reason) => push("error", reason)}
+                onUnavailable={(reason) => push("error", explainRefusal(reason, draft.envelope.payee))}
               />
               <button
                 type="button"
