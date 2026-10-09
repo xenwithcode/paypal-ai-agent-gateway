@@ -5,7 +5,9 @@ import { useEffect, useState } from "react";
 import { Sprout } from "lucide-react";
 import EmptyState from "../components/EmptyState";
 import ProjectGrid from "./ProjectGrid";
-import { MIN_INVESTMENT_USD, statusOf, type Project } from "@/lib/crowdfunding";
+import PortfolioCard from "./PortfolioCard";
+import VenezuelaMap from "./VenezuelaMap";
+import { MAX_INVESTMENT_USD, MIN_INVESTMENT_USD, statusOf, type Project } from "@/lib/crowdfunding";
 import { convert, formatAsOf, formatSmart, type FxSnapshot } from "@/lib/fx/rates";
 
 /**
@@ -48,8 +50,13 @@ export default function CrowdfundingView({ projects }: { projects: Project[] }) 
   }, []);
 
   const value = Number(amount);
-  const tooSmall = Number.isFinite(value) && value > 0 && value < MIN_INVESTMENT_USD;
-  const valid = Number.isFinite(value) && value >= MIN_INVESTMENT_USD;
+  // Both ends of the band are checked here, where the number is typed, and
+  // again by the server when it matters — an `max` attribute is a suggestion
+  // the field can be edited past.
+  const belowMinimum = Number.isFinite(value) && value > 0 && value < MIN_INVESTMENT_USD;
+  const aboveMaximum = Number.isFinite(value) && value > MAX_INVESTMENT_USD;
+  const valid =
+    Number.isFinite(value) && value >= MIN_INVESTMENT_USD && value <= MAX_INVESTMENT_USD;
   const inBolivares = rates && valid ? convert(value, "USD", "VES", rates) : null;
 
   if (projects.length === 0) {
@@ -80,6 +87,9 @@ export default function CrowdfundingView({ projects }: { projects: Project[] }) 
     <div className="space-y-5">
       <Header />
 
+      {/* What *I* hold, above the catalogue of what I could hold. */}
+      <PortfolioCard />
+
       <ProjectGrid projects={projects} onSelected={(project) => setSelected(project)} />
 
       {/* The honesty line, under the thing it describes rather than in a
@@ -90,12 +100,30 @@ export default function CrowdfundingView({ projects }: { projects: Project[] }) 
         Returns are what the project offers, not what anybody has been paid.
       </p>
 
-      {!selected ? (
-        <div className="rounded-2xl border border-dashed border-slate-300 bg-white px-5 py-6 text-center text-sm text-slate-500">
-          Select a project above to see what your dollars cost in bolívares today, at the official
-          BCV rate.
-        </div>
-      ) : (
+      <div className="grid grid-cols-1 gap-4 lg:grid-cols-[minmax(0,1fr)_minmax(340px,460px)]">
+        <section
+          aria-label="Projects on the map"
+          className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm"
+        >
+          <div className="mb-3 flex flex-wrap items-baseline justify-between gap-2">
+            <h2 className="text-sm font-semibold text-slate-900">Where the money goes</h2>
+            <span className="text-[11px] text-slate-400">
+              {projects.length} projects · Venezuela
+            </span>
+          </div>
+          <VenezuelaMap
+            projects={projects}
+            selectedId={selected ? selected.id : null}
+            onSelect={setSelected}
+          />
+        </section>
+
+        {!selected ? (
+          <div className="flex items-center justify-center rounded-2xl border border-dashed border-slate-300 bg-white px-5 py-6 text-center text-sm text-slate-500">
+            Select a pin on the map — or a row above — to see the business, and what your dollars
+            cost in bolívares today at the official BCV rate.
+          </div>
+        ) : (
         <section
           aria-label={`Invest in ${selected.name}`}
           className="space-y-4 rounded-2xl border border-slate-200 bg-white p-5 shadow-sm"
@@ -130,9 +158,11 @@ export default function CrowdfundingView({ projects }: { projects: Project[] }) 
                   id="cf-amount"
                   type="number"
                   min={MIN_INVESTMENT_USD}
+                  max={MAX_INVESTMENT_USD}
                   step="1"
                   value={amount}
                   onChange={(e) => setAmount(e.target.value)}
+                  aria-describedby="cf-amount-bounds"
                   className="w-full rounded-xl border border-slate-200 bg-white p-2.5 font-mono text-sm outline-none focus:border-blue-400 focus:ring-2 focus:ring-blue-100"
                 />
               </div>
@@ -152,8 +182,9 @@ export default function CrowdfundingView({ projects }: { projects: Project[] }) 
                   </button>
                 ))}
               </div>
-              <p className="mt-1.5 text-[10px] text-slate-400">
-                Minimum ${MIN_INVESTMENT_USD}. Nothing is charged from this screen.
+              <p id="cf-amount-bounds" className="mt-1.5 text-[10px] text-slate-400">
+                Between ${MIN_INVESTMENT_USD} and ${MAX_INVESTMENT_USD.toLocaleString("en-US")} ·
+                nothing is charged from this screen.
               </p>
             </div>
 
@@ -165,13 +196,15 @@ export default function CrowdfundingView({ projects }: { projects: Project[] }) 
                 </span>
               </div>
               <p className="mt-1.5 border-t border-slate-200 pt-1.5 text-[11px] text-slate-400">
-                {tooSmall
+                {belowMinimum
                   ? `The minimum is $${MIN_INVESTMENT_USD}.`
-                  : !rates
-                    ? ratesError
-                      ? `No live rate (${ratesError}) — a conversion cannot be shown.`
-                      : "Waiting for the official BCV rate…"
-                    : `at ${formatSmart(rates.vesPerUsd, "VES")} VES/USD · BCV ${formatAsOf(rates.vesPerUsdAsOf)}`}
+                  : aboveMaximum
+                    ? `The maximum in one go is $${MAX_INVESTMENT_USD.toLocaleString("en-US")}.`
+                    : !rates
+                      ? ratesError
+                        ? `No live rate (${ratesError}) — a conversion cannot be shown.`
+                        : "Waiting for the official BCV rate…"
+                      : `at ${formatSmart(rates.vesPerUsd, "VES")} VES/USD · BCV ${formatAsOf(rates.vesPerUsdAsOf)}`}
               </p>
             </div>
           </div>
@@ -191,7 +224,8 @@ export default function CrowdfundingView({ projects }: { projects: Project[] }) 
               : "The Pago Móvil instructions for this project come next — the destination and the exact amount for your conversion."}
           </p>
         </section>
-      )}
+        )}
+      </div>
     </div>
   );
 }

@@ -13,6 +13,7 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import {
+  MAX_INVESTMENT_USD,
   MAX_PROJECTS,
   MIN_INVESTMENT_USD,
   normaliseProjects,
@@ -98,6 +99,10 @@ test("status is derived from the money, so the two cannot disagree", () => {
   assert.equal(statusOf(project({ raisedUsd: 10000 })), "FUNDED");
 });
 
-test("the minimum is one number, not a literal repeated per screen", () => {
+test("the band is one number at each end", () => {
+  // Both ends are cited by the panel, judged by F3.4 and quoted in the pitch;
+  // three places saying different numbers is how a minimum becomes a surprise.
   assert.equal(MIN_INVESTMENT_USD, 20);
+  assert.equal(MAX_INVESTMENT_USD, 1000);
+  assert.ok(MIN_INVESTMENT_USD < MAX_INVESTMENT_USD);
 });

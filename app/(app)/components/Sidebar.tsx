@@ -166,7 +166,7 @@ export default function Sidebar() {
           <NavLink
             item={{
               href: "/crowdfunding",
-              label: "Crowdfunding",
+              label: "PayPal-AI-Crowdfunding",
               icon: Sprout,
               hint: "Fund a real business from $20 and earn in USD",
             }}

@@ -29,6 +29,18 @@ export const MAX_PROJECTS = 50;
 export const MIN_INVESTMENT_USD = 20;
 
 /**
+ * The ceiling on a single investment.
+ *
+ * $20 is the door and $1.000 is the wall: above it this stops being a product
+ * for the person putting in twenty and starts being one for a handful of
+ * larger tickets, which changes what the showcase has to promise. Enforced
+ * here rather than in the input's `max`, because an attribute the user can
+ * edit is a suggestion — the panel states it and the server-side judge of
+ * F3.4 will refuse anything outside the band.
+ */
+export const MAX_INVESTMENT_USD = 1000;
+
+/**
  * The commission the platform takes for arranging the funding.
  *
  * Stated as a number in code rather than as a line of copy, so the figure the
