@@ -11,6 +11,7 @@ import PayPalAuthorizeButton from "../overview/components/PayPalAuthorizeButton"
 import {
   MAX_INVESTMENT_USD,
   MIN_INVESTMENT_USD,
+  campaignAction,
   daysLeft,
   statusOf,
   type Project,
@@ -257,7 +258,9 @@ export default function CrowdfundingView({
       // A campaign already at its goal: capture now, because the condition
       // this capture waits for is already true. Anything else stays reserved
       // until it closes — the money is set aside, not taken.
-      if (statusOf(selected) === "FUNDED") {
+      // The same rule the agent's pass applies — one definition, or the
+      // button captures what the pass would have released.
+      if (campaignAction(selected) === "capture") {
         try {
           const res = await fetch("/api/holds", {
             method: "POST",

@@ -13,6 +13,7 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import {
+  campaignAction,
   daysLeft,
   MAX_INVESTMENT_USD,
   MAX_PROJECTS,
@@ -133,4 +134,20 @@ test("a deadline that has passed counts as passed", () => {
   assert.equal(daysLeft("2026-10-07", today), -1);
   assert.equal(daysLeft("2026-10-08", today), 0, "today is the last day");
   assert.equal(Number.isNaN(daysLeft("not a date", today)), true);
+});
+
+test("the promise on the card is one rule, and it has three answers", () => {
+  const today = new Date(2026, 9, 8);
+
+  // The helper takes a deadline straight, so the deadline is what these cases
+  // set: `runwayDays` only matters when a project comes through
+  // `normaliseProjects`, which is what derives one from the other.
+  // Goal met: the money may settle — the condition the reservation waits for.
+  assert.equal(campaignAction(project({ raisedUsd: 10000 }), today), "capture");
+  // Deadline passed with the goal unmet: the money goes back.
+  assert.equal(campaignAction(project({ raisedUsd: 0, deadline: "2026-10-07" }), today), "release");
+  // Open campaign: set aside, not taken — which is what Reserved means.
+  assert.equal(campaignAction(project({ raisedUsd: 9999 }), today), "wait");
+  // The last day is still a day: a deadline is not passed until it is over.
+  assert.equal(campaignAction(project({ raisedUsd: 0, deadline: "2026-10-08" }), today), "wait");
 });

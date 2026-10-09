@@ -34,6 +34,16 @@ import {
   CATALOG_SOURCE,
 } from "@/lib/commerce/catalog";
 import { captureAuthorization, voidAuthorization } from "@/lib/paypal";
+// The campaign behind an investment, normalised **per pass**: a project's
+// deadline derives from today, and a snapshot taken at module load would
+// freeze it at the day this server started.
+import crowdfundingSeed from "@/lib/seeds/crowdfunding.json";
+import {
+  campaignAction,
+  daysLeft,
+  normaliseProjects,
+  type Project,
+} from "@/lib/crowdfunding";
 
 /** PayPal ids are a short alphanumeric run; anything else is not one. */
 const PAYPAL_ID = /^[A-Z0-9]{10,40}$/i;
@@ -84,6 +94,23 @@ interface PolicyInput {
   payee: string;
   /** PayPal's authorization id, present only when the payer approved a hold. */
   authorizationId: string;
+  /**
+   * The crowdfunding project this order funds, when it funds one.
+   *
+   * Present because such an order's condition does not live in the catalog:
+   * what the money waits for is the campaign's goal, which lives in the
+   * project. Without it the generic path reads an empty condition as *spend
+   * now* and captures a pledge the card promised to hold.
+   */
+  project: string;
+}
+
+/** The project an order funds, or null when the id names none we hold. */
+function findProject(id: string): Project | null {
+  if (!id) return null;
+  return (
+    normaliseProjects(crowdfundingSeed, new Date())?.find((entry) => entry.id === id) ?? null
+  );
 }
 
 /** How each action reads in the past tense, for refusal messages. */
@@ -137,6 +164,11 @@ function readPolicy(value: unknown): PolicyInput | string {
       return `policy.${field} must be a string under ${MAX_TEXT} characters.`;
     }
   }
+  const project = typeof p.project === "string" ? p.project : "";
+  if (project.length > MAX_TEXT) {
+    return `policy.project must be a string under ${MAX_TEXT} characters.`;
+  }
+
   const expires = typeof p.expires === "string" ? p.expires : "";
   const mode = typeof p.mode === "string" ? p.mode : "";
   const allowEndpoint = typeof p.allowEndpoint === "string" ? p.allowEndpoint : "";
@@ -166,6 +198,7 @@ function readPolicy(value: unknown): PolicyInput | string {
     mode,
     allowEndpoint,
     payee,
+    project,
     authorizationId: typeof authorizationId === "string" ? authorizationId : "",
   };
 }
@@ -227,6 +260,67 @@ async function runAutonomousPass(raw: unknown): Promise<NextResponse> {
     // Only a held order has anything to settle: a draft is still waiting on the
     // human, and a standing allowance holds nothing to take.
     if (policy.status !== STATUS.reserved) continue;
+
+    // An investment settles against its campaign, not against a catalog price.
+    // The card already promised the rule in words — captured when the goal is
+    // met, released when the date passes — and a pass that ignored it would
+    // read the pledge's empty condition as *spend now* and take the money the
+    // moment somebody pressed ▶.
+    if (policy.project) {
+      const project = findProject(policy.project);
+      if (!project) {
+        results.push({
+          id: policy.id,
+          log: `🤖 [AGENT] "${policy.what}" — the project behind this order is gone, so nothing can settle it.`,
+        });
+        continue;
+      }
+
+      const action = campaignAction(project);
+      if (action === "wait") {
+        const left = daysLeft(project.deadline);
+        results.push({
+          id: policy.id,
+          log: `🤖 [AGENT] "${policy.what}" — waiting: the campaign closes ${project.deadline}, ${left} day${
+            left === 1 ? "" : "s"
+          } left.`,
+        });
+        continue;
+      }
+
+      if (action === "release") {
+        let mode: HoldMode = "demo";
+        let after = "";
+        if (policy.authorizationId) {
+          try {
+            const released = await voidAuthorization(policy.authorizationId);
+            mode = "live";
+            after = `${policy.authorizationId} (${released.status})`;
+          } catch (error) {
+            results.push({
+              id: policy.id,
+              log: `🤖 [AGENT] "${policy.what}" — PayPal refused the release: ${
+                error instanceof Error ? error.message : "the void was not accepted."
+              }`,
+            });
+            continue;
+          }
+        }
+        results.push({
+          id: policy.id,
+          status: STATUS.released,
+          log: `🤖 [AGENT] Released ${policy.limit.toFixed(2)} ${policy.currency} for "${policy.what}" — the campaign closed on ${project.deadline} without reaching its goal, so nothing was taken.${holdNote(
+            mode,
+            policy.authorizationId,
+            after
+          )}`,
+        });
+        continue;
+      }
+
+      // "capture": the goal is met, so fall through — the same judge, the same
+      // catalog-free condition, the same capture path as every other hold.
+    }
 
     // The agent declares itself rather than claiming a person. Everything the
     // autonomy rule was written for happens in this one call — Copilot refuses

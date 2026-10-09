@@ -254,6 +254,34 @@ export function statusOf(project: Project): ProjectStatus {
   return project.raisedUsd >= project.goalUsd ? "FUNDED" : "OPEN";
 }
 
+/**
+ * What should happen to a reservation against this campaign.
+ *
+ * This is the rule the card promises in words — *"captured when the campaign
+ * reaches its goal, and released if it does not close"* — moved into code,
+ * because a promise printed above a button that the system does not perform is
+ * the one thing this product cannot ship.
+ *
+ *   FUNDED            → capture: the goal is met, so the condition holding the
+ *                       money is satisfied and it may settle
+ *   past the deadline → release: the campaign missed, and holding money for a
+ *                       project that will never start is the outcome this
+ *                       product exists to prevent
+ *   otherwise         → wait: the money stays set aside, which is what
+ *                       "reserved, not taken" means
+ *
+ * It lives here rather than in the agent's pass because both the pass and the
+ * pledge button have to agree: one rule, one definition, or the button captures
+ * something the pass would have released.
+ */
+export type CampaignAction = "capture" | "release" | "wait";
+
+export function campaignAction(project: Project, today: Date = new Date()): CampaignAction {
+  if (statusOf(project) === "FUNDED") return "capture";
+  if (daysLeft(project.deadline, today) < 0) return "release";
+  return "wait";
+}
+
 /** `from + days` as YYYY-MM-DD, on the calendar `readExpiry` compares against. */
 function isoPlusDays(from: Date, days: number): string {
   const d = new Date(from.getFullYear(), from.getMonth(), from.getDate() + days);
