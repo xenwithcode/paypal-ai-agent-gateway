@@ -138,10 +138,11 @@ export default function PagoMovilPanel() {
       {/* Rate header: provenance is shown next to the number it belongs to. */}
       <div className="flex justify-between items-start rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
         <div>
-          <h3 className="text-lg font-bold text-slate-900">Pago Móvil — preview</h3>
+          <h3 className="text-lg font-bold text-slate-900">Pay in bolívares — preview</h3>
           <p className="mt-1 max-w-[60ch] text-xs leading-relaxed text-slate-500">
-            Converts PYUSD into Bolívares at the official BCV rate and shows exactly what a Pago
-            Móvil payment would send — recipient, cédula, bank and QR. No bank is connected in
+            Converts PYUSD into Bolívares at the official BCV rate and shows exactly what a local
+            payment would send — recipient, cédula, bank and QR. In Venezuela that rail is called{" "}
+            <em>Pago Móvil</em>, and it is how the country actually pays. No bank is connected in
             this build, so nothing here moves money; the button previews the payment.
           </p>
         </div>

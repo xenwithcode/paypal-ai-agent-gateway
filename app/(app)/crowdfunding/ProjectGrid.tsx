@@ -8,7 +8,7 @@ import type { ColDef } from "ag-grid-community";
 // This page never imports Overview or Activity, so the registration would not
 // have run here — each entry point declares what it uses.
 import { gridTheme } from "@/lib/grid/setup";
-import { statusOf, type Project, type Risk } from "@/lib/crowdfunding";
+import { daysLeft, statusOf, type Project, type Risk } from "@/lib/crowdfunding";
 import ProgressCell from "./ProgressCell";
 
 /**
@@ -123,6 +123,29 @@ export default function ProjectGrid({
         cellRenderer: RiskCell,
         minWidth: 210,
         flex: 1,
+      },
+      {
+        headerName: "Closes",
+        field: "deadline",
+        // The date sorts lexicographically *and* chronologically — both sides
+        // are YYYY-MM-DD — so sorting needs no comparator, and the words say
+        // what the date means: a campaign with six days left and one with six
+        // months left do not feel the same.
+        valueFormatter: ({ value }) => {
+          const left = daysLeft(String(value ?? ""));
+          if (Number.isNaN(left)) return "—";
+          if (left < 0) return "closed";
+          if (left === 0) return "today";
+          return `in ${left} day${left === 1 ? "" : "s"}`;
+        },
+        cellClass: ({ value }) => {
+          const left = daysLeft(String(value ?? ""));
+          if (Number.isNaN(left)) return "";
+          if (left < 0) return "text-red-600 font-semibold";
+          return left <= 7 ? "text-amber-600 font-semibold" : "text-slate-600";
+        },
+        minWidth: 100,
+        maxWidth: 130,
       },
       {
         headerName: "Investors",

@@ -13,6 +13,7 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import {
+  daysLeft,
   MAX_INVESTMENT_USD,
   MAX_PROJECTS,
   MIN_INVESTMENT_USD,
@@ -33,6 +34,8 @@ const project = (overrides: Partial<Project> = {}): Project => ({
   city: "Caracas",
   what: "Working capital",
   collateral: "Store inventory",
+  runwayDays: 30,
+  deadline: "2026-11-07",
   goalUsd: 10000,
   raisedUsd: 2500,
   returnPct: 15,
@@ -40,6 +43,7 @@ const project = (overrides: Partial<Project> = {}): Project => ({
   lat: 10.48,
   lng: -66.9,
   investors: 12,
+  payeeEmail: "negocio@example.com",
   seed: true,
   ...overrides,
 });
@@ -105,4 +109,28 @@ test("the band is one number at each end", () => {
   assert.equal(MIN_INVESTMENT_USD, 20);
   assert.equal(MAX_INVESTMENT_USD, 1000);
   assert.ok(MIN_INVESTMENT_USD < MAX_INVESTMENT_USD);
+});
+
+test("a campaign's deadline is derived from its runway, never stored", () => {
+  // Stored deadlines rot on the shelf: a sample campaign that closed last
+  // month makes a working showcase look shut.
+  const today = new Date(2026, 9, 8);
+  const projects = normaliseProjects([project({ runwayDays: 30 })], today);
+  assert.equal(projects?.[0].deadline, "2026-11-07");
+  assert.equal(daysLeft(projects![0].deadline, today), 30);
+});
+
+test("a campaign with no closing date refuses the list", () => {
+  // Money pledged against a campaign that never closes is money held
+  // indefinitely — the one outcome this product must not produce.
+  assert.equal(normaliseProjects([{ ...project(), runwayDays: undefined }]), null);
+  // A payee nobody can pay is the same as no funding at all.
+  assert.equal(normaliseProjects([project({ payeeEmail: "not-an-email" })]), null);
+});
+
+test("a deadline that has passed counts as passed", () => {
+  const today = new Date(2026, 9, 8);
+  assert.equal(daysLeft("2026-10-07", today), -1);
+  assert.equal(daysLeft("2026-10-08", today), 0, "today is the last day");
+  assert.equal(Number.isNaN(daysLeft("not a date", today)), true);
 });

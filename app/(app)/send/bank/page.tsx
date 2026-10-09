@@ -24,7 +24,7 @@ export default function SendToBankPage() {
       <EmptyState
         icon={ShieldAlert}
         title="This rail is part of the FX module"
-        description="A local Pago Móvil only matters where the currency is losing value, so it stays hidden until you switch FX Shield on."
+        description="Paying in bolívares only matters where the currency is losing value, so it stays hidden until you switch FX Shield on."
         action={{ label: "Open FX Shield", href: "/fx" }}
         note="You are seeing this only because the address was typed directly. The sidebar keeps the link hidden while FX Shield is off."
       />

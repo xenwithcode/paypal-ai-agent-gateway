@@ -1,36 +1,76 @@
 // app/(app)/crowdfunding/CrowdfundingView.tsx
 "use client";
 
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { Sprout } from "lucide-react";
 import EmptyState from "../components/EmptyState";
 import ProjectGrid from "./ProjectGrid";
 import PortfolioCard from "./PortfolioCard";
 import VenezuelaMap from "./VenezuelaMap";
-import { MAX_INVESTMENT_USD, MIN_INVESTMENT_USD, statusOf, type Project } from "@/lib/crowdfunding";
+import PayPalAuthorizeButton from "../overview/components/PayPalAuthorizeButton";
+import {
+  MAX_INVESTMENT_USD,
+  MIN_INVESTMENT_USD,
+  daysLeft,
+  statusOf,
+  type Project,
+} from "@/lib/crowdfunding";
 import { convert, formatAsOf, formatSmart, type FxSnapshot } from "@/lib/fx/rates";
+import { MODE, STATUS, type PolicyEnvelope } from "@/lib/policy";
+import type { PolicyRow } from "../overview/types";
+import {
+  appendPolicyRow,
+  readPolicyRows,
+  updatePolicyRow,
+  type ManifestRow,
+} from "@/lib/history";
+import { ensureHydrated } from "@/lib/store";
+import { recordEvent } from "@/lib/events";
 
 /**
- * The showcase: pick a project, see what $20 costs in bolívares today.
+ * The showcase: pick a project, see the price in bolívares, and fund it with
+ * PayPal for real.
  *
- * Two steps of the four the design describes — the catalogue and the
- * selection — and the second one answers the question that decides the click:
- * *how much is that in my money, at the official rate, right now*. The rate is
- * read from `/api/fx`, the same BCV feed the rest of the app uses, so the
- * conversion here and the one in the Pago Móvil panel cannot disagree.
+ * Three steps of the design, wired end to end:
  *
- * What is deliberately absent: photographs of businesses we have never been
- * inside. The seed is marked `demo` on every row, and an image of somebody
- * else's shop would say something no amount of labelling could walk back.
+ *  1. the catalogue (grid, bars, filters, map),
+ *  2. the selection — what $20 costs in bolívares at the official rate,
+ *  3. **the payment**, in PayPal's own UI, against an envelope the server
+ *     judges first: ceiling, payee, window, autonomy.
+ *
+ * An investment is a purchase order. The product is a stake, the ceiling is
+ * the amount, and the window is the campaign's closing date — so it is stored
+ * as a row like every other order, with one extra field saying which project
+ * it funds, and it inherits persistence, capture, the console and the judge
+ * without any of them being rewritten.
+ *
+ * What happens to the money follows the same lifecycle the product already
+ * has: PayPal **authorizes** it (reserved, not taken), and it is **captured**
+ * only when there is something to capture against — a campaign already at its
+ * goal. An open campaign leaves the money set aside until the deadline, and
+ * past the deadline the window itself refuses: holding money for a project
+ * that is never going to start is the one outcome this screen must not
+ * produce.
  */
 
 const PILL_AMOUNTS = [20, 50, 100];
 
-export default function CrowdfundingView({ projects }: { projects: Project[] }) {
+export default function CrowdfundingView({
+  projects,
+  paypalClientId,
+}: {
+  projects: Project[];
+  /** Read on the server and passed down, the way Overview and Send do it. */
+  paypalClientId: string;
+}) {
   const [selected, setSelected] = useState<Project | null>(null);
   const [amount, setAmount] = useState("20");
   const [rates, setRates] = useState<FxSnapshot | null>(null);
   const [ratesError, setRatesError] = useState<string | null>(null);
+  const [investments, setInvestments] = useState<ManifestRow[] | null>(null);
+  const [pledge, setPledge] = useState<{ kind: "ok" | "error"; text: string } | null>(null);
+  const [busy, setBusy] = useState(false);
+  const [paypalNote, setPaypalNote] = useState<string | null>(null);
 
   useEffect(() => {
     let cancelled = false;
@@ -49,15 +89,157 @@ export default function CrowdfundingView({ projects }: { projects: Project[] }) 
     };
   }, []);
 
+  // The portfolio reads the same store Overview writes, after it has been
+  // asked for — the rule every stored view here follows.
+  const refreshInvestments = useCallback(() => {
+    setInvestments(readPolicyRows().filter((row) => Boolean(row.project)));
+  }, []);
+
+  useEffect(() => {
+    let cancelled = false;
+    void ensureHydrated().then(() => {
+      if (!cancelled) refreshInvestments();
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [refreshInvestments]);
+
   const value = Number(amount);
-  // Both ends of the band are checked here, where the number is typed, and
-  // again by the server when it matters — an `max` attribute is a suggestion
-  // the field can be edited past.
   const belowMinimum = Number.isFinite(value) && value > 0 && value < MIN_INVESTMENT_USD;
   const aboveMaximum = Number.isFinite(value) && value > MAX_INVESTMENT_USD;
   const valid =
     Number.isFinite(value) && value >= MIN_INVESTMENT_USD && value <= MAX_INVESTMENT_USD;
   const inBolivares = rates && valid ? convert(value, "USD", "VES", rates) : null;
+
+  /**
+   * The envelope PayPal will be asked to open.
+   *
+   * `status` has to be the awaiting one: the server refuses to open a hold
+   * against anything else. `expires` is the campaign's closing date, so the
+   * window rule — written for purchase orders — is what stops a pledge after
+   * the campaign is over. `payee` is the business, written here rather than
+   * in the request the browser sends, so the destination is fixed before
+   * PayPal ever sees it.
+   */
+  // Memoised, not inline: an object rebuilt every render would be a new
+  // dependency for the callback below on every keystroke — which is exactly
+  // what eslint flagged, and a warning counts as a failure here.
+  const envelope: PolicyEnvelope | null = useMemo(
+    () =>
+      selected && valid
+        ? {
+            limit: value,
+            currency: "USD",
+            allowEndpoint: "",
+            payee: selected.payeeEmail,
+            what: `Stake in ${selected.name}`,
+            status: STATUS.pending,
+            expires: selected.deadline,
+            mode: MODE.autonomous,
+          }
+        : null,
+    [selected, valid, value]
+  );
+
+  /**
+   * What happens after PayPal approves: the row is written as a reservation,
+   * and the money is captured only when the campaign already has its goal —
+   * which is the condition the capture is *for*.
+   */
+  const onAuthorized = useCallback(
+    async (info: { orderId: string; authorizationId: string }) => {
+      if (!selected || !envelope) return;
+      setBusy(true);
+      setPledge(null);
+
+      const row: PolicyRow = {
+        id: Date.now(),
+        what: envelope.what,
+        merchant: selected.city,
+        limit: value,
+        currency: "USD",
+        condition: "",
+        expires: selected.deadline,
+        mode: MODE.autonomous,
+        status: STATUS.reserved,
+        marketPrice: null,
+        marketImage: null,
+        conditionMet: null,
+        conditionDetail: `Pledged through PayPal · order ${info.orderId}`,
+        allowEndpoint: "",
+        payee: selected.payeeEmail,
+        createdAt: new Date().toISOString(),
+        authorizationId: info.authorizationId,
+        project: selected.id,
+      };
+      appendPolicyRow(row);
+      recordEvent(
+        `💰 [CROWDFUNDING] ${money(value)} reserved for "${selected.name}" · PayPal order ${info.orderId} · closes ${selected.deadline}.`
+      );
+
+      // A campaign already at its goal: capture now, because the condition
+      // this capture waits for is already true. Anything else stays reserved
+      // until it closes — the money is set aside, not taken.
+      if (statusOf(selected) === "FUNDED") {
+        try {
+          const res = await fetch("/api/holds", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              action: "capture",
+              policy: {
+                id: row.id,
+                what: row.what,
+                merchant: row.merchant,
+                condition: row.condition,
+                limit: row.limit,
+                currency: row.currency,
+                status: row.status,
+                expires: row.expires,
+                mode: row.mode,
+                allowEndpoint: row.allowEndpoint,
+                payee: row.payee ?? "",
+                authorizationId: info.authorizationId,
+              },
+            }),
+          });
+          const data = (await res.json()) as { success?: boolean; error?: string; log?: string };
+          if (data.success) {
+            updatePolicyRow(row.id, {
+              status: STATUS.captured,
+              capturedAt: new Date().toISOString(),
+              conditionDetail: `Paid through PayPal · order ${info.orderId} · capture ${info.authorizationId}`,
+            });
+            recordEvent(`✅ [CROWDFUNDING] Captured ${money(value)} for "${selected.name}" — the campaign was already funded.`);
+            setPledge({
+              kind: "ok",
+              text: `Paid ${money(value)} to ${selected.name}. The campaign was already funded, so the money moved — it is yours to see in PayPal's sandbox.`,
+            });
+          } else {
+            setPledge({
+              kind: "error",
+              text: data.error ?? "The capture was refused — the reservation stands and nothing was taken.",
+            });
+          }
+        } catch {
+          setPledge({
+            kind: "error",
+            text: "Could not reach the capture service — the reservation stands and nothing was taken.",
+          });
+        }
+      } else {
+        setPledge({
+          kind: "ok",
+          text: `${money(value)} reserved for ${selected.name}. Nothing is taken yet: it is captured when the campaign reaches its goal, and released if it does not close by ${selected.deadline}.`,
+        });
+      }
+
+      refreshInvestments();
+      setBusy(false);
+    },
+    [selected, envelope, value, refreshInvestments]
+  );
 
   if (projects.length === 0) {
     return (
@@ -82,22 +264,21 @@ export default function CrowdfundingView({ projects }: { projects: Project[] }) 
   }
 
   const funded = selected ? statusOf(selected) === "FUNDED" : false;
+  const left = selected ? daysLeft(selected.deadline) : 0;
 
   return (
     <div className="space-y-5">
       <Header />
 
       {/* What *I* hold, above the catalogue of what I could hold. */}
-      <PortfolioCard />
+      <PortfolioCard investments={investments} projects={projects} />
 
-      <ProjectGrid projects={projects} onSelected={(project) => setSelected(project)} />
+      <ProjectGrid projects={projects} onSelected={setSelected} />
 
-      {/* The honesty line, under the thing it describes rather than in a
-          footnote nobody reaches: four demo records, no audit has happened. */}
       <p className="text-xs leading-relaxed text-slate-400">
-        {projects.length} projects · every row marked <span className="font-semibold">demo</span> is a
-        sample record: no audit has been performed on it, and nothing here has been funded yet.
-        Returns are what the project offers, not what anybody has been paid.
+        {projects.length} projects · every row marked <span className="font-semibold">demo</span> is
+        a sample record: no audit has been performed on it. Returns are what the project offers, not
+        what anybody has been paid.
       </p>
 
       <div className="grid grid-cols-1 gap-4 lg:grid-cols-[minmax(0,1fr)_minmax(340px,460px)]">
@@ -107,9 +288,7 @@ export default function CrowdfundingView({ projects }: { projects: Project[] }) 
         >
           <div className="mb-3 flex flex-wrap items-baseline justify-between gap-2">
             <h2 className="text-sm font-semibold text-slate-900">Where the money goes</h2>
-            <span className="text-[11px] text-slate-400">
-              {projects.length} projects · Venezuela
-            </span>
+            <span className="text-[11px] text-slate-400">{projects.length} projects · Venezuela</span>
           </div>
           <VenezuelaMap
             projects={projects}
@@ -120,40 +299,56 @@ export default function CrowdfundingView({ projects }: { projects: Project[] }) 
 
         {!selected ? (
           <div className="flex items-center justify-center rounded-2xl border border-dashed border-slate-300 bg-white px-5 py-6 text-center text-sm text-slate-500">
-            Select a pin on the map — or a row above — to see the business, and what your dollars
-            cost in bolívares today at the official BCV rate.
+            Select a pin on the map — or a row above — to see the business, and what your dollars cost
+            in bolívares today at the official BCV rate.
           </div>
         ) : (
-        <section
-          aria-label={`Invest in ${selected.name}`}
-          className="space-y-4 rounded-2xl border border-slate-200 bg-white p-5 shadow-sm"
-        >
-          <div className="flex flex-wrap items-start justify-between gap-3">
-            <div className="min-w-0">
-              <h2 className="text-base font-semibold text-slate-900">
-                {funded ? "Goal reached" : "Invest"} in {selected.name}
-              </h2>
-              <p className="mt-0.5 max-w-[70ch] text-xs leading-relaxed text-slate-500">
-                {selected.what} · {selected.city}. Backed by{" "}
-                <span className="font-medium text-slate-700">{selected.collateral.toLowerCase()}</span>
-                , offering <span className="font-medium text-emerald-600">{selected.returnPct}% a year</span>{" "}
-                in dollars.
-              </p>
+          <section
+            aria-label={`Invest in ${selected.name}`}
+            className="space-y-4 rounded-2xl border border-slate-200 bg-white p-5 shadow-sm"
+          >
+            <div className="flex flex-wrap items-start justify-between gap-3">
+              <div className="min-w-0">
+                <h2 className="text-base font-semibold text-slate-900">
+                  {funded ? "Goal reached" : "Invest"} in {selected.name}
+                </h2>
+                <p className="mt-0.5 max-w-[70ch] text-xs leading-relaxed text-slate-500">
+                  {selected.what} · {selected.city}. Backed by{" "}
+                  <span className="font-medium text-slate-700">{selected.collateral.toLowerCase()}</span>
+                  , offering <span className="font-medium text-emerald-600">{selected.returnPct}% a year</span>{" "}
+                  in dollars.
+                </p>
+              </div>
+              <span className="shrink-0 rounded-full border border-slate-200 bg-slate-50 px-2.5 py-1 text-[10px] font-bold uppercase tracking-wide text-slate-500">
+                Grade {selected.risk}
+              </span>
             </div>
-            <span className="shrink-0 rounded-full border border-slate-200 bg-slate-50 px-2.5 py-1 text-[10px] font-bold uppercase tracking-wide text-slate-500">
-              Grade {selected.risk}
-            </span>
-          </div>
 
-          <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
-            <div>
-              <label
-                htmlFor="cf-amount"
-                className="mb-1 block text-[11px] font-medium text-slate-600"
-              >
-                Amount (USD)
-              </label>
-              <div className="flex gap-2">
+            {/* The fairness rule, said where the decision is made. */}
+            <p
+              className={`rounded-xl border px-3 py-2 text-xs leading-relaxed ${
+                left <= 0
+                  ? "border-red-200 bg-red-50 text-red-700"
+                  : left <= 7
+                    ? "border-amber-200 bg-amber-50 text-amber-800"
+                    : "border-slate-200 bg-slate-50 text-slate-600"
+              }`}
+            >
+              <strong className="font-semibold">
+                {left > 0
+                  ? `Closes ${selected.deadline} — in ${left} day${left === 1 ? "" : "s"}.`
+                  : `Closed on ${selected.deadline}.`}
+              </strong>{" "}
+              {left > 0
+                ? "If the goal is not reached by then, every pledge is released automatically and nobody is charged for a project that never started."
+                : "This campaign is over: nothing new can be pledged against it."}
+            </p>
+
+            <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+              <div>
+                <label htmlFor="cf-amount" className="mb-1 block text-[11px] font-medium text-slate-600">
+                  Amount (USD)
+                </label>
                 <input
                   id="cf-amount"
                   type="number"
@@ -165,69 +360,112 @@ export default function CrowdfundingView({ projects }: { projects: Project[] }) 
                   aria-describedby="cf-amount-bounds"
                   className="w-full rounded-xl border border-slate-200 bg-white p-2.5 font-mono text-sm outline-none focus:border-blue-400 focus:ring-2 focus:ring-blue-100"
                 />
+                <div className="mt-2 flex gap-2">
+                  {PILL_AMOUNTS.map((pill) => (
+                    <button
+                      key={pill}
+                      type="button"
+                      onClick={() => setAmount(String(pill))}
+                      className={`rounded-lg border px-3 py-1.5 text-xs font-bold transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 ${
+                        value === pill
+                          ? "border-blue-600 bg-blue-50 text-blue-700"
+                          : "border-slate-200 bg-white text-slate-600 hover:border-slate-300"
+                      }`}
+                    >
+                      +${pill}
+                    </button>
+                  ))}
+                </div>
+                <p id="cf-amount-bounds" className="mt-1.5 text-[10px] text-slate-400">
+                  Between ${MIN_INVESTMENT_USD} and ${MAX_INVESTMENT_USD.toLocaleString("en-US")} ·
+                  the money is directed to {selected.payeeEmail}.
+                </p>
               </div>
-              <div className="mt-2 flex gap-2">
-                {PILL_AMOUNTS.map((pill) => (
-                  <button
-                    key={pill}
-                    type="button"
-                    onClick={() => setAmount(String(pill))}
-                    className={`rounded-lg border px-3 py-1.5 text-xs font-bold transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 ${
-                      Number(amount) === pill
-                        ? "border-blue-600 bg-blue-50 text-blue-700"
-                        : "border-slate-200 bg-white text-slate-600 hover:border-slate-300"
-                    }`}
-                  >
-                    +${pill}
-                  </button>
-                ))}
+
+              <div className="rounded-xl border border-slate-200 bg-slate-50 px-3 py-2.5 text-xs">
+                <div className="flex items-baseline justify-between gap-2">
+                  <span className="text-slate-500">That is today</span>
+                  <span className="font-mono text-sm font-semibold tabular-nums text-slate-900">
+                    {inBolivares !== null ? `${formatSmart(inBolivares, "VES")} VES` : "—"}
+                  </span>
+                </div>
+                <p className="mt-1.5 border-t border-slate-200 pt-1.5 text-[11px] text-slate-400">
+                  {belowMinimum
+                    ? `The minimum is $${MIN_INVESTMENT_USD}.`
+                    : aboveMaximum
+                      ? `The maximum in one go is $${MAX_INVESTMENT_USD.toLocaleString("en-US")}.`
+                      : !rates
+                        ? ratesError
+                          ? `No live rate (${ratesError}) — a conversion cannot be shown.`
+                          : "Waiting for the official BCV rate…"
+                        : `at ${formatSmart(rates.vesPerUsd, "VES")} VES/USD · BCV ${formatAsOf(rates.vesPerUsdAsOf)}`}
+                </p>
               </div>
-              <p id="cf-amount-bounds" className="mt-1.5 text-[10px] text-slate-400">
-                Between ${MIN_INVESTMENT_USD} and ${MAX_INVESTMENT_USD.toLocaleString("en-US")} ·
-                nothing is charged from this screen.
-              </p>
             </div>
 
-            <div className="rounded-xl border border-slate-200 bg-slate-50 px-3 py-2.5 text-xs">
-              <div className="flex items-baseline justify-between gap-2">
-                <span className="text-slate-500">That is today</span>
-                <span className="font-mono text-sm font-semibold tabular-nums text-slate-900">
-                  {inBolivares !== null ? `${formatSmart(inBolivares, "VES")} VES` : "—"}
-                </span>
+            {/* The real thing: PayPal's own button, an order our server creates. */}
+            {envelope ? (
+              <div className="space-y-2">
+                <PayPalAuthorizeButton
+                  clientId={paypalClientId}
+                  amount={value.toFixed(2)}
+                  currency="USD"
+                  description={`${envelope.what} — closes ${selected.deadline}`}
+                  customId={`cf-${selected.id}`}
+                  payeeEmail={selected.payeeEmail}
+                  policy={envelope}
+                  disabled={busy || left <= 0}
+                  onAuthorized={(info) => void onAuthorized(info)}
+                  onUnavailable={(reason) => setPaypalNote(reason)}
+                />
+                <p className="text-center text-[11px] leading-relaxed text-slate-400">
+                  {left <= 0
+                    ? "The campaign has closed, so no payment can be opened against it."
+                    : "PayPal asks you to approve. The money is reserved, not taken: it is captured only if the campaign reaches its goal."}
+                </p>
               </div>
-              <p className="mt-1.5 border-t border-slate-200 pt-1.5 text-[11px] text-slate-400">
-                {belowMinimum
-                  ? `The minimum is $${MIN_INVESTMENT_USD}.`
-                  : aboveMaximum
-                    ? `The maximum in one go is $${MAX_INVESTMENT_USD.toLocaleString("en-US")}.`
-                    : !rates
-                      ? ratesError
-                        ? `No live rate (${ratesError}) — a conversion cannot be shown.`
-                        : "Waiting for the official BCV rate…"
-                      : `at ${formatSmart(rates.vesPerUsd, "VES")} VES/USD · BCV ${formatAsOf(rates.vesPerUsdAsOf)}`}
-              </p>
-            </div>
-          </div>
+            ) : (
+              <button
+                type="button"
+                disabled
+                aria-disabled="true"
+                className="w-full cursor-not-allowed rounded-xl bg-slate-200 px-4 py-3 text-xs font-bold text-slate-400"
+              >
+                Fund with PayPal
+              </button>
+            )}
 
-          <button
-            type="button"
-            disabled
-            aria-disabled="true"
-            title="Payment instructions are the next step"
-            className="w-full cursor-not-allowed rounded-xl bg-slate-200 px-4 py-3 text-xs font-bold text-slate-400"
-          >
-            Continue to Pago Móvil
-          </button>
-          <p className="-mt-2 text-center text-[11px] text-slate-400">
-            {funded
-              ? "This goal is already reached, so it is not taking new money."
-              : "The Pago Móvil instructions for this project come next — the destination and the exact amount for your conversion."}
-          </p>
-        </section>
+            {paypalNote && (
+              <p className="rounded-xl border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-800">
+                PayPal is unavailable here ({paypalNote}) — the order cannot be opened.
+              </p>
+            )}
+
+            {pledge && (
+              <p
+                role={pledge.kind === "error" ? "alert" : "status"}
+                className={`rounded-xl border px-3 py-2 text-xs leading-relaxed ${
+                  pledge.kind === "error"
+                    ? "border-red-200 bg-red-50 text-red-700"
+                    : "border-emerald-200 bg-emerald-50 text-emerald-800"
+                }`}
+              >
+                {pledge.text}
+              </p>
+            )}
+          </section>
         )}
       </div>
     </div>
   );
+}
+
+function money(value: number): string {
+  return value.toLocaleString("en-US", {
+    style: "currency",
+    currency: "USD",
+    maximumFractionDigits: 0,
+  });
 }
 
 function Header() {

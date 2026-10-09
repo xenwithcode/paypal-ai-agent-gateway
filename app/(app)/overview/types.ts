@@ -60,6 +60,11 @@ export interface PolicyRow {
    * strip*, not as *a strip that was empty*. The two are different claims and
    * only one of them is one this product can make.
    */
+  /**
+   * The crowdfunding project this order funds, if it funds one — the marker
+   * that turns an ordinary row into a position the portfolio can count.
+   */
+  project?: string;
   candidates?: CandidateRecord[];
   /** Which candidate the agent would have taken, so a later reader can compare. */
   matchedId?: number | null;

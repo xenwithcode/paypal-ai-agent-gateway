@@ -26,5 +26,12 @@ export default function CrowdfundingPage() {
     );
   }
 
-  return <CrowdfundingView projects={projects ?? []} />;
+  return (
+    <CrowdfundingView
+      projects={projects ?? []}
+      // Read here rather than in the component, exactly as Overview and Send
+      // do it: the credential-bearing module never reaches client code.
+      paypalClientId={process.env.PAYPAL_CLIENT_ID ?? ""}
+    />
+  );
 }

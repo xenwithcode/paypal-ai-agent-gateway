@@ -68,6 +68,26 @@ export type Project = {
   city: string;
   /** What the money is for, in the operator's own words. */
   what: string;
+  /**
+   * How long the campaign runs, in days from the day it is read.
+   *
+   * Stored relative rather than as a date so a shipped sample never expires on
+   * the shelf: a hardcoded deadline turns the showcase closed a month after the
+   * repo is published, and a closed showcase is a broken demo that looks
+   * correct. The absolute date is derived at normalise time, exactly as the
+   * sample purchase history dates its rows relative to first run.
+   */
+  runwayDays: number;
+  /**
+   * The last day money may be pledged — derived from `runwayDays` at read
+   * time, never stored.
+   *
+   * The rule it carries is the fairness one: past this date the campaign is
+   * over and anything pledged against it is released, because holding money
+   * for a project that is not going to start is the one outcome this product
+   * must never produce.
+   */
+  deadline: string;
   /** USD needed. Always positive. */
   goalUsd: number;
   /** USD committed so far. Never above `goalUsd` — see `normaliseProjects`. */
@@ -93,6 +113,15 @@ export type Project = {
   lng: number;
   /** How many people are already in. Social proof, and the only count shown. */
   investors: number;
+  /**
+   * The PayPal account the funding is directed to — written into the order as
+   * its payee, so the money is aimed at the business at the moment the order
+   * is created rather than by anything that happens after.
+   *
+   * Required: a project nobody can pay is a project nobody can fund, and a
+   * malformed address would only surface as an opaque refusal from PayPal.
+   */
+  payeeEmail: string;
   /**
    * True while the project is a demo record rather than an audited one.
    *
@@ -130,8 +159,12 @@ function text(value: unknown): string | null {
  * `null` means "not a list of projects", not "an empty list" — the two are
  * different answers and a caller showing an empty shelf for a malformed file
  * would be telling the operator that nobody applied.
+ *
+ * `today` is a parameter so the derived deadline can be pinned by a test
+ * rather than by the day the suite runs — the same reason `readExpiry` takes
+ * one.
  */
-export function normaliseProjects(value: unknown): Project[] | null {
+export function normaliseProjects(value: unknown, today: Date = new Date()): Project[] | null {
   if (!Array.isArray(value)) return null;
   if (value.length > MAX_PROJECTS) return null;
 
@@ -153,8 +186,13 @@ export function normaliseProjects(value: unknown): Project[] | null {
     const lat = finite(raw.lat);
     const lng = finite(raw.lng);
     const investors = finite(raw.investors);
+    const runwayDays = finite(raw.runwayDays);
+    const payeeEmail = text(raw.payeeEmail);
 
     if (!id || !name || !city || !what || !collateral) return null;
+    // A campaign without a closing date is a campaign that holds money for as
+    // long as it likes, so the field is required rather than defaulted.
+    if (runwayDays === null) return null;
     if (seen.has(id)) return null;
     if (goalUsd === null || goalUsd <= 0) return null;
     if (raisedUsd === null || raisedUsd < 0) return null;
@@ -167,6 +205,10 @@ export function normaliseProjects(value: unknown): Project[] | null {
     if (lat < VENEZUELA.latMin || lat > VENEZUELA.latMax) return null;
     if (lng < VENEZUELA.lngMin || lng > VENEZUELA.lngMax) return null;
     if (investors === null || investors < 0 || !Number.isInteger(investors)) return null;
+    // The address PayPal will be asked to pay. Shape-checked here because a
+    // typo only shows up as an opaque refusal at checkout, far from the field
+    // that carried it.
+    if (!payeeEmail || !/^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/.test(payeeEmail)) return null;
 
     const risk = text(raw.risk)?.toUpperCase();
     if (!risk || !RISKS.includes(risk as Risk)) return null;
@@ -179,6 +221,9 @@ export function normaliseProjects(value: unknown): Project[] | null {
       city,
       what,
       collateral,
+      runwayDays,
+      deadline: isoPlusDays(today, runwayDays),
+      payeeEmail,
       goalUsd,
       raisedUsd,
       returnPct,
@@ -207,4 +252,27 @@ export function remainingUsd(project: Project): number {
 /** Derived from the money, so the two can never disagree. */
 export function statusOf(project: Project): ProjectStatus {
   return project.raisedUsd >= project.goalUsd ? "FUNDED" : "OPEN";
+}
+
+/** `from + days` as YYYY-MM-DD, on the calendar `readExpiry` compares against. */
+function isoPlusDays(from: Date, days: number): string {
+  const d = new Date(from.getFullYear(), from.getMonth(), from.getDate() + days);
+  const month = String(d.getMonth() + 1).padStart(2, "0");
+  const day = String(d.getDate()).padStart(2, "0");
+  return `${d.getFullYear()}-${month}-${day}`;
+}
+
+/**
+ * Days until a deadline: 0 is today, negative is a day already gone.
+ *
+ * Both sides are YYYY-MM-DD, so the arithmetic runs on calendar parts. A
+ * timestamp difference would count hours and report "1 day left" for a
+ * deadline that passed this morning, depending on when the page loaded.
+ */
+export function daysLeft(deadline: string, today: Date = new Date()): number {
+  const [year, month, day] = deadline.split("-").map(Number);
+  if (!year || !month || !day) return Number.NaN;
+  const target = Date.UTC(year, month - 1, day);
+  const now = Date.UTC(today.getFullYear(), today.getMonth(), today.getDate());
+  return Math.round((target - now) / 86_400_000);
 }

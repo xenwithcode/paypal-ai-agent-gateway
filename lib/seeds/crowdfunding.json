@@ -5,6 +5,7 @@
     "city": "Chacao, Miranda",
     "what": "To open a new butchery aisle",
     "collateral": "Store inventory",
+    "runwayDays": 30,
     "goalUsd": 50000,
     "raisedUsd": 42500,
     "returnPct": 14,
@@ -12,6 +13,7 @@
     "lat": 10.4945,
     "lng": -66.855,
     "investors": 1420,
+    "payeeEmail": "supermercado-express@example.com",
     "seed": true
   },
   {
@@ -20,6 +22,7 @@
     "city": "Yaracuy",
     "what": "To buy an industrial coffee roaster",
     "collateral": "Land and machinery",
+    "runwayDays": 45,
     "goalUsd": 30000,
     "raisedUsd": 12600,
     "returnPct": 20,
@@ -27,6 +30,7 @@
     "lat": 10.34,
     "lng": -68.79,
     "investors": 386,
+    "payeeEmail": "finca-el-saman@example.com",
     "seed": true
   },
   {
@@ -35,6 +39,7 @@
     "city": "Caracas",
     "what": "Working capital for medical supplies",
     "collateral": "Inventory and receivables",
+    "runwayDays": 10,
     "goalUsd": 20000,
     "raisedUsd": 20000,
     "returnPct": 16,
@@ -42,6 +47,7 @@
     "lat": 10.4806,
     "lng": -66.9036,
     "investors": 902,
+    "payeeEmail": "distribuidora-medica@example.com",
     "seed": true
   },
   {
@@ -50,6 +56,7 @@
     "city": "Lara",
     "what": "Drip irrigation and a processing plant",
     "collateral": "Land and irrigation plant",
+    "runwayDays": 60,
     "goalUsd": 45000,
     "raisedUsd": 5400,
     "returnPct": 24,
@@ -57,6 +64,7 @@
     "lat": 10.05,
     "lng": -69.35,
     "investors": 118,
+    "payeeEmail": "agropecuaria-el-cacao@example.com",
     "seed": true
   }
 ]

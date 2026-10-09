@@ -149,9 +149,12 @@ export default function Sidebar() {
           <NavLink
             item={{
               href: "/send/bank",
-              label: "Pago Móvil",
+              // Named for what it does, in words a judge outside Venezuela
+              // reads first; the local term stays in the page copy, where it
+              // gets explained once instead of being the whole label.
+              label: "Pay in bolívares",
               icon: Smartphone,
-              hint: "Preview a Pago Móvil payment at the official BCV rate",
+              hint: "Convert PYUSD to bolívares at the official BCV rate",
             }}
             active={isActive("/send/bank")}
           />

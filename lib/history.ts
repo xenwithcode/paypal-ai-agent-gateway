@@ -145,6 +145,16 @@ export type StoredRow = {
    * absent `candidates` reads as *no strip was recorded*, not as *none was
    * found*.
    */
+  /**
+   * The project this order funds, when it funds one.
+   *
+   * An investment *is* a purchase order — the product is a stake, the ceiling
+   * is the amount, the window is the campaign's closing date — so it needs no
+   * ledger of its own: it carries this id and everything else (persistence,
+   * capture, the console) already works. A row without it is an ordinary
+   * order, which is why the field is optional.
+   */
+  project?: string;
   candidates?: CandidateRecord[];
   /** Which candidate the agent would have taken. */
   matchedId?: number | null;
