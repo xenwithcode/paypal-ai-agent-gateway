@@ -5,10 +5,13 @@ import type { ManifestRow } from "@/lib/history";
 import {
   dividendOn,
   earnsDividend,
+  weightedReturnPct,
   type Dividend,
   type Project,
 } from "@/lib/crowdfunding";
 import { STATUS } from "@/lib/policy";
+import PortfolioDonut from "./PortfolioDonut";
+import FutureValue from "./FutureValue";
 
 /**
  * What *you* hold — the sub-section under the title, so the answer to "what do
@@ -67,26 +70,43 @@ export default function PortfolioCard({
   // `since` is when PayPal set the money aside, not when it settled: a
   // reservation is a commitment the campaign can still fail, and the note
   // under this card says exactly that.
-  const dividendOf = (row: ManifestRow): Dividend | null => {
+  const accrualOf = (
+    row: ManifestRow
+  ): { project: Project; amountUsd: number; dividend: Dividend } | null => {
     if (!earnsDividend(row)) return null;
     const project = row.project ? byId.get(row.project) : undefined;
     if (!project) return null;
-    return dividendOn({
+    return {
+      project,
       amountUsd: row.limit,
-      returnPct: project.returnPct,
-      since: row.createdAt ?? row.capturedAt ?? null,
-    });
+      dividend: dividendOn({
+        amountUsd: row.limit,
+        returnPct: project.returnPct,
+        since: row.createdAt ?? row.capturedAt ?? null,
+      }),
+    };
   };
 
-  const earning = rows
-    .map((row) => dividendOf(row))
-    .filter((dividend): dividend is Dividend => dividend !== null);
+  // One list, read by the rate, the total and the projection — three callers
+  // that would otherwise each decide for themselves what counts.
+  const accruals = rows
+    .map((row) => accrualOf(row))
+    .filter((entry): entry is NonNullable<typeof entry> => entry !== null);
+
   // The rate, and what the rate has produced so far: one number says what a
   // day is worth and the other says how many of them have passed. Either alone
   // is a figure a reader has to take on faith.
-  const perDay = earning.reduce((sum, dividend) => sum + dividend.perDay, 0);
-  const accrued = earning.reduce((sum, dividend) => sum + dividend.total, 0);
+  const perDay = accruals.reduce((sum, entry) => sum + entry.dividend.perDay, 0);
+  const accrued = accruals.reduce((sum, entry) => sum + entry.dividend.total, 0);
+  const portfolioPct = weightedReturnPct(
+    accruals.map((entry) => ({ amountUsd: entry.amountUsd, returnPct: entry.project.returnPct }))
+  );
   const projectsCount = new Set(rows.map((row) => row.project).filter(Boolean)).size;
+
+  // The two totals the drawings are pictures of: everything still on the
+  // table (paid + reserved) and everything that ever was (plus returned).
+  const committed = paid + reserved;
+  const placed = committed + returned;
 
   const stats = [
     {
@@ -110,7 +130,7 @@ export default function PortfolioCard({
       note:
         investments === null
           ? "per day, in dollars"
-          : earning.length
+          : accruals.length
             ? `per day · ${money(accrued, 4)} accrued so far`
             : "per day · nothing reserved or paid yet",
     },
@@ -161,68 +181,83 @@ export default function PortfolioCard({
         ))}
       </div>
 
+      {/* The ring answers "where is it?", the rows answer "which one?" — two
+          views of the same three totals, so they share one grid rather than
+          becoming two sections that could disagree about the money. */}
       {rows.length > 0 && (
-        <ul className="mt-4 divide-y divide-slate-100 rounded-xl border border-slate-100">
-          {rows
-            .slice()
-            .reverse()
-            .map((row) => {
-              const project = row.project ? byId.get(row.project) : undefined;
-              const isPaid = funded(row);
-              const wasReturned = returnedRow(row);
-              const dividend = dividendOf(row);
-              return (
-                <li key={row.id} className="flex flex-wrap items-center justify-between gap-3 px-4 py-2.5">
-                  <div className="min-w-0">
-                    <p className="truncate text-xs font-semibold text-slate-900">
-                      {project?.name ?? row.what}
-                    </p>
-                    <p className="truncate text-[11px] text-slate-400">
-                      {isPaid
-                        ? `Paid ${row.capturedAt ? new Date(row.capturedAt).toLocaleDateString("en-US") : ""} · earns ${project?.returnPct ?? 0}% a year`
-                        : wasReturned
-                          ? "Released — the hold was cancelled and nothing was taken"
-                          : project
-                            ? `Reserved until ${project.deadline} — captured if the goal is met, released if it is not`
-                            : row.status}
-                    </p>
-                  </div>
-                  <div className="flex shrink-0 items-center gap-2">
-                    {/* The odometer: what this position has accrued, and how
-                        many days it took. It changes when the day changes, so
-                        there is no timer here — a number that moves once a day
-                        does not need something redrawing it every second. */}
-                    <div className="text-right">
-                      <span className="font-mono text-sm font-semibold tabular-nums text-slate-900">
-                        {money(row.limit)}
-                      </span>
-                      {dividend && (
-                        <p
-                          title={`Accrued dividends over ${dividend.days} day${
-                            dividend.days === 1 ? "" : "s"
-                          } at ${project?.returnPct ?? 0}% a year`}
-                          className="font-mono text-[10px] tabular-nums text-emerald-600"
-                        >
-                          +{money(dividend.total, 4)} · {dividend.days}d
-                        </p>
-                      )}
-                    </div>
-                    <span
-                      className={`rounded-full border px-2 py-0.5 text-[10px] font-bold uppercase tracking-wide ${
-                        isPaid
-                          ? "border-emerald-300 bg-emerald-50 text-emerald-700"
+        <div
+          className={
+            placed > 0
+              ? "mt-4 grid grid-cols-1 gap-4 lg:grid-cols-[minmax(0,300px)_minmax(0,1fr)]"
+              : "mt-4"
+          }
+        >
+          {placed > 0 && <PortfolioDonut amounts={{ paid, reserved, returned }} />}
+          <ul className="divide-y divide-slate-100 rounded-xl border border-slate-100">
+            {rows
+              .slice()
+              .reverse()
+              .map((row) => {
+                const project = row.project ? byId.get(row.project) : undefined;
+                const isPaid = funded(row);
+                const wasReturned = returnedRow(row);
+                const dividend = accrualOf(row)?.dividend ?? null;
+                return (
+                  <li
+                    key={row.id}
+                    className="flex flex-wrap items-center justify-between gap-3 px-4 py-2.5"
+                  >
+                    <div className="min-w-0">
+                      <p className="truncate text-xs font-semibold text-slate-900">
+                        {project?.name ?? row.what}
+                      </p>
+                      <p className="truncate text-[11px] text-slate-400">
+                        {isPaid
+                          ? `Paid ${row.capturedAt ? new Date(row.capturedAt).toLocaleDateString("en-US") : ""} · earns ${project?.returnPct ?? 0}% a year`
                           : wasReturned
-                            ? "border-slate-300 bg-slate-100 text-slate-600"
-                            : "border-blue-200 bg-blue-50 text-blue-700"
-                      }`}
-                    >
-                      {isPaid ? "Paid" : wasReturned ? "Released" : "Reserved"}
-                    </span>
-                  </div>
-                </li>
-              );
-            })}
-        </ul>
+                            ? "Released — the hold was cancelled and nothing was taken"
+                            : project
+                              ? `Reserved until ${project.deadline} — captured if the goal is met, released if it is not`
+                              : row.status}
+                      </p>
+                    </div>
+                    <div className="flex shrink-0 items-center gap-2">
+                      {/* The odometer: what this position has accrued, and how
+                          many days it took. It changes when the day changes, so
+                          there is no timer here — a number that moves once a day
+                          does not need something redrawing it every second. */}
+                      <div className="text-right">
+                        <span className="font-mono text-sm font-semibold tabular-nums text-slate-900">
+                          {money(row.limit)}
+                        </span>
+                        {dividend && (
+                          <p
+                            title={`Accrued dividends over ${dividend.days} day${
+                              dividend.days === 1 ? "" : "s"
+                            } at ${project?.returnPct ?? 0}% a year`}
+                            className="font-mono text-[10px] tabular-nums text-emerald-600"
+                          >
+                            +{money(dividend.total, 4)} · {dividend.days}d
+                          </p>
+                        )}
+                      </div>
+                      <span
+                        className={`rounded-full border px-2 py-0.5 text-[10px] font-bold uppercase tracking-wide ${
+                          isPaid
+                            ? "border-emerald-300 bg-emerald-50 text-emerald-700"
+                            : wasReturned
+                              ? "border-slate-300 bg-slate-100 text-slate-600"
+                              : "border-blue-200 bg-blue-50 text-blue-700"
+                        }`}
+                      >
+                        {isPaid ? "Paid" : wasReturned ? "Released" : "Reserved"}
+                      </span>
+                    </div>
+                  </li>
+                );
+              })}
+          </ul>
+        </div>
       )}
 
       {rows.length > 0 && (
@@ -233,6 +268,11 @@ export default function PortfolioCard({
           nothing.
         </p>
       )}
+
+      {/* Renders itself only when there is a rate and something committed to
+          project it from — an absent simulator is the honest answer, not an
+          empty chart. */}
+      <FutureValue committed={committed} returnPct={portfolioPct} />
 
       {rows.length === 0 && investments !== null && (
         <p className="mt-4 text-xs leading-relaxed text-slate-500">

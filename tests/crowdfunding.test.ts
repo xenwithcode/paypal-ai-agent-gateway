@@ -21,13 +21,16 @@ import {
   earnsDividend,
   judgeInvestment,
   MAX_INVESTMENT_USD,
+  MAX_PROJECTION_MONTHS,
   MAX_PROJECTS,
   MIN_INVESTMENT_USD,
   normaliseProjects,
   progressPct,
+  projectionSeries,
   remainingUsd,
   settlementRefusal,
   statusOf,
+  weightedReturnPct,
   type Project,
 } from "../lib/crowdfunding.ts";
 
@@ -315,6 +318,80 @@ test("only money PayPal is holding earns", () => {
   assert.equal(earnsDividend({ status: "Awaiting approval" }), false, "nothing set aside yet");
   assert.equal(earnsDividend({ status: "Active" }), false, "a standing allowance reserves nothing");
   assert.equal(earnsDividend({ status: "Protecting" }), false, "the FX shield, not a position");
+});
+
+test("a projection draws the deposits beside the growth", () => {
+  const series = projectionSeries({
+    initialUsd: 100,
+    monthlyUsd: 20,
+    returnPct: 12,
+    months: 12,
+  });
+
+  assert.equal(series.length, 13, "month 0 through month 12");
+  assert.equal(series[0].month, 0);
+  assert.equal(series[0].contributed, 100);
+  assert.equal(series[0].value, 100, "today has earned nothing yet");
+
+  // The deposits are arithmetic a reader can check by hand: 100 + 20 x 12.
+  assert.equal(series[12].contributed, 340);
+
+  // The growth is on top of them, at 1% a month — and the pair is the point:
+  // nothing on this chart may claim money that was never put in.
+  assert.ok(series[12].value > series[12].contributed);
+  assert.ok(
+    Math.abs(series[12].value - 366.33) < 0.01,
+    `expected ≈366.33, got ${series[12].value}`
+  );
+  for (const point of series) {
+    assert.ok(point.value >= point.contributed - 1e-9, `month ${point.month} dipped below its own deposits`);
+  }
+});
+
+test("without a rate a projection is only the deposits", () => {
+  // The lie this prevents: a plausible-looking curve drawn from a rate
+  // nobody stated. No rate means no growth, exactly as much as is put in.
+  for (const returnPct of [0, Number.NaN, -5]) {
+    const series = projectionSeries({ initialUsd: 100, monthlyUsd: 20, returnPct, months: 6 });
+    assert.equal(series.length, 7);
+    for (const point of series) {
+      assert.equal(point.value, point.contributed);
+      assert.equal(point.contributed, 100 + 20 * point.month);
+    }
+  }
+});
+
+test("a projection refuses a horizon it cannot stand behind", () => {
+  const plan = { initialUsd: 100, monthlyUsd: 20, returnPct: 12, months: 12 };
+  assert.deepEqual(projectionSeries({ ...plan, months: -1 }), [], "negative time is not a plan");
+  assert.deepEqual(projectionSeries({ ...plan, months: 2.5 }), [], "half a month is not a point");
+  assert.deepEqual(
+    projectionSeries({ ...plan, months: MAX_PROJECTION_MONTHS + 1 }),
+    [],
+    "refused, never silently halved"
+  );
+  assert.equal(projectionSeries({ ...plan, months: 0 }).length, 1, "today, and nothing more");
+});
+
+test("the portfolio's rate is weighted by money, not by opinion", () => {
+  // A $20 stake at 24% may not drag a $300 stake at 20% into a figure that
+  // describes neither: (100x10 + 300x20) / 400 = 17.5.
+  assert.equal(weightedReturnPct([
+    { amountUsd: 100, returnPct: 10 },
+    { amountUsd: 300, returnPct: 20 },
+  ]), 17.5);
+
+  assert.equal(weightedReturnPct([]), 0, "nothing earning, no rate to quote");
+  assert.equal(weightedReturnPct([{ amountUsd: 0, returnPct: 20 }]), 0, "no money, no weight");
+  assert.equal(weightedReturnPct([{ amountUsd: 100, returnPct: 0 }]), 0, "no rate, no growth");
+  assert.equal(
+    weightedReturnPct([
+      { amountUsd: Number.NaN, returnPct: 20 },
+      { amountUsd: 100, returnPct: 20 },
+    ]),
+    20,
+    "a row nobody can read is skipped, not averaged in"
+  );
 });
 
 test("the promise on the card is one rule, and it has three answers", () => {

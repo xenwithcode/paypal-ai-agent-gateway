@@ -557,3 +557,101 @@ function daysSince(since: string | null | undefined, today: Date): number {
   const days = -daysLeft(isoOf(started), today);
   return days > 0 ? days : 0;
 }
+
+// ─── Where this could go ───────────────────────────────────────────────────
+
+/** How far a projection is drawn, and what each point says. */
+export type ProjectionPoint = {
+  /** Months from the start — 0 is today, before anything is added. */
+  month: number;
+  /** Everything put in by then: by construction, the floor of the chart. */
+  contributed: number;
+  /** What that is worth at the offered rate, compounded monthly. */
+  value: number;
+};
+
+/**
+ * The future the product offers, drawn as a line.
+ *
+ * `(1 + returnPct/100/12)` a month on what is there, plus whatever is added
+ * that month — the simulator G5 asks for, and the one number in this product
+ * that can lie without anybody noticing, which is why it is a function with
+ * tests rather than arithmetic inside a chart component.
+ *
+ * Two series come out of it, and the pair is the honesty: `contributed` is
+ * money the reader actually put in, `value` is what the campaign's offered
+ * rate would do to it. A single projected line with nothing under it is how a
+ * savings pitch hides that most of the growth is the deposits.
+ *
+ * Rules it refuses to bend:
+ *
+ *   - **No rate, no growth.** A missing or nonsense `returnPct` draws the
+ *     deposits alone. Interest is never inferred from anything.
+ *   - **A month that adds nothing still counts.** The line continues, so a
+ *     pause in saving looks like a pause and not like a loss.
+ *   - **Bounded.** Beyond `MAX_PROJECTION_MONTHS` this stops being a
+ *     projection and starts being a promise about a decade; the series is
+ *     refused rather than clamped, because a chart that silently shows half
+ *     of what it was asked for is a chart nobody can argue with.
+ *
+ * The rate offered by a campaign is what the *project* offers and nobody has
+ * been paid — the card says so next to it, and this function does not get to
+ * decide how confident to sound.
+ */
+export const MAX_PROJECTION_MONTHS = 60;
+
+export function projectionSeries(plan: {
+  /** What is already committed to campaigns. */
+  initialUsd: number;
+  /** What the reader would add each month. */
+  monthlyUsd: number;
+  /** Annual percent, as the campaign states it. */
+  returnPct: number;
+  months: number;
+}): ProjectionPoint[] {
+  const months = plan.months;
+  if (!Number.isInteger(months) || months < 0 || months > MAX_PROJECTION_MONTHS) return [];
+
+  const initial = Number.isFinite(plan.initialUsd) && plan.initialUsd > 0 ? plan.initialUsd : 0;
+  const monthly = Number.isFinite(plan.monthlyUsd) && plan.monthlyUsd > 0 ? plan.monthlyUsd : 0;
+  const rate =
+    Number.isFinite(plan.returnPct) && plan.returnPct > 0 ? plan.returnPct / 100 / 12 : 0;
+
+  const series: ProjectionPoint[] = [];
+  let contributed = initial;
+  let value = initial;
+  series.push({ month: 0, contributed, value });
+
+  for (let month = 1; month <= months; month += 1) {
+    // Interest first, then the deposit: money added at the end of a month does
+    // not earn that month's interest, and the other order quietly pays a
+    // month it never had.
+    value = value * (1 + rate) + monthly;
+    contributed += monthly;
+    series.push({ month, contributed, value });
+  }
+
+  return series;
+}
+
+/**
+ * What one position's annual percent is across the whole portfolio.
+ *
+ * Weighted by money, because the alternative — averaging the percentages —
+ * lets a $20 stake at 24% drag a $1.000 stake at 14% into a figure that
+ * describes nothing. Refuses to guess: with nothing earning, there is no rate
+ * to quote, and zero says "nothing" better than a plausible number does.
+ */
+export function weightedReturnPct(
+  positions: readonly { amountUsd: number; returnPct: number }[]
+): number {
+  let invested = 0;
+  let weighted = 0;
+  for (const position of positions) {
+    if (!Number.isFinite(position.amountUsd) || position.amountUsd <= 0) continue;
+    if (!Number.isFinite(position.returnPct) || position.returnPct <= 0) continue;
+    invested += position.amountUsd;
+    weighted += position.amountUsd * position.returnPct;
+  }
+  return invested > 0 ? weighted / invested : 0;
+}
