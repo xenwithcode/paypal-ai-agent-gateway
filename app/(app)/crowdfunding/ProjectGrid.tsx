@@ -161,8 +161,14 @@ export default function ProjectGrid({
         getRowId={(params) => params.data.id}
         // One row at a time: this is a choice, not a batch operation, and the
         // selection styling the theme already draws is the only highlight this
-        // screen needs.
-        rowSelection="single"
+        // screen needs. The object form is not style — AG Grid deprecated the
+        // bare string at v32.2.1 and prints a warning on every load, and a
+        // console that warns on every load is one nobody reads.
+        //
+        // `enableClickSelection` has to be said out loud with the object form:
+        // without it a plain click moves the cursor and not the selection, the
+        // panel never opens, and nothing on screen says why.
+        rowSelection={{ mode: "singleRow", enableClickSelection: true }}
         onSelectionChanged={(event) => {
           const [row] = event.api.getSelectedRows();
           if (row) onSelected(row);
