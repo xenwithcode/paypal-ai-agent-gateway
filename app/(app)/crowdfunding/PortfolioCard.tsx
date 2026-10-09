@@ -35,9 +35,15 @@ export default function PortfolioCard({
   const byId = new Map(projects.map((project) => [project.id, project]));
   const funded = (row: ManifestRow) => row.status === STATUS.captured;
   const reservedRow = (row: ManifestRow) => row.status === STATUS.reserved;
+  // The third outcome, which this card did not know about: a hold the payer
+  // cancelled. It fell into the default branch and was printed as *Reserved*
+  // while Overview and Money in Flight both said Released — one record read
+  // two ways on two screens, which is the bug this line fixes.
+  const returnedRow = (row: ManifestRow) => row.status === STATUS.released;
 
   const paid = rows.filter(funded).reduce((sum, row) => sum + row.limit, 0);
   const reserved = rows.filter(reservedRow).reduce((sum, row) => sum + row.limit, 0);
+  const returned = rows.filter(returnedRow).reduce((sum, row) => sum + row.limit, 0);
   // What the earned part produces per day, from the project's own offer —
   // shown only for money that actually moved, because reserved funds earn
   // nothing yet.
@@ -66,6 +72,11 @@ export default function PortfolioCard({
       note: "per day, in dollars",
     },
     {
+      label: "Returned",
+      value: investments === null ? "—" : money(returned),
+      note: "released back to you",
+    },
+    {
       label: "Projects",
       value: investments === null ? "—" : String(projectsCount),
       note: "you are behind",
@@ -90,7 +101,7 @@ export default function PortfolioCard({
         </span>
       </div>
 
-      <div className="mt-4 grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
+      <div className="mt-4 grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-5">
         {stats.map((stat) => (
           <div key={stat.label} className="rounded-xl border border-slate-100 bg-slate-50 px-4 py-3">
             <p className="text-[11px] font-medium uppercase tracking-wide text-slate-400">
@@ -112,6 +123,7 @@ export default function PortfolioCard({
             .map((row) => {
               const project = row.project ? byId.get(row.project) : undefined;
               const isPaid = funded(row);
+              const wasReturned = returnedRow(row);
               return (
                 <li key={row.id} className="flex flex-wrap items-center justify-between gap-3 px-4 py-2.5">
                   <div className="min-w-0">
@@ -121,9 +133,11 @@ export default function PortfolioCard({
                     <p className="truncate text-[11px] text-slate-400">
                       {isPaid
                         ? `Paid ${row.capturedAt ? new Date(row.capturedAt).toLocaleDateString("en-US") : ""} · earns ${project?.returnPct ?? 0}% a year`
-                        : project
-                          ? `Reserved until ${project.deadline} — captured if the goal is met, released if it is not`
-                          : "Reserved"}
+                        : wasReturned
+                          ? "Released — the hold was cancelled and nothing was taken"
+                          : project
+                            ? `Reserved until ${project.deadline} — captured if the goal is met, released if it is not`
+                            : row.status}
                     </p>
                   </div>
                   <div className="flex shrink-0 items-center gap-2">
@@ -134,10 +148,12 @@ export default function PortfolioCard({
                       className={`rounded-full border px-2 py-0.5 text-[10px] font-bold uppercase tracking-wide ${
                         isPaid
                           ? "border-emerald-300 bg-emerald-50 text-emerald-700"
-                          : "border-blue-200 bg-blue-50 text-blue-700"
+                          : wasReturned
+                            ? "border-slate-300 bg-slate-100 text-slate-600"
+                            : "border-blue-200 bg-blue-50 text-blue-700"
                       }`}
                     >
-                      {isPaid ? "Paid" : "Reserved"}
+                      {isPaid ? "Paid" : wasReturned ? "Released" : "Reserved"}
                     </span>
                   </div>
                 </li>
