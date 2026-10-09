@@ -164,6 +164,20 @@ export default function CrowdfundingView({
     };
   }, []);
 
+  // `?sample=1` shows the seeded showcase even when this browser holds real
+  // positions.
+  //
+  // Why it is a URL and not a switch: forcing a demonstration *over* somebody's
+  // own money has to be visible in the address bar, or a screen that says
+  // "nobody funded these" could be showing a position that somebody funded.
+  // It is a view, never a write — the store is untouched either way.
+  const sampleOnly = useRef(false);
+
+  useEffect(() => {
+    sampleOnly.current = new URLSearchParams(window.location.search).get("sample") === "1";
+    if (sampleOnly.current) setInvestments(sampleInvestments());
+  }, []);
+
   // The portfolio reads the same store Overview writes, after it has been
   // asked for — the rule every stored view here follows.
   //
@@ -173,7 +187,7 @@ export default function CrowdfundingView({
   // moment a real pledge exists, the totals are the operator's alone.
   const refreshInvestments = useCallback(() => {
     const live = readPolicyRows().filter((row) => Boolean(row.project));
-    setInvestments(live.length > 0 ? live : sampleInvestments());
+    setInvestments(sampleOnly.current || live.length === 0 ? sampleInvestments() : live);
   }, []);
 
   useEffect(() => {
