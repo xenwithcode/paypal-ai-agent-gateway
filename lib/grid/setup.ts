@@ -65,6 +65,18 @@ const GRID_KEY = (process.env.NEXT_PUBLIC_AG_GRID_LICENSE_KEY ?? "").trim();
  */
 const LICENCE = readLicence(GRID_KEY);
 
+/**
+ * Whether this grid is running Enterprise modules.
+ *
+ * The gate every licence-only feature checks before it renders — a judge who
+ * cloned the repo without a key gets the product minus that feature, cleanly,
+ * with no banner and no half-drawn grid. Master/detail (E3/G2) is the first
+ * thing behind it; the rule for the next ones is the same: render only when
+ * this is true, and say nothing when it is false, because the fallback *is*
+ * the product for most people who will ever run it.
+ */
+export const ENTERPRISE_GRID = LICENCE.coversGrid;
+
 if (LICENCE.coversGrid) {
   ModuleRegistry.registerModules([AllEnterpriseModule]);
   LicenseManager.setLicenseKey(GRID_KEY);

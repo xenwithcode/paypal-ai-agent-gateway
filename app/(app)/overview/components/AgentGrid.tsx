@@ -16,7 +16,8 @@ import type { ColDef } from "ag-grid-community";
 // `lib/grid/setup.ts`, because Activity renders a grid too and neither
 // component imports the other — two call sites each registering their own
 // modules is how one table silently loses features one day.
-import { gridTheme } from "@/lib/grid/setup";
+import { ENTERPRISE_GRID, gridTheme } from "@/lib/grid/setup";
+import { auditDetailParams } from "./AuditDetail";
 
 // Child visual components
 import ActionBtnRenderer from "./ActionBtnRenderer";
@@ -1500,29 +1501,46 @@ export default function AgentGrid({
         <div className="mb-3">
           <h2 className="text-base font-semibold text-slate-900">Purchase orders</h2>
           <p className="mt-0.5 text-xs text-slate-500">
-            Awaiting approval, reserved, settled or refused. Select a row to open it.
+            Awaiting approval, reserved, settled or refused. Select a row to open it
+            {ENTERPRISE_GRID ? ", and press ▶ to read its whole trail — what was promised, what the search proposed, and what PayPal did." : "."}
           </p>
         </div>
         {/* Grows with the viewport: 200px showed four rows and crowded every
             column. Three steps, so a phone still gets a usable table. */}
         <div className="ag-theme-quartz h-[360px] w-full sm:h-[460px] lg:h-[560px]">
-          <AgGridReact
+          {/* One `gridOptions`, master/detail folded into it.
+              AG Grid is explicit about this (error #307): options passed as
+              individual props are read, but it cannot tell application data
+              from grid configuration, so it warns on every load. Building one
+              object — spread when Enterprise is on, plain when it is not — is
+              the same shape either way, and the Community fallback stays
+              byte-for-byte what it was. */}
+          <AgGridReact<PolicyRow>
             ref={gridRef}
-            rowData={rowData}
-            columnDefs={columnDefs}
-            theme={gridTheme}
-            animateRows={true}
-            context={{ onHoldAction: handleHoldAction }}
-            rowHeight={52}
-            headerHeight={44}
-            onCellClicked={(event) => {
-              // Editable cells keep their own behaviour: a click there is the
-              // first half of "double-click to edit", and opening a dialog on
-              // it would swallow the second click. The read-only cells — the
-              // product and its price — are the ones that mean "look closer".
-              if (event.colDef.editable) return;
-              const id = (event.data as PolicyRow | undefined)?.id;
-              if (typeof id === "number") setSelectedId(id);
+            // Master/detail as props, the way the React wrapper documents it.
+            // Everything else lives in `gridOptions`, because AG Grid is
+            // explicit about options passed as individual props (error #307):
+            // it cannot tell application data from configuration, so it warns
+            // on every load. These two are the documented exception.
+            masterDetail={ENTERPRISE_GRID}
+            detailCellRendererParams={ENTERPRISE_GRID ? auditDetailParams : undefined}
+            gridOptions={{
+              rowData,
+              columnDefs,
+              theme: gridTheme,
+              animateRows: true,
+              context: { onHoldAction: handleHoldAction },
+              rowHeight: 52,
+              headerHeight: 44,
+              onCellClicked: (event) => {
+                // Editable cells keep their own behaviour: a click there is the
+                // first half of "double-click to edit", and opening a dialog on
+                // it would swallow the second click. The read-only cells — the
+                // product and its price — are the ones that mean "look closer".
+                if (event.colDef.editable) return;
+                const id = (event.data as PolicyRow | undefined)?.id;
+                if (typeof id === "number") setSelectedId(id);
+              },
             }}
           />
         </div>

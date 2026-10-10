@@ -5,6 +5,7 @@ import { useState } from "react";
 import Image from "next/image";
 import { ImageOff } from "lucide-react";
 import type { CustomCellRendererProps } from "ag-grid-react";
+import { ENTERPRISE_GRID } from "@/lib/grid/setup";
 
 type RowData = {
   marketImage?: string | null;
@@ -39,6 +40,31 @@ export default function WhatCellRenderer(params: CustomCellRendererProps) {
   const [failed, setFailed] = useState(false);
   const showImage = Boolean(image) && !failed;
 
+  /**
+   * The expander for the row's audit trail.
+   *
+   * Drawn here rather than left to AG Grid because v36 does not paint its own
+   * toggle for this grid — measured, twice, including a bare two-row page with
+   * no theme and no custom renderer: the rows come back marked expandable
+   * (`aria-expanded="false"`) and no button appears. Expanding by hand works,
+   * so all that was missing was the affordance, and this one is ours: it can
+   * say what it opens, and it hides itself when there is no licence to open it
+   * with — which is the state most people who clone this repo will be in.
+   */
+  const node = params.node;
+  const [expanded, setExpanded] = useState(node?.expanded === true);
+
+  const toggleTrail = (event: React.MouseEvent) => {
+    // The cell click also opens the order panel; expanding is not "look closer
+    // at the order", it is "open the record underneath it", and doing both
+    // from one click would be a surprise.
+    event.stopPropagation();
+    if (!node) return;
+    const next = !node.expanded;
+    node.setExpanded(next);
+    setExpanded(next);
+  };
+
   const destination = [payee, endpoint].filter(Boolean).join(" · ");
   const title = destination
     ? [payee && `This order may only pay ${payee}.`, endpoint && `This order may only reach ${endpoint}.`]
@@ -48,6 +74,27 @@ export default function WhatCellRenderer(params: CustomCellRendererProps) {
 
   return (
     <span className="flex h-full items-center gap-2.5">
+      {ENTERPRISE_GRID && (
+        <button
+          type="button"
+          onClick={toggleTrail}
+          aria-expanded={expanded}
+          aria-label={expanded ? "Hide this order's trail" : "Read this order's trail"}
+          title={
+            expanded
+              ? "Hide the trail"
+              : "Read the trail: what was promised, what the search proposed, and what PayPal did"
+          }
+          className="flex h-6 w-6 shrink-0 items-center justify-center rounded-md border border-slate-200 bg-white text-slate-500 transition hover:border-slate-300 hover:text-slate-800 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500"
+        >
+          <span
+            aria-hidden="true"
+            className={`text-[9px] leading-none transition-transform ${expanded ? "rotate-90" : ""}`}
+          >
+            ▶
+          </span>
+        </button>
+      )}
       {showImage ? (
         <Image
           src={image as string}
