@@ -26,6 +26,7 @@ import OrderPanel from "./OrderPanel";
 import CandidatePicker from "./CandidatePicker";
 // The one chart on this page, and the only figure a balance cannot show.
 import MoneyInFlight from "./MoneyInFlight";
+import BalanceComposition from "./BalanceComposition";
 // The microphone CTA. It lives with the shared components because it knows
 // nothing about this page's table — the dashboard tells it what to run.
 import VoiceCommand from "../../components/VoiceCommand";
@@ -151,9 +152,12 @@ const SEED_ROWS: PolicyRow[] = [
 
 export default function AgentGrid({
   balance,
+  balances,
   paypalClientId,
 }: {
   balance: Balance;
+  /** Every currency the account holds — read server-side, for the ring. */
+  balances: readonly { currency: string; value: number }[];
   paypalClientId: string;
 }) {
   const gridRef = useRef<AgGridReact<PolicyRow>>(null);
@@ -1549,6 +1553,11 @@ export default function AgentGrid({
           underneath explained them. Rows first, then what they add up to, then
           what happened: evidence, aggregate, narration. */}
       <MoneyInFlight rows={rowData} />
+
+      {/* What the commitments above are taken *from*. The two charts are one
+          question asked twice — how much is spoken for, and how much is left —
+          so they sit together rather than one per screen. */}
+      <BalanceComposition entries={balances} rows={rowData} />
 
       {/* The console as a shared component: Recurring reads the record this
           one writes, so there is one place the tone rules and the empty

@@ -322,6 +322,48 @@ function entryAmount(entry: Record<string, unknown>): string | null {
 }
 
 /**
+ * Every currency the account holds — not just the one the headline picks.
+ *
+ * The ring on Overview answers *"lo que tienes"*, per currency, and this product
+ * refuses to add currencies together — so the figure it needs is a list, not a
+ * number. Same contract as `getBalance`: never throws, and an empty list means
+ * *nothing could be read*, which the screen has to be able to tell apart from
+ * *the account holds nothing*.
+ */
+export type BalanceEntry = {
+  currency: string;
+  /** A number, not a formatted string: the ring does arithmetic with it. */
+  value: number;
+  /** PayPal's own "this is the account's main currency" flag. */
+  primary: boolean;
+};
+
+export async function getAllBalances(): Promise<BalanceEntry[]> {
+  if (!hasRealPaypalCredentials()) return [];
+
+  try {
+    const controller = new TransactionSearchController(paypalClient);
+    const { result } = await controller.searchBalances({});
+    const raw = (result.balances ?? []) as unknown as Array<Record<string, unknown>>;
+
+    const entries: BalanceEntry[] = [];
+    for (const entry of raw) {
+      const currency = typeof entry.currency === "string" ? entry.currency.toUpperCase() : "";
+      const value = entryAmount(entry);
+      if (!currency || value === null) continue;
+
+      const numeric = Number(value);
+      if (!Number.isFinite(numeric)) continue;
+      entries.push({ currency, value: numeric, primary: entry.primary === true });
+    }
+    return entries;
+  } catch (error) {
+    warnOnce(`getAllBalances() failed (${describePaypalError(error)}).`);
+    return [];
+  }
+}
+
+/**
  * Choose the balance to report: PYUSD if the account holds any, else its
  * primary currency. Returns the currency with the figure because labelling
  * a USD balance as PYUSD is the kind of error this project keeps removing.
