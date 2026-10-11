@@ -7,7 +7,7 @@
 // NOTE 2: `enforceOpenShellKernelPolicy()` is currently a pure in-process
 // simulation of OpenShell's network interception. Real kernel-level
 // enforcement requires running the agent inside an OpenShell sandbox — see
-// Fase 2 in TRABAJO-PROXIMA-SESION.md. Do not present this as
+// Phase 2 in the README roadmap. Do not present this as
 // production enforcement until that integration lands.
 
 interface FlightStatusNotification {

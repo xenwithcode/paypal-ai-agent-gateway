@@ -87,7 +87,6 @@ Two supporting mechanisms differentiate it further:
 - `tailwind.config.ts` — the palette, in one place, as AG Grid Studio's published tokens.
 - `README.md` — English project description including an explicit "what is real and what is simulated" section.
 - `ucp-manifest.json` — one example commerce manifest.
-- `TRABAJO-PROXIMA-SESION.md` — session log, backlog, and phase-2 notes.
 - Working Next.js app: dashboard, AG Grid policy table, event console, FX/Pago Móvil panel, `/api/agent`.
 
 **Absent — future work must not fabricate these**

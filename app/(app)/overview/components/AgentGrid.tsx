@@ -27,10 +27,14 @@ import OrderPanel from "./OrderPanel";
 import CandidatePicker from "./CandidatePicker";
 // The one chart on this page, and the only figure a balance cannot show.
 import MoneyInFlight from "./MoneyInFlight";
-import BalanceComposition from "./BalanceComposition";
+// The card that answers the question the whole page is opened to ask: how
+// much can I actually spend. It reads both ledgers — the balance this table
+// moves and the campaigns its rows fund — so it sits above the table.
+import PositionCard from "./PositionCard";
 // The microphone CTA. It lives with the shared components because it knows
 // nothing about this page's table — the dashboard tells it what to run.
 import VoiceCommand from "../../components/VoiceCommand";
+import { usePaypalBalances } from "../../hooks/usePaypalBalances";
 import type { VoiceToolCall } from "@/lib/voice/tools";
 
 // Shared status/mode strings (also produced by the API routes on the server),
@@ -154,11 +158,14 @@ const SEED_ROWS: PolicyRow[] = [
 export default function AgentGrid({
   balance,
   balances,
+  campaigns,
   paypalClientId,
 }: {
   balance: Balance;
-  /** Every currency the account holds — read server-side, for the ring. */
+  /** Every currency the account holds — read server-side, for the position card. */
   balances: readonly { currency: string; value: number }[];
+  /** `id → offered rate`, so a pledge can say what it accrues. */
+  campaigns: readonly { id: string; returnPct: number }[];
   paypalClientId: string;
 }) {
   const gridRef = useRef<AgGridReact<PolicyRow>>(null);
@@ -245,6 +252,11 @@ export default function AgentGrid({
    * all: it looks like the capture did nothing.
    */
   const { balance: liveBalance, refresh: refreshBalance } = usePaypalBalance(balance);
+  // The same figure for every currency, for the same reason and for the same
+  // moments: the position card leads with what is free, and a capture moves
+  // it. A card that does not move when money does looks like the capture did
+  // nothing — which is the exact failure the headline above used to have.
+  const { entries: liveBalances, refresh: refreshBalances } = usePaypalBalances(balances);
 
   /**
    * Re-read it, and say so — but only when it changed.
@@ -259,10 +271,14 @@ export default function AgentGrid({
       // per change rather than once per attempt — and both dependencies are
       // stable, which is what lets it sit in another effect's list without
       // restarting that effect every time the number changed.
-      const moved = await refreshBalance();
+      //
+      // The per-currency list is re-read alongside it, and deliberately does
+      // not log: it is the same event, and the position card is the surface
+      // that shows it.
+      const [moved] = await Promise.all([refreshBalance(), refreshBalances()]);
       if (moved) addLog(`💰 Account Balance ${moved.value} ${moved.currency} — ${cause}`);
     },
-    [refreshBalance, addLog]
+    [refreshBalance, refreshBalances, addLog]
   );
 
 
@@ -1477,6 +1493,13 @@ export default function AgentGrid({
         )}
       </div>
 
+      {/* The question the page is opened to ask, before the table that
+          answers it. It reads the same rows the grid does, so the money it
+          reports and the rows that moved it cannot disagree — and it sits
+          above the table because a reader looking for a figure should not
+          have to scroll past 560 pixels of orders to find it. */}
+      <PositionCard entries={liveBalances} rows={rowData} campaigns={campaigns} />
+
       {/* What the search found. It sits between the intent bar and the table
           on purpose: this is the decision the agent used to make in silence,
           so it is shown where the request was made, before any order exists
@@ -1571,11 +1594,6 @@ export default function AgentGrid({
           underneath explained them. Rows first, then what they add up to, then
           what happened: evidence, aggregate, narration. */}
       <MoneyInFlight rows={rowData} />
-
-      {/* What the commitments above are taken *from*. The two charts are one
-          question asked twice — how much is spoken for, and how much is left —
-          so they sit together rather than one per screen. */}
-      <BalanceComposition entries={balances} rows={rowData} />
 
       {/* The console as a shared component: Recurring reads the record this
           one writes, so there is one place the tone rules and the empty

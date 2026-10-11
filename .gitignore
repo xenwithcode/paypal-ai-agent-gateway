@@ -31,3 +31,8 @@ yarn-error.log*
 # guardada en el repo sería leída por todo el que hiciera un clone.
 # El directorio se crea solo al primer PUT.
 data/
+
+# Notas de trabajo — el flujo personal del mantenedor, no el material del
+# proyecto. Vive solo en su disco: no aporta nada a quien clona el repo y
+# sí expone el plan de juego.
+TRABAJO-PROXIMA-SESION.md

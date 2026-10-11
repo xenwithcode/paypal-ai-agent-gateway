@@ -297,7 +297,7 @@ paypal-ai-agent/
 ├── data/                           # runtime only, gitignored — the durable copy on disk
 ├── tests/                          # 177 tests on node:test — transitions, conditions, ceiling bands, window, judgements, ledger, store, rate limit, grid columns, totals, offers, the spoken tool contract, which licence belongs to which manager
 ├── public/architecture/            # Archify diagram + spec, served at /architecture
-├── PRODUCT.md  TRABAJO-PROXIMA-SESION.md
+├── PRODUCT.md
 ├── env.example  LICENSE
 ```
 
@@ -349,7 +349,7 @@ paypal-ai-agent/
 
 ### Phase 2
 
-Tracked in [`TRABAJO-PROXIMA-SESION.md`](./TRABAJO-PROXIMA-SESION.md).
+Tracked in the maintainer's private session log, and summarised below.
 
 - **Cryptographic consent** — produce an AP2-style signature over the approved policy instead of a UI click.
 - **Real NVIDIA OpenShell integration** — run the agent in a sandbox, declare the approved endpoints as a network policy, inject credentials only for those.
