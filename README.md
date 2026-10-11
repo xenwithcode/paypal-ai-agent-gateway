@@ -295,9 +295,8 @@ paypal-ai-agent/
 │   ├── fx/{rates,providers}.ts     # conversion math + live feeds
 │   └── shields/                    # InflationShield, PagoMovilEngine
 ├── data/                           # runtime only, gitignored — the durable copy on disk
-├── tests/                          # 177 tests on node:test — transitions, conditions, ceiling bands, window, judgements, ledger, store, rate limit, grid columns, totals, offers, the spoken tool contract, which licence belongs to which manager
+├── tests/                          # 296 tests on node:test — transitions, conditions, ceiling bands, window, judgements, ledger, store, rate limit, grid columns, totals, offers, the spoken tool contract, which licence belongs to which manager, the position card's two ledgers
 ├── public/architecture/            # Archify diagram + spec, served at /architecture
-├── PRODUCT.md
 ├── env.example  LICENSE
 ```
 

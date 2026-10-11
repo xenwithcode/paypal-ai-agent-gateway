@@ -376,7 +376,7 @@ npm run dev                    # http://localhost:3000`}
 
       <p className="text-xs leading-relaxed text-slate-400">
         Written by{" "}
-        <span className="font-medium text-slate-500">xenwithcode</span> ·{" "}
+        <span className="font-medium text-slate-500">Xavier Nuñez (xensite)</span> ·{" "}
         <a
           href="https://github.com/xenwithcode/paypal-ai-agent-gateway"
           className="font-medium text-slate-500 underline-offset-2 hover:underline"
