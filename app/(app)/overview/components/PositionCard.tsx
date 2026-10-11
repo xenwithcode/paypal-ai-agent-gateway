@@ -172,6 +172,18 @@ function InvestedBlock({
             </span>
           </span>
         )}
+        {/* The figure the portfolio card leads with, and the one this block
+            used to leave out: what was ever put in. A reader whose money came
+            back sees "on the table $0.00" and, without this line, reads it as
+            "I never invested" — which is true of the states and false of the
+            history. */}
+        {invested.placed > 0 && (
+          <span className="text-slate-500">
+            Put in so far{" "}
+            <span className="font-semibold text-slate-700">{money(invested.placed)}</span> across{" "}
+            {invested.count} campaign{invested.count === 1 ? "" : "s"}
+          </span>
+        )}
         <Link
           href="/crowdfunding"
           className="font-semibold text-blue-700 underline-offset-2 hover:underline"
@@ -254,12 +266,14 @@ export default function PositionCard({
             How much can you actually spend?
           </h2>
           <p className="mt-0.5 max-w-[74ch] text-xs leading-relaxed text-slate-500">
-            Two ledgers, one screen. What PayPal holds is split into what is free and what your
-            orders have set aside; what sits in campaigns is below the line —{" "}
+            Two ledgers and one promise: what PayPal holds, split into what is free and what your
+            orders have set aside; what sits in campaigns, below the line; and what will be
+            charged on its own.{" "}
             <span className="font-medium text-slate-600">
-              and the two are never added together
+              The two ledgers are never added together
             </span>
-            , because a pledge is still inside the balance it came from.
+            , because a pledge is still inside the balance it came from — and the promise holds
+            nothing at all.
           </p>
         </div>
         {position.invested?.allSample && (
@@ -362,6 +376,42 @@ export default function PositionCard({
           ({money(position.awaiting.amount)}). Nothing is held until you approve — and what you
           approve is settled only when its condition holds.
         </p>
+      )}
+
+      {/* The third ledger: what runs on its own. Neither set aside nor gone —
+          which is why it has its own block and its own sentence rather than a
+          fourth colour on the bars above. */}
+      {position.standing.length > 0 && (
+        <div className="mt-3 rounded-xl border border-slate-100 bg-slate-50 p-4">
+          <div className="flex flex-wrap items-baseline justify-between gap-2">
+            <p className="text-[11px] font-semibold uppercase tracking-wide text-slate-400">
+              Standing commitments
+            </p>
+            <p className="text-[11px] font-semibold text-slate-500">
+              {position.standing.length} active · nothing held
+            </p>
+          </div>
+          <ul className="mt-2 space-y-1">
+            {position.standing.map((entry) => (
+              <li
+                key={`${entry.currency}-${entry.what}`}
+                className="flex items-baseline justify-between gap-3 text-[11px]"
+              >
+                <span className="min-w-0 truncate text-slate-600">
+                  {entry.what}
+                  {entry.when && <span className="text-slate-400"> · {entry.when}</span>}
+                </span>
+                <span className="shrink-0 font-mono font-semibold tabular-nums text-slate-900">
+                  {money(entry.amount)} {entry.currency}
+                </span>
+              </li>
+            ))}
+          </ul>
+          <p className="mt-2 text-[11px] leading-relaxed text-slate-400">
+            Nothing is held against these: they are what will be charged, and when. Currencies are
+            listed apart, and none of it is added to either ledger above.
+          </p>
+        </div>
       )}
     </section>
   );

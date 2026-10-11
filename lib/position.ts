@@ -54,6 +54,12 @@ export type PositionRow = {
   project?: string;
   /** True while the row is a demonstration rather than an operator's money. */
   sample?: boolean;
+  /**
+   * What has to be true before the order runs — printed verbatim by the
+   * standing block, because a condition this card summarised would be a
+   * second opinion about a rule only the server judges.
+   */
+  condition?: string;
   /** When PayPal set the money aside — the day a dividend accrues from. */
   createdAt?: string | null;
   capturedAt?: string | null;
@@ -94,6 +100,36 @@ export type InvestedPosition = {
   returnPct: number;
 };
 
+/**
+ * The third ledger: what will be charged without anybody approving it again.
+ *
+ * A standing allowance — an order marked `Active` — holds nothing. PayPal is
+ * not setting a cent aside, so it belongs to neither of the two ledgers above
+ * and must never be added to them: saying "you have $15 less today" about a
+ * subscription is the same false sentence as counting a released pledge as an
+ * investment.
+ *
+ * But hiding it is the other lie. This is money that *will* leave, on its
+ * own, and a financial screen that shows only what is held teaches its reader
+ * that nothing else can happen. So it gets its own block, its own wording —
+ * *nothing is held* — and its own units: an allowance has no cadence in this
+ * data model, so the card prints what the row says and **never invents a
+ * "per month"**.
+ */
+export type StandingCommitment = {
+  /** The operator's own words for the order. */
+  what: string;
+  /** The ceiling, in the currency it is written in. */
+  amount: number;
+  currency: string;
+  /**
+   * What has to be true before it runs, or `null` when it runs whenever it
+   * can. Printed rather than summarised: a condition this card paraphrased
+   * would be a second opinion about a rule the server is the only judge of.
+   */
+  when: string | null;
+};
+
 export type AccountPosition = {
   /** Per currency: what PayPal says is there, split into free and committed. */
   balances: BalanceSplit[];
@@ -103,6 +139,8 @@ export type AccountPosition = {
   invested: InvestedPosition | null;
   /** Rows waiting for a human: counted, and never part of any total. */
   awaiting: { count: number; amount: number };
+  /** What runs on its own: listed, never summed into either ledger. */
+  standing: StandingCommitment[];
 };
 
 /**
@@ -213,11 +251,28 @@ export function accountPosition(
     if (Number.isFinite(row.limit) && row.limit > 0) awaitingAmount += row.limit;
   }
 
+  // What will run by itself. `Active` is the one state that holds nothing and
+  // still acts — which is why it needed a third ledger rather than a fourth
+  // colour on the first two: it is neither money set aside nor money gone.
+  //
+  // Sorted by currency then words, so the list does not reorder itself as
+  // rows arrive — the same reason every list in this file is sorted.
+  const standing: StandingCommitment[] = rows
+    .filter((row) => row.status === STATUS.enforced)
+    .map((row) => ({
+      what: row.what ?? "(unnamed)",
+      amount: Number.isFinite(row.limit) && row.limit > 0 ? row.limit : 0,
+      currency: row.currency,
+      when: row.condition?.trim() ? row.condition.trim() : null,
+    }))
+    .sort((a, b) => a.currency.localeCompare(b.currency) || a.what.localeCompare(b.what));
+
   return {
     balances,
     spendable,
     invested,
     awaiting: { count: awaitingCount, amount: awaitingAmount },
+    standing,
   };
 }
 
@@ -226,6 +281,7 @@ export function hasPositionFigure(position: AccountPosition): boolean {
   return (
     position.balances.some((split) => split.total > 0) ||
     position.invested !== null ||
-    position.awaiting.count > 0
+    position.awaiting.count > 0 ||
+    position.standing.length > 0
   );
 }

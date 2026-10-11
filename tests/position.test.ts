@@ -25,6 +25,7 @@ const row = (
     what: string;
     project: string;
     sample: boolean;
+    condition: string;
     createdAt: string | null;
   }> = {}
 ) => ({
@@ -178,4 +179,71 @@ test("nothing to show is nothing, not a card of zeroes", () => {
   assert.equal(hasPositionFigure(accountPosition([], [])), false);
   assert.equal(hasPositionFigure(accountPosition([usd(0)], [])), false, "a zero balance is not a position");
   assert.equal(hasPositionFigure(accountPosition([], [row({ status: STATUS.pending, limit: 0 })])), true, "but a pending order is: it is the next thing that leaves");
+});
+
+test("an allowance is a promise, not a hold", () => {
+  // The third ledger, and the trap it exists to avoid: a subscription holds
+  // nothing today, so it may not be added to what is set aside — and it may
+  // not be hidden either, because it is what will leave without anybody
+  // approving it again.
+  const position = accountPosition(
+    [usd(500)],
+    [row({ status: STATUS.enforced, limit: 15, currency: "PYUSD", what: "Spotify Premium, monthly" })]
+  );
+
+  assert.deepEqual(position.standing, [
+    { what: "Spotify Premium, monthly", amount: 15, currency: "PYUSD", when: null },
+  ]);
+  assert.equal(position.balances[0].committed, 0, "nothing is set aside");
+  assert.equal(position.spendable[0].value, 500, "so the whole balance is still spendable");
+});
+
+test("a scheduled allowance says when, in the row's own words", () => {
+  const position = accountPosition(
+    [],
+    [row({ status: STATUS.enforced, limit: 20, condition: "on 2026-11-01", what: "Rent" })]
+  );
+
+  assert.equal(position.standing[0]?.when, "on 2026-11-01", "not summarised, not paraphrased");
+});
+
+test("only what runs by itself is a standing commitment", () => {
+  const position = accountPosition(
+    [],
+    [
+      row({ status: STATUS.pending, limit: 10 }), // waits for a human
+      row({ status: STATUS.reserved, limit: 20 }), // is a hold — ledger one
+      row({ status: STATUS.captured, limit: 40 }), // has left
+      row({ status: STATUS.released, limit: 80 }), // came back
+    ]
+  );
+
+  assert.deepEqual(position.standing, [], "only `Active` runs on its own");
+});
+
+test("standing commitments are listed apart, never summed", () => {
+  const position = accountPosition(
+    [],
+    [
+      row({ status: STATUS.enforced, limit: 15, currency: "PYUSD", what: "Spotify" }),
+      row({ status: STATUS.enforced, limit: 20, currency: "USD", what: "Transfer to xensite" }),
+    ]
+  );
+
+  assert.equal(position.standing.length, 2, "one row each: 20 USD and 15 PYUSD are not 35");
+  const keys = Object.keys(position.standing[0]).sort();
+  assert.equal(
+    keys.includes("total"),
+    false,
+    "and there is no field here that could add them"
+  );
+});
+
+test("a screen showing only promises still has something to show", () => {
+  const position = accountPosition(
+    [],
+    [row({ status: STATUS.enforced, limit: 15, currency: "PYUSD", what: "Spotify" })]
+  );
+
+  assert.equal(hasPositionFigure(position), true);
 });
