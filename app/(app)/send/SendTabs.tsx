@@ -20,7 +20,7 @@ type Tab = { href: string; label: string; icon: LucideIcon; hint?: string };
 const TABS: Tab[] = [
   { href: "/send", label: "USD", icon: Banknote, hint: "Dollars from your PayPal balance" },
   { href: "/send/pyusd", label: "PYUSD", icon: Coins, hint: "Stablecoin, one to one with the dollar" },
-  { href: "/send/bank", label: "Venezuelan bank", icon: Landmark, hint: "Pago Móvil — part of the FX module" },
+  { href: "/send/bank", label: "Exchange · USD ↔ VES", icon: Landmark, hint: "Dollars held by PayPal, bolívares between you two — part of the FX module" },
 ];
 
 /** Rails that are part of the product itself rather than the opt-in module. */

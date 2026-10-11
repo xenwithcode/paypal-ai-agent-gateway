@@ -4,7 +4,7 @@
 import { ShieldAlert } from "lucide-react";
 import EmptyState from "../../components/EmptyState";
 import { useFxShield } from "../../hooks/useFxShield";
-import PagoMovilPanel from "../components/PagoMovilPanel";
+import ExchangePanel from "../components/ExchangePanel";
 
 /**
  * The local rail is gated on the FX Shield switch, exactly as its two links
@@ -24,12 +24,12 @@ export default function SendToBankPage() {
       <EmptyState
         icon={ShieldAlert}
         title="This rail is part of the FX module"
-        description="Paying in bolívares only matters where the currency is losing value, so it stays hidden until you switch FX Shield on."
+        description="Exchanging with bolívares only matters where the currency is losing value, so it stays hidden until you switch FX Shield on."
         action={{ label: "Open FX Shield", href: "/fx" }}
         note="You are seeing this only because the address was typed directly. The sidebar keeps the link hidden while FX Shield is off."
       />
     );
   }
 
-  return <PagoMovilPanel />;
+  return <ExchangePanel />;
 }
