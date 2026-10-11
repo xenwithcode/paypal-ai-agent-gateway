@@ -290,7 +290,7 @@ export default function FinalNotesAppendix() {
           Enterprise features fall back to Community when there is no licence key, and the pages
           that need credentials say so rather than rendering an error.
         </p>
-        <pre className="mt-3 overflow-x-auto rounded-xl border border-slate-200 bg-slate-950 p-4 font-mono text-[11px] leading-relaxed text-slate-100">
+        <pre className="mt-3 overflow-x-auto rounded-xl border border-slate-200 bg-slate-950 p-4 font-mono text-xs leading-relaxed text-slate-100">
 {`git clone https://github.com/xenwithcode/paypal-ai-agent-gateway.git
 cd paypal-ai-agent-gateway
 npm install
