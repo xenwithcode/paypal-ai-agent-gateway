@@ -2,328 +2,304 @@
   "schema_version": 1,
   "diagram_type": "architecture",
   "meta": {
-    "title": "PayPal AI Agent Gateway — System Architecture",
-    "locale": "en",
+    "title": "PayPal AI Agent Gateway",
     "output": "paypal-ai-agent-architecture.html",
+    "animation": "trace",
     "quality_profile": "showcase",
     "views": [
       {
-        "id": "intent-path",
-        "label": "Intent to policy",
+        "id": "order-path",
+        "label": "The order path",
         "focus": [
+          "operator",
           "ui",
-          "api",
-          "gemini",
-          "grid"
-        ],
-        "note": "Free text becomes a structured, human-approvable spend rule."
-      },
-      {
-        "id": "approval-gate",
-        "label": "Human approval",
-        "focus": [
-          "grid",
-          "enforce"
-        ],
-        "note": "No rule is live until a person activates it in the table."
-      },
-      {
-        "id": "settlement",
-        "label": "Settlement",
-        "focus": [
-          "paypalclient",
+          "judge",
           "paypal"
         ],
-        "note": "One shared PayPal client reads balance and transactions."
+        "note": "An intent becomes a purchase order the server judges before PayPal is asked for anything."
       },
       {
-        "id": "fx-shield",
-        "label": "Venezuela FX shield",
+        "id": "voice-path",
+        "label": "The voice loop",
         "focus": [
-          "api",
-          "inflation",
-          "paypalclient"
+          "operator",
+          "voice",
+          "agent",
+          "judge"
         ],
-        "note": "Opt-in path that shields a devaluing VES balance."
+        "note": "Speech becomes tool calls the browser runs through the same handlers the buttons use."
+      },
+      {
+        "id": "exchange-path",
+        "label": "Exchange · USD ↔ VES",
+        "focus": [
+          "ui",
+          "judge",
+          "paypal",
+          "counterparty"
+        ],
+        "note": "Dollars held by PayPal; bolívares between two people, outside the app."
       }
     ]
   },
   "components": [
     {
+      "id": "operator",
+      "type": "external",
+      "label": "Operator",
+      "sublabel": "writes · speaks · approves in PayPal",
+      "pos": [
+        40,
+        230
+      ],
+      "size": [
+        170,
+        74
+      ]
+    },
+    {
+      "id": "voice",
+      "type": "external",
+      "label": "Gemini Live",
+      "sublabel": "speech in · spoken answer out",
+      "pos": [
+        320,
+        80
+      ],
+      "size": [
+        180,
+        62
+      ],
+      "tag": "us-central1"
+    },
+    {
       "id": "ui",
       "type": "frontend",
-      "label": "Dashboard UI",
-      "sublabel": "Next.js 15 · React 19",
-      "brand": "next-js",
+      "label": "Gateway UI",
+      "sublabel": "Next.js · AG Grid",
       "pos": [
-        40,
-        140
+        320,
+        230
       ],
       "size": [
-        170,
-        64
+        180,
+        74
       ]
     },
     {
-      "id": "grid",
-      "type": "frontend",
-      "label": "AG Grid",
-      "sublabel": "policy table",
-      "pos": [
-        40,
-        280
-      ],
-      "size": [
-        170,
-        64
-      ]
-    },
-    {
-      "id": "api",
+      "id": "agent",
       "type": "backend",
-      "label": "Agent API",
-      "sublabel": "POST /api/agent",
+      "label": "Agent routes",
+      "sublabel": "/api/agent · /api/holds",
       "pos": [
-        450,
-        60
+        600,
+        80
       ],
       "size": [
-        170,
-        64
+        186,
+        62
       ]
     },
     {
-      "id": "inflation",
-      "type": "backend",
-      "label": "FX Shield",
-      "sublabel": "InflationShield.ts",
-      "pos": [
-        450,
-        170
-      ],
-      "size": [
-        170,
-        64
-      ]
-    },
-    {
-      "id": "paypalclient",
-      "type": "backend",
-      "label": "PayPal Client",
-      "sublabel": "lib/paypal.ts",
-      "pos": [
-        450,
-        280
-      ],
-      "size": [
-        170,
-        64
-      ]
-    },
-    {
-      "id": "enforce",
+      "id": "judge",
       "type": "security",
-      "label": "Policy Enforcement",
-      "sublabel": "lib/contingency.ts",
+      "label": "Server judges",
+      "sublabel": "ceiling · window · recipient",
       "pos": [
-        450,
-        390
+        600,
+        230
       ],
       "size": [
-        170,
-        64
+        186,
+        74
+      ],
+      "tag": "before PayPal"
+    },
+    {
+      "id": "store",
+      "type": "database",
+      "label": "Store",
+      "sublabel": "orders · refusals",
+      "pos": [
+        600,
+        380
+      ],
+      "size": [
+        186,
+        62
       ]
     },
     {
-      "id": "gemini",
+      "id": "fx",
       "type": "external",
-      "label": "Google Gemini",
-      "sublabel": "structured JSON output",
-      "brand": "google-gemini",
+      "label": "BCV rate feed",
+      "sublabel": "official rate, live",
       "pos": [
-        900,
-        60
+        320,
+        380
       ],
       "size": [
-        170,
-        64
+        180,
+        62
       ]
     },
     {
       "id": "paypal",
       "type": "external",
-      "label": "PayPal API",
-      "sublabel": "Transaction Search v1",
-      "brand": "paypal",
+      "label": "PayPal sandbox",
+      "sublabel": "authorize → hold → capture",
       "pos": [
-        900,
-        280
+        880,
+        230
       ],
       "size": [
-        170,
-        64
+        190,
+        74
       ]
     },
     {
-      "id": "openshell",
-      "type": "security",
-      "label": "NVIDIA OpenShell",
-      "sublabel": "planned sandbox",
+      "id": "counterparty",
+      "type": "external",
+      "label": "Counterparty",
+      "sublabel": "receives dollars · sends bolívares",
       "pos": [
-        900,
-        390
+        880,
+        380
       ],
       "size": [
-        170,
-        64
+        190,
+        62
       ]
     }
   ],
   "boundaries": [
     {
-      "kind": "security-group",
-      "label": "Browser — client components",
+      "kind": "region",
+      "label": "PayPal AI Agent Gateway · localhost",
       "wraps": [
         "ui",
-        "grid"
-      ],
-      "pad": 24
-    },
-    {
-      "kind": "security-group",
-      "label": "Next.js server — secrets stay here",
-      "wraps": [
-        "api",
-        "inflation",
-        "paypalclient",
-        "enforce"
-      ],
-      "pad": 24
+        "agent",
+        "judge",
+        "store"
+      ]
     }
   ],
   "connections": [
     {
-      "id": "intent-submit",
+      "id": "operator-speak",
+      "from": "operator",
+      "to": "voice",
+      "label": "speak",
+      "fromSide": "top",
+      "toSide": "left",
+      "route": "auto"
+    },
+    {
+      "id": "voice-tools",
+      "from": "voice",
+      "to": "agent",
+      "label": "tool calls",
+      "variant": "dashed"
+    },
+    {
+      "id": "operator-intent",
+      "from": "operator",
+      "to": "ui",
+      "label": "intent · click",
+      "variant": "emphasis"
+    },
+    {
+      "id": "ui-envelope",
       "from": "ui",
-      "to": "api",
-      "label": "POST /api/agent",
-      "variant": "emphasis",
-      "fromSide": "right",
-      "toSide": "left"
+      "to": "judge",
+      "label": "typed envelope",
+      "variant": "emphasis"
     },
     {
-      "id": "intent-to-llm",
-      "from": "api",
-      "to": "gemini",
-      "label": "intent + schema",
-      "fromSide": "right",
-      "toSide": "left"
+      "id": "agent-judge",
+      "from": "agent",
+      "to": "judge",
+      "label": "order to judge"
     },
     {
-      "id": "policy-return",
-      "from": "gemini",
-      "to": "api",
-      "label": "policy JSON",
+      "id": "judge-paypal",
+      "from": "judge",
+      "to": "paypal",
+      "label": "authorize · capture",
+      "variant": "emphasis"
+    },
+    {
+      "id": "judge-store",
+      "from": "judge",
+      "to": "store",
+      "label": "orders · refusals",
+      "variant": "dashed",
       "fromSide": "bottom",
-      "toSide": "bottom"
+      "toSide": "top"
     },
     {
-      "id": "render-row",
-      "from": "ui",
-      "to": "grid",
-      "label": "pending policy row",
-      "fromSide": "bottom",
-      "toSide": "top",
-      "labelAt": [
-        125,
-        218
-      ]
-    },
-    {
-      "id": "approve",
-      "from": "grid",
-      "to": "enforce",
-      "label": "approved rule",
-      "fromSide": "right",
-      "toSide": "left"
-    },
-    {
-      "id": "fx-route",
-      "from": "api",
-      "to": "inflation",
-      "label": "FX keywords",
-      "fromSide": "bottom",
-      "toSide": "top",
-      "labelAt": [
-        535,
-        164
-      ]
-    },
-    {
-      "id": "balance-check",
-      "from": "inflation",
-      "to": "paypalclient",
-      "label": "balance",
-      "fromSide": "bottom",
-      "toSide": "top",
-      "labelAt": [
-        535,
-        248
-      ]
-    },
-    {
-      "id": "sign-allow",
-      "from": "enforce",
-      "to": "paypalclient",
-      "label": "ALLOW_AND_SIGN (simulated)",
+      "id": "fx-rate",
+      "from": "fx",
+      "to": "ui",
+      "label": "live rate",
       "variant": "dashed",
       "fromSide": "top",
       "toSide": "bottom"
     },
     {
-      "id": "paypal-queries",
-      "from": "paypalclient",
-      "to": "paypal",
-      "label": "OAuth 2.0 + balance",
-      "fromSide": "right",
-      "toSide": "left"
+      "id": "dollars-to-counterparty",
+      "from": "paypal",
+      "to": "counterparty",
+      "label": "dollars to the named account",
+      "fromSide": "bottom",
+      "toSide": "top"
     },
     {
-      "id": "openshell-plan",
-      "from": "enforce",
-      "to": "openshell",
-      "label": "planned sandbox",
+      "id": "bolivares-between-them",
+      "from": "operator",
+      "to": "counterparty",
+      "label": "bolívares · between you two · outside the app",
       "variant": "dashed",
-      "fromSide": "right",
-      "toSide": "left"
+      "fromSide": "bottom",
+      "toSide": "bottom",
+      "via": [
+        [
+          130,
+          500
+        ],
+        [
+          975,
+          500
+        ]
+      ]
     }
   ],
   "cards": [
     {
       "dot": "cyan",
-      "title": "Intent to policy",
+      "title": "The thesis",
       "items": [
-        "POST /api/agent rejects malformed JSON, empty intent, and anything over 500 chars",
-        "Gemini is forced to valid JSON by responseSchema, never parsed from prose",
-        "The result lands as a pending row — nothing is live until approved"
+        "The agent requests · the server judges · the human approves",
+        "Purchase orders for agents: ceiling, recipient, window, condition — approved once, enforced on every attempt",
+        "The model is told what it may do; it never holds a credential"
       ]
     },
     {
       "dot": "emerald",
-      "title": "Human approval",
+      "title": "Money moves in PayPal",
       "items": [
-        "AG Grid renders Active / Protecting / Activate, not internal jargon",
-        "Autonomous for small routine spends, Copilot for large ones",
-        "Policy and status strings are shared constants in lib/policy.ts"
+        "Authorize → hold → capture, or release: the app holds the permission, PayPal holds the money",
+        "Approval happens inside PayPal's own UI; nothing is charged from a form",
+        "Balances are re-read after anything moves, so the cards cannot drift from the account"
       ]
     },
     {
-      "dot": "rose",
-      "title": "Security",
+      "dot": "amber",
+      "title": "Two rails, and an exchange",
       "items": [
-        "lib/paypal.ts is imported by server code only — no client bundle holds secrets",
-        "Enforcement is an in-process check today; the OpenShell sandbox is not wired yet",
-        "Blocked attempts never reach PayPal, so a local decision log is required"
+        "PayPal AI Crowdfunding: fund a real business in Venezuela from $20, paid in USD",
+        "Exchange · USD ↔ VES: dollars held by PayPal, bolívares between two people",
+        "A condition only a person can confirm — the agent may never settle it alone"
       ]
     }
   ]

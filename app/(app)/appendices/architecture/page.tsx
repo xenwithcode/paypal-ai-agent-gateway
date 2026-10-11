@@ -18,7 +18,7 @@ export const metadata = {
 const DIAGRAM = "/architecture/paypal-ai-agent-architecture.html";
 
 /** When the diagram was generated — stated, because a diagram ages silently. */
-const GENERATED = "07 October 2026";
+const GENERATED = "11 October 2026";
 
 export default function ArchitectureAppendix() {
   return (
@@ -27,14 +27,14 @@ export default function ArchitectureAppendix() {
         <div className="min-w-0">
           <h1 className="text-2xl font-bold tracking-tight text-slate-900">App Architecture</h1>
           <p className="mt-2 max-w-[70ch] text-sm leading-relaxed text-slate-500">
-            One diagram of the whole gateway: the browser, the routes that judge, the policy that
-            both sides read, PayPal, Gemini, and where a credential is allowed to live. It was
-            generated from this repository with{" "}
-            <span className="font-medium text-slate-700">Archify</span> and is served as-is — the
-            file you see is the artifact, not a re-drawing of it.
+            One diagram of the whole gateway: the operator, the routes that judge, the PayPal that
+            holds the money, Gemini in both voices, the rate feed — and the exchange with its two
+            legs, one of which deliberately leaves the app. It was generated from this repository
+            with <span className="font-medium text-slate-700">Archify</span> and is served as-is:
+            the file you see is the artifact, not a re-drawing of it.
           </p>
         </div>
-        <span className="shrink-0 rounded-full border border-slate-200 bg-slate-50 px-2.5 py-1 text-[10px] font-bold uppercase tracking-wide text-slate-500">
+        <span className="shrink-0 rounded-full border border-emerald-200 bg-emerald-50 px-2.5 py-1 text-[10px] font-bold uppercase tracking-wide text-emerald-700">
           Generated {GENERATED}
         </span>
       </header>
@@ -57,10 +57,11 @@ export default function ArchitectureAppendix() {
         </p>
         <div className="flex flex-wrap items-baseline justify-between gap-2">
           <p className="max-w-[70ch] leading-relaxed">
-            ⚠️ <span className="font-medium text-slate-500">Dated {GENERATED}</span> — several
-            features landed after it (the campaign judge, the charts, the voice agent), so read it
-            as the shape of the system rather than as its current inventory. A refresh is scheduled
-            before the final submission.
+            ⚠️ <span className="font-medium text-slate-500">Dated {GENERATED}</span> — it draws what
+            is <em>built</em>: the order path, the server-side judge, the voice loop, and the
+            exchange with both legs. It does not draw what is designed and not built — kernel
+            isolation, standing consent, a QR for the bolívar leg — and that is deliberate: a
+            diagram may not show what the product cannot do.
           </p>
           <a
             href={DIAGRAM}
