@@ -457,8 +457,8 @@ function ReadAloud({ block, line, why }: { block: string; line: string; why: str
   return (
     <div className="rounded-xl border border-slate-100 bg-slate-50 p-4">
       <p className="text-xs font-semibold text-slate-900">{block}</p>
-      <p className="mt-1 text-xs leading-relaxed text-slate-600">{line}</p>
-      <p className="mt-1.5 text-[11px] leading-relaxed text-slate-400">
+      <p className="mt-1 text-sm leading-relaxed text-slate-600">{line}</p>
+      <p className="mt-1.5 text-xs leading-relaxed text-slate-400">
         <span className="font-semibold uppercase tracking-wide">Why it is separate · </span>
         {why}
       </p>
@@ -494,11 +494,14 @@ function List({
         <span aria-hidden="true" className={`h-2 w-2 shrink-0 rounded-full ${dot}`} />
         {title}
       </h3>
-      <dl className="mt-3 space-y-3">
+      <dl className="mt-3 space-y-3.5">
         {items.map((item) => (
           <div key={item.what}>
             <dt className="text-xs font-semibold text-slate-800">{item.what}</dt>
-            <dd className="mt-0.5 text-[11px] leading-relaxed text-slate-500">{item.how}</dd>
+            {/* The body is what a judge actually reads here, so it is set at
+                the size the prose is — a description at caption size is a
+                description nobody finishes. */}
+            <dd className="mt-1 text-sm leading-relaxed text-slate-600">{item.how}</dd>
           </div>
         ))}
       </dl>
