@@ -334,7 +334,7 @@ export default function PositionCard({
           <dl className="mt-2 space-y-1">
             {paypalSegments.map((segment) => (
               <div key={segment.key} className="flex items-baseline justify-between gap-2">
-                <dt className="flex min-w-0 items-center gap-2 text-[11px] text-slate-600">
+                <dt className="flex min-w-0 items-center gap-2 text-xs text-slate-600">
                   <span
                     aria-hidden="true"
                     className="h-2.5 w-2.5 shrink-0 rounded-full"
@@ -384,24 +384,26 @@ export default function PositionCard({
       {position.standing.length > 0 && (
         <div className="mt-3 rounded-xl border border-slate-100 bg-slate-50 p-4">
           <div className="flex flex-wrap items-baseline justify-between gap-2">
-            <p className="text-[11px] font-semibold uppercase tracking-wide text-slate-400">
+            <p className="text-xs font-semibold uppercase tracking-wide text-slate-400">
               Standing commitments
             </p>
-            <p className="text-[11px] font-semibold text-slate-500">
+            <p className="text-xs font-semibold text-slate-500">
               {position.standing.length} active · nothing held
             </p>
           </div>
-          <ul className="mt-2 space-y-1">
+          <ul className="mt-2.5 space-y-1.5">
             {position.standing.map((entry) => (
               <li
                 key={`${entry.currency}-${entry.what}`}
-                className="flex items-baseline justify-between gap-3 text-[11px]"
+                className="flex items-baseline justify-between gap-3 text-xs"
               >
                 <span className="min-w-0 truncate text-slate-600">
                   {entry.what}
                   {entry.when && <span className="text-slate-400"> · {entry.when}</span>}
                 </span>
-                <span className="shrink-0 font-mono font-semibold tabular-nums text-slate-900">
+                {/* The figure is the point of the row, so it is set like the
+                    other figures on this card rather than like its caption. */}
+                <span className="shrink-0 font-mono text-sm font-semibold tabular-nums text-slate-900">
                   {money(entry.amount)} {entry.currency}
                 </span>
               </li>
