@@ -61,6 +61,15 @@ export interface PolicyRow {
    * only one of them is one this product can make.
    */
   /**
+   * True while this row is a demonstration rather than an operator's money.
+   *
+   * The three rows the dashboard seeds itself with carry it, so the table
+   * can say so in the row itself: a screen that shows three orders nobody
+   * placed, unlabelled, is a screen telling a first-time reader — including
+   * a judge — that the operator has a history they do not have.
+   */
+  sample?: boolean;
+  /**
    * The crowdfunding project this order funds, if it funds one — the marker
    * that turns an ordinary row into a position the portfolio can count.
    */

@@ -2,6 +2,7 @@
 "use client";
 
 import { useState, useEffect, useMemo, useCallback, useRef } from "react";
+import Link from "next/link";
 import { AgGridReact } from "ag-grid-react";
 import type { ColDef } from "ag-grid-community";
 
@@ -41,6 +42,8 @@ import type { VoiceToolCall } from "@/lib/voice/tools";
 // and the window reader — the same function the judge uses, so the cell and
 // the refusal agree about what "valid until" means.
 import { STATUS, MODE, MODE_OPTIONS, isStatus, readExpiry, type HoldAction } from "@/lib/policy";
+import StartHere from "./StartHere";
+import Term from "../../components/Term";
 import type { PolicyRow } from "../types";
 import type { CatalogProduct } from "@/lib/commerce/catalog";
 // Type-only, so it is erased before bundling: this file is client-side and
@@ -111,6 +114,11 @@ const SEED_ROWS: PolicyRow[] = [
     conditionMet: true,
     conditionDetail: "No condition — executes immediately.",
     allowEndpoint: "api.spotify.com",
+    // A demonstration, and marked as one: this row shows a state the
+    // Protection column can act on, and a reader who takes it for an order
+    // the operator actually placed has been told something false by the
+    // first screen they ever saw.
+    sample: true,
   },
   {
     id: 2,
@@ -131,6 +139,7 @@ const SEED_ROWS: PolicyRow[] = [
     // No merchant was named, so no host is restricted — which is itself
     // worth showing rather than leaving to be inferred.
     allowEndpoint: "",
+    sample: true,
   },
   // A held purchase order whose condition is satisfied right now: money is
   // set aside and waiting for the operator to settle it. The price and
@@ -152,8 +161,23 @@ const SEED_ROWS: PolicyRow[] = [
     conditionDetail:
       "Price is 549.99 USD, condition requires <= 600 · 4/4 terms matched (full query) on dummyjson (demo-catalog)",
     allowEndpoint: "api.apple.com",
+    sample: true,
   },
 ];
+
+/**
+ * The sentence the "use the example" button writes, and the field's
+ * placeholder.
+ *
+ * One example, in one place: a placeholder and a button that disagreed about
+ * what to type would be two answers to the same question, and the reader who
+ * clicks the button and finds different text in the field has been told the
+ * button does something other than what it does. Chosen to produce a real
+ * order — an item, a size, a date and a condition — because an example that
+ * cannot be run is decoration.
+ */
+const EXAMPLE_INTENT =
+  "white sneakers, size 10, by Friday, only if the price drops to 60 USD or less";
 
 export default function AgentGrid({
   balance,
@@ -169,6 +193,9 @@ export default function AgentGrid({
   paypalClientId: string;
 }) {
   const gridRef = useRef<AgGridReact<PolicyRow>>(null);
+  // Where the empty state's example lands, and where the reader's eye goes
+  // with it: a filled field nobody is looking at is half a gesture.
+  const inputRef = useRef<HTMLInputElement | null>(null);
   const [prompt, setPrompt] = useState("");
   const [loading, setLoading] = useState(false);
   const [fraudAlert, setFraudAlert] = useState<{ active: boolean; msg: string }>({ active: false, msg: "" });
@@ -1086,6 +1113,11 @@ export default function AgentGrid({
     {
       field: "limit",
       headerName: "Ceiling",
+      // The header explains the word the way a person would: this is the
+      // column a first-time reader has no way to decode, and the tooltip
+      // travels with the header wherever the column is moved or exported.
+      headerTooltip:
+        "The most this order may ever cost. The server refuses anything above it — from this cell, from the agent, or from the voice.",
       editable: true,
       flex: 1.0,
       valueParser: (p) => Number(p.newValue),
@@ -1123,6 +1155,8 @@ export default function AgentGrid({
     {
       field: "condition",
       headerName: "Condition",
+      headerTooltip:
+        "What must be true before any money moves, written in words. Empty means it may spend now.",
       editable: true,
       flex: 1.3,
       // The verdict is spelled out in words; colour is only a secondary cue,
@@ -1144,6 +1178,8 @@ export default function AgentGrid({
     {
       field: "expires",
       headerName: "Valid until",
+      headerTooltip:
+        "The last day this order may spend. After it the order is over, and anything held against it is released.",
       editable: true,
       flex: 0.9,
       // "None" was being printed as though it were a value the operator had
@@ -1181,12 +1217,20 @@ export default function AgentGrid({
     {
       field: "mode",
       headerName: "Mode",
+      headerTooltip:
+        "Autonomous: the agent settles it the moment the condition holds. Manual: it waits for you, every time.",
       editable: true,
       flex: 0.8,
       cellEditor: "agSelectCellEditor",
       cellEditorParams: { values: MODE_OPTIONS },
     },
-    { headerName: "Protection", flex: 1.3, cellRenderer: ActionBtnRenderer },
+    {
+      headerName: "Protection",
+      headerTooltip:
+        "What you can do with this order right now: capture it, release it, or open it and read what it promised.",
+      flex: 1.3,
+      cellRenderer: ActionBtnRenderer,
+    },
   ], []);
 
   /**
@@ -1424,7 +1468,18 @@ export default function AgentGrid({
           <p className="text-xs text-blue-100">Purchase orders an AI agent cannot break</p>
         </div>
         <div className="text-right">
-          <span className="text-xs text-blue-100 block mb-1">
+          {/* The question a judge asks in the first ten seconds, answered
+              where they ask it rather than in an appendix they may never
+              open — and answered honestly: the rails that are simulated say
+              so, on the screen, in one click. */}
+          <Link
+            href="/appendices/final-notes"
+            title="Which of this is real and which is simulated — the list, on one page"
+            className="mb-2 inline-flex items-center gap-1.5 rounded-full border border-blue-400/60 bg-blue-500/20 px-2.5 py-1 text-[10px] font-bold uppercase tracking-wide text-blue-50 transition hover:bg-blue-500/30"
+          >
+            Real sandbox · what is simulated ↗
+          </Link>
+          <span className="text-xs text-blue-100 block">
             Account Balance
             {/* The figure without saying where it came from is a figure a
                 reader takes at face value, so the source travels with it. */}
@@ -1449,6 +1504,10 @@ export default function AgentGrid({
         </div>
       </div>
 
+      {/* The three sentences this page owes a first-time reader, above
+          everything else and gone after one read. */}
+      <StartHere />
+
       {/* Natural-language intent bar */}
       <div className="bg-white p-6 rounded-2xl border border-slate-200 shadow-sm space-y-3">
         {/* The microphone sits above the Draft button, in the label row: it
@@ -1457,13 +1516,22 @@ export default function AgentGrid({
             writes to. */}
         <div className="flex items-start justify-between gap-4">
           <label className="block text-sm font-semibold text-slate-700">
-            What should your agent buy? Set a ceiling — and a condition before it may spend.
+            What should your agent buy? Set a{" "}
+            <Term explain="The most this order may ever cost. The server refuses anything above it — from this box, from the agent, or from the voice.">
+              ceiling
+            </Term>{" "}
+            — and a{" "}
+            <Term explain="What must be true before any money moves, written in words. Leave it empty and the order may spend now.">
+              condition
+            </Term>{" "}
+            before it may spend.
           </label>
           <VoiceCommand rows={rowData} onExecute={executeVoiceTool} onLog={addLog} />
         </div>
         <div className="flex gap-3">
           <input
             type="text"
+            ref={inputRef}
             value={prompt}
             onChange={(e) => {
               setPrompt(e.target.value);
@@ -1472,7 +1540,7 @@ export default function AgentGrid({
               // next to text the operator has already changed.
               if (intentError) setIntentError(null);
             }}
-            placeholder="e.g. white sneakers, size 10, by Friday, only if the price drops to 60 USD or less"
+            placeholder={EXAMPLE_INTENT}
             maxLength={500}
             aria-invalid={intentError ? true : undefined}
             className="flex-1 p-4 border border-slate-200 bg-slate-50 rounded-xl outline-none focus:bg-white focus:ring-2 focus:ring-blue-500 transition"
@@ -1491,6 +1559,26 @@ export default function AgentGrid({
             {intentError}
           </p>
         )}
+
+        {/* A first sentence is the hard part, and this label assumes
+            vocabulary the reader has never been given. The example is a real
+            request — an item, a size, a date and a condition — so the first
+            thing anybody does here can be a click rather than an invention. */}
+        <div className="flex flex-wrap items-center justify-between gap-2">
+          <p className="text-[11px] text-slate-400">
+            Never written one? The example produces a real order, condition included.
+          </p>
+          <button
+            onClick={() => {
+              setPrompt(EXAMPLE_INTENT);
+              if (intentError) setIntentError(null);
+              inputRef.current?.focus();
+            }}
+            className="rounded-lg border border-slate-200 bg-white px-2.5 py-1 text-[11px] font-semibold text-slate-600 shadow-sm transition hover:border-blue-300 hover:text-blue-700"
+          >
+            Use the example ↖
+          </button>
+        </div>
       </div>
 
       {/* The question the page is opened to ask, before the table that
@@ -1527,6 +1615,21 @@ export default function AgentGrid({
             Awaiting approval, reserved, settled or refused. Select a row to open it
             {ENTERPRISE_GRID ? ", and press ▶ to read its whole trail — what was promised, what the search proposed, and what PayPal did." : "."}
           </p>
+          {/* The table seeds itself, so it is never empty — which means the
+              honest version of an empty state is saying that the rows in
+              front of you are demonstrations. Every one of them, and only
+              when every one of them is: one real order replaces the story. */}
+          {rowData.length > 0 && rowData.every((row) => row.sample === true) && (
+            <p className="mt-1.5 text-[11px] leading-relaxed text-slate-400">
+              <span className="rounded-full border border-slate-300 bg-white px-1.5 py-0.5 text-[9px] font-bold uppercase tracking-wide text-slate-500">
+                sample
+              </span>{" "}
+              <span className="ml-1">
+                These three are demonstrations — nothing here has been bought and nothing is held.
+                Draft your own, or open a row and discard it.
+              </span>
+            </p>
+          )}
         </div>
         {/* Grows with the viewport: 200px showed four rows and crowded every
             column. Three steps, so a phone still gets a usable table. */}

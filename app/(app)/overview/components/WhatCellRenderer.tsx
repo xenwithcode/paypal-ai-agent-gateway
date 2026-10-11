@@ -13,6 +13,8 @@ type RowData = {
   allowEndpoint?: string;
   /** Account this order may pay; empty when no recipient was named. */
   payee?: string;
+  /** True while the row is a demonstration rather than money that moved. */
+  sample?: boolean;
 };
 
 /**
@@ -116,7 +118,20 @@ export default function WhatCellRenderer(params: CustomCellRendererProps) {
         </span>
       )}
       <span className="min-w-0">
-        <span className="block truncate text-[13px] text-slate-800">{text}</span>
+        <span className="flex items-center gap-1.5">
+          <span className="truncate text-[13px] text-slate-800">{text}</span>
+          {/* The label that keeps a demonstration from reading as a history:
+              a row nobody bought, wearing the same clothes as a row somebody
+              did, is the first thing this screen would lie about. */}
+          {data.sample && (
+            <span
+              title="A demonstration row: nothing was bought and nothing is held."
+              className="shrink-0 rounded-full border border-slate-300 bg-white px-1.5 py-0.5 text-[9px] font-bold uppercase tracking-wide text-slate-400"
+            >
+              sample
+            </span>
+          )}
+        </span>
         <span className="block truncate text-[10px] leading-tight text-slate-400" title={title}>
           {destination ? `only → ${destination}` : "no destination set"}
         </span>
