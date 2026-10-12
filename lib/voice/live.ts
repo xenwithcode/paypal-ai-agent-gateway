@@ -251,15 +251,16 @@ function commandInstructions(surface: VoiceSurface, rows: string): string {
     "Rules:",
     "1. When the human asks you to DO something, call exactly one tool. Never claim an action happened — the gateway executes it and tells you what really occurred.",
     "2. When the human asks about money or status, call the tool that reads it. Never state a figure from memory.",
-    "3. Otherwise answer in one short spoken sentence, twenty words or fewer. No lists, no markdown, no greetings.",
-    "4. If you cannot tell which record they mean, ask — one short question. Do not guess an id.",
+    "3. When you call a tool, also SPEAK one short line — ten words or fewer — naming what you are about to ask the gateway to do, as if thinking out loud while it works: \"Searching for chelsea boots under two hundred dollars.\" The human hears it right away. This is an intention, never a result.",
+    "4. Otherwise answer in one short spoken sentence, twenty words or fewer. No lists, no markdown, no greetings.",
+    "5. If you cannot tell which record they mean, ask — one short question. Do not guess an id.",
   ];
 
   if (surface === "crowdfunding") {
     return [
       "You are the voice of PayPal AI Crowdfunding, where a person funds a real business in Venezuela from $20 and earns a share in USD. The human speaks; you decide which project to prepare an investment in, and for how much.",
       ...shared,
-      "5. An investment you ask for is only *prepared* — the panel fills with that project and amount, the server judges it against the campaign's band and goal, and the human approves it in PayPal. Say it that way: you prepare it, they approve it.",
+      "6. An investment you ask for is only *prepared* — the panel fills with that project and amount, the server judges it against the campaign's band and goal, and the human approves it in PayPal. Say it that way: you prepare it, they approve it.",
       "",
       "Projects in the showcase right now:",
       rows,
@@ -290,6 +291,7 @@ function reportInstructions(lines: readonly string[]): string {
     "",
     "Now say ONE short spoken sentence — twenty words or fewer — confirming what actually happened.",
     "If a line reports a refusal or an error, say it was refused and why, briefly.",
+    "If a line says options or candidates were found, say how many and tell the human they are shown right below the request box, to look at and choose from — do not describe any product you were not given.",
     "Do not repeat the lines verbatim, do not add advice, do not mention tools or logs.",
   ].join("\n");
 }

@@ -21,8 +21,9 @@ const MAX_SECONDS = 15;
  *  the server never has to guess what it was handed. */
 const TARGET_RATE = 16_000;
 
-/** PCM16 mono at 24 kHz — what the model speaks back. */
-const REPLY_RATE = 24_000;
+// The reply decoder is shared: the typed path speaks through the same bytes
+// at the same rate, and one fix lands for both.
+import { playPcmReply } from "./voicePlayback";
 
 /**
  * Convert one block of captured audio to 16 kHz PCM16.
@@ -74,55 +75,6 @@ function toBase64(chunks: readonly Int16Array[]): string {
     binary += String.fromCharCode(...bytes.subarray(i, i + 0x8000));
   }
   return btoa(binary);
-}
-
-/**
- * Speak a reply.
- *
- * The buffer carries its own sample rate, so the context can stay at whatever
- * the hardware wants and the browser resamples on the way out — which means
- * this works on a laptop and on a phone without either being asked to change.
- *
- * The context is created from the button's click, not from here: autoplay
- * policy lets a context that began inside a gesture keep talking, and one
- * created after three round trips is a context that starts muted with no
- * error anyone can see.
- */
-function playReply(
-  context: AudioContext,
-  base64: string,
-  register: (source: AudioBufferSourceNode) => void
-): Promise<void> {
-  return new Promise((resolve, reject) => {
-    try {
-      const binary = atob(base64);
-      const bytes = new Uint8Array(binary.length);
-      for (let i = 0; i < bytes.length; i++) bytes[i] = binary.charCodeAt(i);
-
-      const samples = new Int16Array(bytes.buffer, 0, Math.floor(bytes.length / 2));
-      const floats = new Float32Array(samples.length);
-      for (let i = 0; i < samples.length; i++) {
-        floats[i] = samples[i] / (samples[i] < 0 ? 0x8000 : 0x7fff);
-      }
-      if (floats.length === 0) {
-        resolve();
-        return;
-      }
-
-      const buffer = context.createBuffer(1, floats.length, REPLY_RATE);
-      buffer.getChannelData(0).set(floats);
-
-      const source = context.createBufferSource();
-      source.buffer = buffer;
-      source.connect(context.destination);
-      // Handed back before it starts, so a click during playback can end it.
-      register(source);
-      source.onended = () => resolve();
-      source.start();
-    } catch (error) {
-      reject(error instanceof Error ? error : new Error(String(error)));
-    }
-  });
 }
 
 /**
@@ -260,6 +212,17 @@ export default function VoiceCommand({
 
       if (toolCalls.length > 0) {
         for (const call of toolCalls) onLog(`🎙️ [VOICE] ${describeVoiceToolCall(call)}`);
+        // The model often speaks *while* it asks — "searching for chelsea
+        // boots under two hundred" — and that line used to be discarded
+        // because the branch below only played prose replies. It is the
+        // "Buscando…" moment: the human hears what is about to be asked for
+        // while the gateway works, not only the verdict afterwards. Playing
+        // it does not weaken rule 1 — it is an *intent*, and what happened is
+        // still narrated from the console lines below, after the handlers.
+        if (asked.replyText || asked.replyAudio) {
+          await speak(String(asked.replyText ?? ""), String(asked.replyAudio ?? ""));
+        }
+        setPhase("thinking");
         lines = await onExecute(toolCalls);
         // A command the gateway refuses still deserves an answer out loud —
         // and it is the *gateway's* line that gets narrated, not the model's
@@ -316,7 +279,7 @@ export default function VoiceCommand({
       speakerRef.current = context;
       if (context.state === "suspended") await context.resume();
       setPhase("speaking");
-      await playReply(context, audio, (source) => {
+      await playPcmReply(context, audio, (source) => {
         sourceRef.current = source;
       });
     } catch (err) {

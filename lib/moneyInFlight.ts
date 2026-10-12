@@ -33,6 +33,17 @@ export type FlightBucket = keyof typeof FLIGHT_STATES;
 export type FlightMember = {
   what: string;
   amount: number;
+  /**
+   * The row this member was summed from, when the table gave it one.
+   *
+   * The tooltip needed the names; the *click* needs the rows. A figure a
+   * reader can point at and ask "which order is this?" has to be able to
+   * answer with the order itself — that is the whole gesture of clicking the
+   * `200.00 Awaiting approval` segment and finding the card behind it. Absent
+   * only on rows written without an id, and a member without one is simply
+   * not clickable; it is still counted and still named.
+   */
+  id?: number;
 };
 
 export type FlightRow = {
@@ -66,6 +77,8 @@ type RowLike = {
   currency: string;
   /** Absent on rows written before `what` existed — see `members`. */
   what?: string;
+  /** Absent on records assembled without one; a member without it is not clickable. */
+  id?: number;
 };
 
 /**
@@ -118,11 +131,18 @@ export function moneyInFlight(rows: readonly RowLike[]): FlightRow[] {
     }
     entry[bucket] += row.limit;
     // The name travels with the money, so a capture moves the row from one
-    // segment's list to the next exactly as it moves between the totals.
-    entry.members[bucket].push({
+    // segment's list to the next exactly as it moves between the totals. The
+    // id travels with both, so the segment can be clicked back to the rows it
+    // was summed from.
+    const member: FlightMember = {
       what: typeof row.what === "string" && row.what.trim() ? row.what.trim() : "(unnamed)",
       amount: row.limit,
-    });
+    };
+    // Only when it is a number, and the key is *not written* otherwise: a
+    // member carrying `id: undefined` would still be JSON that a reader has
+    // to filter around, and "no id" is better said by the absence of one.
+    if (typeof row.id === "number" && Number.isFinite(row.id)) member.id = row.id;
+    entry.members[bucket].push(member);
   }
 
   // Sorted so the axis does not reorder itself as rows are added and removed —

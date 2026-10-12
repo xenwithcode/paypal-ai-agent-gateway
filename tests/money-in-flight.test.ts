@@ -120,6 +120,53 @@ test("a row nobody named is listed as unnamed, never dropped", () => {
   assert.deepEqual(usd.members.reserved, [{ what: "(unnamed)", amount: 25 }]);
 });
 
+test("each member carries the id of the row it was summed from", () => {
+  // The click. Hovering a segment answers "which orders is this made of";
+  // clicking one has to be able to open the order itself, which means the
+  // name travelling with the money is not enough — the id has to travel too.
+  const usd = moneyInFlight([
+    { id: 11, what: "Apple AirPods Max Silver", limit: 549.99, currency: "USD", status: STATUS.reserved },
+    { id: 12, what: "Nike Air Zoom", limit: 50.01, currency: "USD", status: STATUS.reserved },
+    { id: 13, what: "Spotify Premium", limit: 10, currency: "USD", status: STATUS.pending },
+  ])[0];
+
+  assert.deepEqual(
+    usd.members.reserved.map((member) => member.id),
+    [11, 12],
+    "the reserved segment points at the two rows that made it"
+  );
+  assert.deepEqual(
+    usd.members.awaiting.map((member) => member.id),
+    [13],
+    "and each segment points at its own rows"
+  );
+});
+
+test("a row without an id is still counted and named, just not clickable", () => {
+  // A member carrying `id: undefined` would be a key every reader has to
+  // filter around; "no id" is better said by the absence of one. The money
+  // and the name are unaffected either way.
+  const usd = moneyInFlight([row({ what: "Legacy order", limit: 40 })])[0];
+  assert.equal(usd.reserved, 40);
+  assert.deepEqual(usd.members.reserved, [{ what: "Legacy order", amount: 40 }]);
+  assert.equal("id" in usd.members.reserved[0], false, "the key is absent, not undefined");
+});
+
+test("a member's id is the row's own, so a capture moves the id with the money", () => {
+  // Same rule as the name: the id follows the row across segments, or a
+  // click after a capture would open whichever order used to sit there.
+  const before = moneyInFlight([
+    { id: 7, what: "Nike Air Zoom", limit: 60, currency: "USD", status: STATUS.reserved },
+  ])[0];
+  const after = moneyInFlight([
+    { id: 7, what: "Nike Air Zoom", limit: 60, currency: "USD", status: STATUS.captured },
+  ])[0];
+
+  assert.equal(before.members.reserved[0].id, 7);
+  assert.equal(after.members.captured[0].id, 7);
+  assert.equal(before.members.captured.length, 0);
+});
+
 test("a standing allowance holds no money, so it is not in flight", () => {
   // `Active` means "may not be spent beyond the ceiling", not "set aside".
   // Counting it would put money in the chart that was never reserved.

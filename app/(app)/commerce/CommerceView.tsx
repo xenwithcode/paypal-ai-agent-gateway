@@ -2,6 +2,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import Image from "next/image";
 import { ScrollText, Braces } from "lucide-react";
 import { readPolicyRows, type ManifestRow } from "@/lib/history";
 import { manifestFor } from "@/lib/manifests";
@@ -58,6 +59,15 @@ function ManifestCard({ row }: { row: ManifestRow }) {
   // rather than as an empty restriction, the same way the endpoint does.
   const payee = row.payee?.trim() ?? "";
   const status = row.status;
+  // The product the search pointed at, when it pointed at one. `null` means
+  // nothing matched — which is a fact about the search, not a rendering bug,
+  // so the card says so instead of showing a hole where a photo should be.
+  const image = typeof row.marketImage === "string" && row.marketImage ? row.marketImage : null;
+  const price = typeof row.marketPrice === "number" ? row.marketPrice : null;
+  // `null` is the verdict "cannot be judged" — for an order with a condition
+  // and no product, that is exactly the case worth explaining.
+  const unjudged = row.conditionMet === null && condition !== "";
+  const [imageFailed, setImageFailed] = useState(false);
 
   // Built by the same function `GET /api/manifest` uses: this card and the
   // record a counterparty fetches have to be the same document, or the JSON
@@ -67,13 +77,30 @@ function ManifestCard({ row }: { row: ManifestRow }) {
   return (
     <article className="overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm">
       <header className="flex items-start justify-between gap-4 border-b border-slate-100 px-5 py-4">
-        <div className="min-w-0">
-          <h3 className="truncate text-sm font-semibold text-slate-900">
-            {row.what ?? "Unnamed order"}
-          </h3>
-          <p className="truncate text-xs text-slate-400">
-            {row.merchant || "no merchant named"}
-          </p>
+        <div className="flex min-w-0 items-center gap-3">
+          {/* The product itself, when the search found one — the same
+              thumbnail the Overview grid and the approval card show, so the
+              three surfaces can be seen to be talking about one product.
+              A failed download falls back to the plain header rather than a
+              broken-image glyph: the record is the card, the photo is context. */}
+          {image && !imageFailed && (
+            <Image
+              src={image}
+              alt=""
+              width={44}
+              height={44}
+              onError={() => setImageFailed(true)}
+              className="h-11 w-11 shrink-0 rounded-lg border border-slate-100 bg-slate-50 object-cover"
+            />
+          )}
+          <div className="min-w-0">
+            <h3 className="truncate text-sm font-semibold text-slate-900">
+              {row.what ?? "Unnamed order"}
+            </h3>
+            <p className="truncate text-xs text-slate-400">
+              {row.merchant || "no merchant named"}
+            </p>
+          </div>
         </div>
         <span
           className={`shrink-0 rounded-full border px-2.5 py-1 text-[10px] font-bold ${STATUS_TONE[status] ?? "border-slate-200 bg-slate-50 text-slate-500"}`}
@@ -89,6 +116,13 @@ function ManifestCard({ row }: { row: ManifestRow }) {
           value={condition || "— spend now"}
           empty={!condition}
         />
+        {/* The price as it was when the order was drafted, labelled as such:
+            a manifest that printed a bare number would read as the price *now*
+            — and this record is fetched by counterparties. Absent, not zero,
+            when nothing matched. */}
+        {price !== null && (
+          <Field label="price at draft" value={`${price.toFixed(2)} ${row.currency}`} />
+        )}
         <Field label="valid_until" value={expires || "No expiry"} empty={!expires} />
         <Field label="mode" value={row.mode ?? "—"} empty={!row.mode} />
         <Field label="payee" value={payee || "no recipient set"} empty={!payee} />
@@ -98,6 +132,30 @@ function ManifestCard({ row }: { row: ManifestRow }) {
           empty={!endpoint}
         />
       </dl>
+
+      {/* Two sentences the empty photo slot used to leave unasked: what is
+          missing (a product to read a price from) and what "awaiting
+          approval" is actually waiting on — the human, in the approval card.
+          Both are true whether or not the operator has opened Overview, and
+          a manifest that shows a hole where a product should be is a
+          manifest a reader has to guess at. */}
+      {(unjudged || status === "Awaiting approval") && !image && (
+        <div className="border-t border-slate-100 px-5 py-3 text-[11px] leading-relaxed text-slate-500">
+          {unjudged && (
+            <p>
+              No catalog product matched this order, so <span className="font-mono">{condition}</span>{" "}
+              cannot be checked yet — there is no price to compare against.
+            </p>
+          )}
+          {status === "Awaiting approval" && (
+            <p className={unjudged ? "mt-1" : ""}>
+              <strong className="font-semibold text-slate-600">Awaiting approval waits for you:</strong>{" "}
+              open this order in Overview and approve it with PayPal&apos;s button. Nothing is
+              reserved and nothing is bought until you do.
+            </p>
+          )}
+        </div>
+      )}
 
       {/* The payload as the machine would read it. Not printed: a terminal
           dump beside a table adds nothing on paper. */}

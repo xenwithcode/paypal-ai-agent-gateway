@@ -92,7 +92,11 @@ function segmentTooltip(
   };
 }
 
-function buildOptions(data: FlightRow[], container: HTMLElement): AgChartOptions {
+function buildOptions(
+  data: FlightRow[],
+  container: HTMLElement,
+  onOpenOrder?: (id: number, total: number) => void
+): AgChartOptions {
   return {
     container,
     data,
@@ -100,6 +104,11 @@ function buildOptions(data: FlightRow[], container: HTMLElement): AgChartOptions
     // bar in AG Charts is stacked *series*, and each one gets its own colour
     // and its own legend entry — which is also what makes the legend clickable.
     series: SEGMENTS.map((segment) => ({
+      // The segment's own key as the series id, so the click handler can
+      // name the segment that was hit. `itemId` would have been the trap: on
+      // a bar node it falls back to the *datum index*, so clicking the first
+      // bar of any series would have looked like clicking "awaiting".
+      id: segment.key,
       type: "bar" as const,
       direction: "horizontal" as const,
       stacked: true,
@@ -152,6 +161,28 @@ function buildOptions(data: FlightRow[], container: HTMLElement): AgChartOptions
     // them would have to pick a member of a union that also contains the polar
     // chart types — asking for a type this chart is not.
     legend: { enabled: true, position: "bottom" as const },
+    // The amount is the sum of rows; clicking it opens the rows. The figure
+    // a reader points at ("200.00 awaiting") and the order it describes live
+    // on two cards that used to have no gesture between them.
+    //
+    // The first order in the segment is the one that opens. When the segment
+    // holds several, the console says so — the hover lists them all, and the
+    // grid below is the full record. What this must never do is open a card
+    // and let it pass for *the* explanation of the whole amount.
+    listeners: onOpenOrder
+      ? {
+          seriesNodeClick: (event) => {
+            const segment = SEGMENTS.find((candidate) => candidate.key === event.seriesId);
+            if (!segment) return;
+            const members = (event.datum as FlightRow | null)?.members?.[segment.key] ?? [];
+            const ids = members
+              .map((member) => member.id)
+              .filter((id): id is number => typeof id === "number");
+            if (ids.length === 0) return;
+            onOpenOrder(ids[0], members.length);
+          },
+        }
+      : undefined,
     background: { visible: false },
     // Grows with the number of currencies. A fixed height sized for one bar
     // squeezes three into a strip where the segments stop being comparable,
@@ -168,7 +199,13 @@ function buildOptions(data: FlightRow[], container: HTMLElement): AgChartOptions
  * is a crash waiting for the next capture. Here mount and unmount are the
  * component's, so create and destroy cannot disagree with them.
  */
-function FlightChart({ rows }: { rows: FlightRow[] }) {
+function FlightChart({
+  rows,
+  onOpenOrder,
+}: {
+  rows: FlightRow[];
+  onOpenOrder?: (id: number, total: number) => void;
+}) {
   const container = useRef<HTMLDivElement | null>(null);
   const chart = useRef<AgChartInstance | null>(null);
 
@@ -176,15 +213,18 @@ function FlightChart({ rows }: { rows: FlightRow[] }) {
   // chart on every capture would redraw it from scratch, and this figure is
   // meant to *move* — a bar that jumps because it was rebuilt again reads as
   // a different number rather than the same number changing.
+  //
+  // The click handler rides along in the same update: the options object is
+  // the whole chart, listener included.
   useEffect(() => {
     if (!container.current) return;
-    const options = buildOptions(rows, container.current);
+    const options = buildOptions(rows, container.current, onOpenOrder);
     if (chart.current) {
       void chart.current.update(options);
     } else {
       chart.current = AgCharts.create(options);
     }
-  }, [rows]);
+  }, [rows, onOpenOrder]);
 
   useEffect(
     () => () => {
@@ -194,7 +234,15 @@ function FlightChart({ rows }: { rows: FlightRow[] }) {
     []
   );
 
-  return <div ref={container} className="w-full" aria-hidden="true" />;
+  // A pointer over the segments only when there is something to open: a
+  // cursor that promises a click and finds none is a dead affordance.
+  return (
+    <div
+      ref={container}
+      className={`w-full${onOpenOrder ? " cursor-pointer" : ""}`}
+      aria-hidden="true"
+    />
+  );
 }
 
 /**
@@ -212,7 +260,21 @@ function FlightChart({ rows }: { rows: FlightRow[] }) {
  * read in a glance and to make the table below it legible as a whole — a
  * reader who can see the totals finds the row that explains them.
  */
-export default function MoneyInFlight({ rows }: { rows: readonly PolicyRow[] }) {
+export default function MoneyInFlight({
+  rows,
+  onOpenOrder,
+}: {
+  rows: readonly PolicyRow[];
+  /**
+   * Open the approval card of the order behind a clicked segment.
+   *
+   * The `total` is how many orders the segment holds, so the caller can say
+   * out loud when one card is only part of the figure — the number on the
+   * segment is a sum, and a sum opened as a single order would read as that
+   * order's price.
+   */
+  onOpenOrder?: (id: number, total: number) => void;
+}) {
   const flight = useMemo(() => moneyInFlight(rows), [rows]);
   const visible = hasMoneyInFlight(flight);
 
@@ -226,12 +288,12 @@ export default function MoneyInFlight({ rows }: { rows: readonly PolicyRow[] }) 
         <p className="mt-0.5 text-xs text-slate-500">
           One bar per currency — never added together. Four states of the same promise: drafted,
           set aside, moved, given back. The balance in the header is what you have; this is what
-          is committed. Hover a segment to see the orders it holds.
+          is committed. Hover a segment to see the orders it holds; click it to open one.
         </p>
       </div>
 
       {visible ? (
-        <FlightChart rows={flight} />
+        <FlightChart rows={flight} onOpenOrder={onOpenOrder} />
       ) : (
         <p className="text-sm text-slate-500 py-4">
           Nothing is in flight — no order is awaiting your approval, and nothing is held.

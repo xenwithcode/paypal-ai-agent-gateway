@@ -35,6 +35,9 @@ import PositionCard from "./PositionCard";
 // The microphone CTA. It lives with the shared components because it knows
 // nothing about this page's table — the dashboard tells it what to run.
 import VoiceCommand from "../../components/VoiceCommand";
+// …and the agent's voice for the *written* path: a typed draft gets the same
+// spoken confirmation the spoken one does, through the same `report` step.
+import { useSpokenReply } from "../../components/useSpokenReply";
 import { usePaypalBalances } from "../../hooks/usePaypalBalances";
 import type { VoiceToolCall } from "@/lib/voice/tools";
 
@@ -88,6 +91,23 @@ function isPolicyRow(value: unknown): value is PolicyRow {
   );
 }
 
+
+/**
+ * Bring a freshly revealed result into sight — and only if it is not
+ * already.
+ *
+ * Shared by the three moments a result can land off-screen: the chart
+ * opening a card above itself, a voice draft finding candidates, and a typed
+ * one whose strip sits below the position card. Scrolling something the
+ * reader can already see is a jump they did not ask for; scrolling nothing
+ * is how a card ends up approved by nobody.
+ */
+function revealWhenHidden(el: HTMLElement | null): void {
+  if (!el) return;
+  const box = el.getBoundingClientRect();
+  if (box.top >= 0 && box.bottom <= window.innerHeight) return;
+  el.scrollIntoView({ behavior: "smooth", block: "center" });
+}
 
 /**
  * What the table starts with: a standing allowance, a drafted order whose
@@ -196,6 +216,13 @@ export default function AgentGrid({
   // Where the empty state's example lands, and where the reader's eye goes
   // with it: a filled field nobody is looking at is half a gesture.
   const inputRef = useRef<HTMLInputElement | null>(null);
+  // The two surfaces a result can land *out of view*: the approval card sits
+  // above the chart, the candidate strip above the table. Anything that opens
+  // one from far down the page (a click on a bar, the voice agent finishing a
+  // search) scrolls it into sight — a card nobody is looking at is a card
+  // nobody approves, which is a rule this project already learned once.
+  const panelHostRef = useRef<HTMLDivElement | null>(null);
+  const pickerHostRef = useRef<HTMLDivElement | null>(null);
   const [prompt, setPrompt] = useState("");
   const [loading, setLoading] = useState(false);
   const [fraudAlert, setFraudAlert] = useState<{ active: boolean; msg: string }>({ active: false, msg: "" });
@@ -268,6 +295,16 @@ export default function AgentGrid({
     // producto cuya tesis es la auditoría no puede perderlo con un refresco.
     recordEvent(line);
   }, []);
+
+  /**
+   * The agent's voice for typed drafts.
+   *
+   * Same funnel as the microphone's: what gets narrated is what the handlers
+   * logged above, sent through the same `report` step. The toggle is here
+   * rather than in the header because this is the box the reply belongs to —
+   * the control sits with the thing it controls.
+   */
+  const spokenReply = useSpokenReply(addLog);
 
   /**
    * The balance as it stands now, re-read after anything that moved money.
@@ -866,6 +903,36 @@ export default function AgentGrid({
    */
   const lastAgentLog = useRef(new Map<number, string>());
 
+  /**
+   * Click a segment in *Money in flight* → open the order behind it.
+   *
+   * The gesture the widget was missing: the figure says `200.00 Awaiting
+   * approval` and the order that means lives two cards up with no way across
+   * except finding it in the table by eye. The id comes from the segment's
+   * own members, so what opens is the row that was actually summed — never a
+   * lookup by amount, which would open whichever order happens to cost the
+   * same.
+   *
+   * When the segment is a sum of several orders the console says so: one
+   * card must not pass for the whole figure. The scroll happens on a timeout
+   * because the panel does not exist yet at the moment `setSelectedId` is
+   * called — the render it schedules is what makes it scrollable at all.
+   */
+  const openOrderFromFlight = useCallback(
+    (id: number, total: number) => {
+      const row = rowsRef.current.find((candidate) => candidate.id === id);
+      if (!row) return;
+      if (total > 1) {
+        addLog(
+          `📊 [FLIGHT] That segment holds ${total} orders — opened "${row.what}". Hover the segment to see them all.`
+        );
+      }
+      setSelectedId(id);
+      window.setTimeout(() => revealWhenHidden(panelHostRef.current), 60);
+    },
+    [addLog]
+  );
+
   const toggleAgent = () => {
     const next = !agentRunning;
     setAgentRunning(next);
@@ -1240,8 +1307,14 @@ export default function AgentGrid({
    * same thing with a string it already has: writing the request twice would
    * mean two places where the "Drafting an order from" line could fall out of
    * sync with the request that actually went out.
+   *
+   * `revealResults` brings the answer into sight when it lands off-screen —
+   * and only then: `revealWhenHidden` does not scroll to something the reader
+   * is already looking at. The strip can sit below the position card for a
+   * typed draft just as easily as it can for a spoken one, and the spoken
+   * reply points at it ("shown below").
    */
-  const draftOrderFrom = async (text: string) => {
+  const draftOrderFrom = async (text: string, opts?: { revealResults?: boolean }) => {
     const intent = text.trim();
     if (!intent) return;
     setLoading(true);
@@ -1286,8 +1359,11 @@ export default function AgentGrid({
           setMatchedId(typeof data.matchedId === "number" ? data.matchedId : null);
           setSelectedId(null);
           addLog(
-            `🖼️ [SEARCH] ${found.length} candidate${found.length === 1 ? "" : "s"} for "${data.gridRow.what}" — choose one to draft the order.`
+            `🖼️ [SEARCH] ${found.length} candidate${found.length === 1 ? "" : "s"} for "${data.gridRow.what}" — shown below; choose one to draft the order.`
           );
+          if (opts?.revealResults) {
+            window.setTimeout(() => revealWhenHidden(pickerHostRef.current), 60);
+          }
         } else {
           // Nothing to choose, so any strip from a previous search is now
           // about a different order and must not outlive it.
@@ -1302,6 +1378,9 @@ export default function AgentGrid({
           // The card is the moment the human is actually being asked something,
           // so it opens itself rather than waiting to be found in the table.
           setSelectedId(data.gridRow.id);
+          if (opts?.revealResults) {
+            window.setTimeout(() => revealWhenHidden(panelHostRef.current), 60);
+          }
         }
       } else if (res.status === 429) {
         // Distinct from a rejection on purpose: nothing was judged here, so it
@@ -1329,7 +1408,29 @@ export default function AgentGrid({
 
   /** What the button does: draft from whatever is in the box right now. */
   const handleGeneratePolicy = async () => {
-    await draftOrderFrom(prompt);
+    // Created inside the click, not after the fetch: autoplay policy lets a
+    // context that began inside a gesture keep talking, and one created three
+    // round trips later starts muted with no error anyone can see.
+    spokenReply.prime();
+
+    // The same observation the voice path uses: capture what the handlers
+    // print through the single funnel, then narrate *that*. The lines are
+    // the record; the speech is the record read aloud — a typed draft and a
+    // spoken one could not be allowed to end in two different stories.
+    const captured: string[] = [];
+    logSinkRef.current = (line) => captured.push(line);
+    try {
+      // Results revealed too: the spoken reply that follows says "shown
+      // below the request box", and pointing at something off-screen is the
+      // same as not pointing at it.
+      await draftOrderFrom(prompt, { revealResults: true });
+    } finally {
+      logSinkRef.current = null;
+    }
+    // Fire-and-forget on purpose: the order is on screen and the console has
+    // the lines whether or not the voice comes back — a failed narration is
+    // a shrug, not a failure, and the hook says so in the console itself.
+    void spokenReply.speakLines(captured);
   };
 
   /**
@@ -1356,7 +1457,11 @@ export default function AgentGrid({
       for (const call of calls) {
         switch (call.name) {
           case "draftOrder": {
-            await draftOrderFrom(String(call.args.prompt));
+            // `revealResults`: the request came from a microphone, so the
+            // answer — the candidate strip, or the approval card — has to
+            // come to where the listener is instead of appearing two scrolls
+            // up, where the spoken "shown below" would point at nothing.
+            await draftOrderFrom(String(call.args.prompt), { revealResults: true });
             break;
           }
 
@@ -1526,7 +1631,37 @@ export default function AgentGrid({
             </Term>{" "}
             before it may spend.
           </label>
-          <VoiceCommand rows={rowData} onExecute={executeVoiceTool} onLog={addLog} />
+          <div className="flex items-center gap-2">
+            {/* The written path's voice, and its off switch. A reply nobody
+                can silence is a nuisance; a control nobody can find is a
+                setting. It sits beside the microphone because they are the
+                two halves of the same promise — the agent answers out loud
+                however the request arrived. */}
+            <button
+              type="button"
+              onClick={() => {
+                // Turning it on from inside the click also pays for the
+                // speaker; the first reply must not be the gesture that
+                // discovers autoplay is holding it mute.
+                if (!spokenReply.enabled) spokenReply.prime();
+                spokenReply.toggle();
+              }}
+              aria-pressed={spokenReply.enabled}
+              title={
+                spokenReply.enabled
+                  ? "The agent speaks what it did after every draft you write. Click to mute it."
+                  : "Written drafts are answered only in the console. Click to let the agent speak again."
+              }
+              className={`rounded-xl border px-3 py-2 text-xs font-bold transition ${
+                spokenReply.enabled
+                  ? "border-blue-200 bg-blue-50 text-blue-600 hover:border-blue-300"
+                  : "border-slate-200 bg-white text-slate-400 hover:border-slate-300 hover:text-slate-600"
+              }`}
+            >
+              🔊 {spokenReply.enabled ? "Voice replies on" : "Voice replies off"}
+            </button>
+            <VoiceCommand rows={rowData} onExecute={executeVoiceTool} onLog={addLog} />
+          </div>
         </div>
         <div className="flex gap-3">
           <input
@@ -1593,13 +1728,15 @@ export default function AgentGrid({
           so it is shown where the request was made, before any order exists
           rather than after. The approval card opens only once a choice does. */}
       {pendingRow && candidates.length > 0 && (
-        <CandidatePicker
-          candidates={candidates}
-          matchedId={matchedId}
-          ceiling={pendingRow.limit}
-          currency={pendingRow.currency}
-          onChoose={(product) => void handleChoose(product)}
-        />
+        <div ref={pickerHostRef}>
+          <CandidatePicker
+            candidates={candidates}
+            matchedId={matchedId}
+            ceiling={pendingRow.limit}
+            currency={pendingRow.currency}
+            onChoose={(product) => void handleChoose(product)}
+          />
+        </div>
       )}
 
       {/* AG Grid policy table */}
@@ -1674,16 +1811,18 @@ export default function AgentGrid({
 
       {/* The card the human decides from: product, envelope, authorization. */}
       {selectedRow && (
-        <OrderPanel
-          row={selectedRow}
-          paypalClientId={paypalClientId}
-          onClose={() => setSelectedId(null)}
-          onAction={handleHoldAction}
-          onPaypalAuthorized={handlePaypalAuthorized}
-          onUseAlternative={useAlternative}
-          onRaiseCeiling={raiseCeiling}
-          onDiscard={discardOrder}
-        />
+        <div ref={panelHostRef}>
+          <OrderPanel
+            row={selectedRow}
+            paypalClientId={paypalClientId}
+            onClose={() => setSelectedId(null)}
+            onAction={handleHoldAction}
+            onPaypalAuthorized={handlePaypalAuthorized}
+            onUseAlternative={useAlternative}
+            onRaiseCeiling={raiseCeiling}
+            onDiscard={discardOrder}
+          />
+        </div>
       )}
 
       {/* The totals the table is made of, drawn rather than summed by the
@@ -1695,8 +1834,11 @@ export default function AgentGrid({
           compose an order and decide rows here, so a summary arriving before
           its evidence was a detour — the numbers meant nothing until the table
           underneath explained them. Rows first, then what they add up to, then
-          what happened: evidence, aggregate, narration. */}
-      <MoneyInFlight rows={rowData} />
+          what happened: evidence, aggregate, narration.
+
+          `onOpenOrder` closes the loop the other way: from the sum back to
+          the order, which is the question a reader points at the bar and asks. */}
+      <MoneyInFlight rows={rowData} onOpenOrder={openOrderFromFlight} />
 
       {/* The console as a shared component: Recurring reads the record this
           one writes, so there is one place the tone rules and the empty
