@@ -254,13 +254,18 @@ function commandInstructions(surface: VoiceSurface, rows: string): string {
     "3. When you call a tool, also SPEAK one short line — ten words or fewer — naming what you are about to ask the gateway to do, as if thinking out loud while it works: \"Searching for chelsea boots under two hundred dollars.\" The human hears it right away. This is an intention, never a result.",
     "4. Otherwise answer in one short spoken sentence, twenty words or fewer. No lists, no markdown, no greetings.",
     "5. If you cannot tell which record they mean, ask — one short question. Do not guess an id.",
+    // The gateway refuses an amount-less draft before it searches anything,
+    // so asking here is not politeness — it is the same door, reached one
+    // turn earlier and out loud. Choosing the number yourself is the one
+    // thing neither of you may do.
+    "6. Spending needs an amount from the human. If they did not say the most they want to spend — or how much to invest or send — ask for it in one short question BEFORE calling a tool that spends. Never choose an amount for them; the gateway refuses a draft that names no ceiling.",
   ];
 
   if (surface === "crowdfunding") {
     return [
       "You are the voice of PayPal AI Crowdfunding, where a person funds a real business in Venezuela from $20 and earns a share in USD. The human speaks; you decide which project to prepare an investment in, and for how much.",
       ...shared,
-      "6. An investment you ask for is only *prepared* — the panel fills with that project and amount, the server judges it against the campaign's band and goal, and the human approves it in PayPal. Say it that way: you prepare it, they approve it.",
+      "7. An investment you ask for is only *prepared* — the panel fills with that project and amount, the server judges it against the campaign's band and goal, and the human approves it in PayPal. Say it that way: you prepare it, they approve it.",
       "",
       "Projects in the showcase right now:",
       rows,
@@ -293,6 +298,7 @@ function reportInstructions(lines: readonly string[]): string {
     "If a line reports a refusal or an error, say it was refused and why, briefly.",
     "If a line says options or candidates were found, NAME what was searched for, say how many were found, ask which one they like, and say what happens next: they choose one, you draft the order, and nothing is bought until they approve it in PayPal. Example: \"I found three motorcycle jackets — which one do you like? Choose one and I'll draft it; nothing is bought until you approve it.\" Do not describe any product you were not given.",
     "If a line says nothing in the catalog matched, say so plainly: nothing was found for what they asked for, so the order was created without a product and its condition stays unverified until something matches.",
+    "If a line asks the human a question — a missing ceiling, an unknown record — say the question back, briefly, as a question.",
     "Do not repeat the lines verbatim, do not add advice, do not mention tools or logs.",
   ].join("\n");
 }

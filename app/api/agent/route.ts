@@ -104,6 +104,22 @@ export async function POST(req: NextRequest) {
     const availableBalance = (await getBalance()).value;
     const { policy, source, reason } = await parseUserIntention(prompt, availableBalance);
 
+    // An order without a ceiling is not an order — it is a blank cheque,
+    // and the one time this bit somebody, the parser filled the gap with
+    // the account balance and the strip offered a $3,999 motorcycle for a
+    // jacket. The gateway asks before it searches: no catalog read, no
+    // ranking call, no money in motion on a number nobody said. The
+    // `needsCeiling` flag tells the console this is a question rather than
+    // a failure, and the voice path narrates it like any other line.
+    if (policy.limit <= 0) {
+      return NextResponse.json({
+        success: false,
+        needsCeiling: true,
+        error:
+          'Name the most this order may ever cost — an order without a ceiling is not an order this gateway drafts. Say it in the request, e.g. "a jacket for riding, under 150 dollars".',
+      });
+    }
+
     // Resolve the policy against a catalog entry. Without this a price
     // condition could only be stored, never judged — and an unjudged condition
     // must not read as satisfied.

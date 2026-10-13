@@ -119,7 +119,13 @@ export default function Sidebar() {
         aria-label="Main"
         className="flex gap-1.5 overflow-x-auto px-3 py-3 md:flex-1 md:flex-col md:gap-0.5 md:overflow-x-visible md:overflow-y-auto md:px-3 md:py-4"
       >
-        <span className="hidden px-3 pb-1 pt-1 text-[11px] font-semibold uppercase tracking-wider text-slate-400 md:block">
+        {/* The three group titles wear the brand blue rather than the old
+            grey: they are this page's structure, and structure a reader never
+            notices is structure they navigate without. The colour is the
+            token — `blue-600`, the #0042a1 the header already wears — not a
+            hex spelled out here, so the day the palette moves, these move
+            with it. */}
+        <span className="hidden px-3 pb-1 pt-1 text-[11px] font-semibold uppercase tracking-wider text-blue-600 md:block">
           Workspace
         </span>
 
@@ -133,7 +139,7 @@ export default function Sidebar() {
         {/* One name for two rails: this group holds what guards the money and
             what makes it grow — protecting a balance and funding a business
             are the same pillar's two halves, and the flagship leads it. */}
-        <span className="hidden px-3 pb-1 pt-1 text-[11px] font-semibold uppercase tracking-wider text-slate-400 md:block">
+        <span className="hidden px-3 pb-1 pt-1 text-[11px] font-semibold uppercase tracking-wider text-blue-600 md:block">
           Protect &amp; grow
         </span>
 
@@ -218,7 +224,7 @@ export default function Sidebar() {
             still has to be able to reach it. */}
         <span aria-hidden="true" className="hidden md:my-3 md:block md:h-px md:bg-slate-200" />
 
-        <span className="hidden px-3 pb-1 pt-1 text-[11px] font-semibold uppercase tracking-wider text-slate-400 md:block">
+        <span className="hidden px-3 pb-1 pt-1 text-[11px] font-semibold uppercase tracking-wider text-blue-600 md:block">
           Appendices
         </span>
 

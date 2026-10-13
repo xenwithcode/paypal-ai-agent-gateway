@@ -1391,6 +1391,18 @@ export default function AgentGrid({
             window.setTimeout(() => revealWhenHidden(panelHostRef.current), 60);
           }
         }
+      } else if (data.needsCeiling === true) {
+        // A question, not a failure: the request named no amount, so the
+        // gateway asks for the ceiling before spending a single catalog
+        // read on it. Logged as the agent speaking — because it is — and
+        // the voice path narrates it like any other line through the same
+        // funnel, so a spoken draft with no amount gets asked out loud.
+        const ask =
+          typeof data.error === "string" && data.error
+            ? data.error
+            : "Name the most this order may ever cost.";
+        addLog(`💬 [AGENT] ${ask}`);
+        setIntentError(ask);
       } else if (res.status === 429) {
         // Distinct from a rejection on purpose: nothing was judged here, so it
         // must not read as the agent turning the order down. The attempt was

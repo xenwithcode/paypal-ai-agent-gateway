@@ -132,6 +132,22 @@ const config: Config = {
           950: "#55160c",
         },
       },
+      // One movement in the whole product, and it earns its place the same
+      // way the strip it belongs to does: a first-time reader has to look at
+      // the three steps. It is a *breathing* ring of the brand blue, never a
+      // flash — WCAG counts flashes per second, and this exhales over three
+      // and a half. The classes on the strip turn it off for
+      // `prefers-reduced-motion` and on hover, because a reader whose mouse
+      // is already on it is a reader who is already reading.
+      keyframes: {
+        "soft-glow": {
+          "0%, 100%": { boxShadow: "0 0 0 0 rgba(0, 66, 161, 0)" },
+          "50%": { boxShadow: "0 0 0 5px rgba(0, 66, 161, 0.13)" },
+        },
+      },
+      animation: {
+        "soft-glow": "soft-glow 3.5s ease-in-out infinite",
+      },
     },
   },
   plugins: [],

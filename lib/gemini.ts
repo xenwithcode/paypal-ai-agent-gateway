@@ -197,6 +197,16 @@ export async function parseUserIntention(
     `and an empty condition turns a bounded purchase into an immediate ` +
     `unconditional one. Leave it empty only when the user asked for it to ` +
     `go ahead with no requirement attached.\n` +
+    // An order without a ceiling is a blank cheque, and the one time this
+    // bit somebody the parser filled the gap with the account balance —
+    // which offered a $3,999 motorcycle as a match for a jacket. The
+    // gateway asks the human instead: limit 0 means "no amount was stated",
+    // and the route refuses the draft with a question before it searches
+    // anything. Never invent the number that authorises the spend.
+    `- "limit" must come from the request: the maximum price named, or the ` +
+    `exact amount to send or invest. If the request names no amount at all, ` +
+    `return 0 — the gateway will ask the human for it. Never use the ` +
+    `available balance as a ceiling and never invent an amount.\n` +
     // "valid until the 27th" came back as tomorrow's date: the model read the
     // sentence and answered with a deadline of its own. Naming the shape the
     // rule wants — the *next* occurrence of that day — costs one line and it

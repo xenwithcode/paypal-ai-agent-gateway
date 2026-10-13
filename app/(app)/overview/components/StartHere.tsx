@@ -91,7 +91,14 @@ export default function StartHere() {
   return (
     <section
       aria-label="How this page works"
-      className="rounded-2xl border border-blue-100 bg-blue-50/60 p-4 md:p-5"
+      // It breathes, once, for as long as it is on screen: the strip's whole
+      // job is to be read by somebody who has never seen this page, and a
+      // strip that waits politely to be noticed is a strip a judge scrolls
+      // past. A soft ring of the brand blue — not a flash — off the moment
+      // the mouse arrives (the reader is reading now) and off entirely under
+      // `prefers-reduced-motion`, the same courtesy the diagram's Live mode
+      // gives. Gone forever after the ✕, remembered in localStorage.
+      className="animate-soft-glow rounded-2xl border border-blue-100 bg-blue-50/60 p-4 motion-reduce:animate-none hover:animate-none md:p-5"
     >
       <div className="flex items-start justify-between gap-4">
         <p className="text-xs font-semibold uppercase tracking-wide text-blue-700">
