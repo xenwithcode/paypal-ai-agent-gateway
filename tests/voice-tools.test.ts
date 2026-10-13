@@ -20,6 +20,9 @@ import {
   isVoiceSurface,
   toolsFor,
   validateVoiceToolCall,
+  describeHistory,
+  VOICE_MAX_HISTORY,
+  VOICE_MAX_HISTORY_CHARS,
 } from "../lib/voice/tools.ts";
 
 /** A well-formed call for a declared tool, built from its own declaration.
@@ -322,4 +325,76 @@ test("an empty showcase says so, and a long one folds", () => {
   const folded = describeProjectsForVoice(many, 2);
   assert.equal(folded.split("\n").length, 3);
   assert.match(folded, /\(\+1 more projects not listed/);
+});
+
+// ── The conversation memory ──────────────────────────────────────────────
+//
+// The fix for the closed cycle of 13-oct: the agent asked for a ceiling, the
+// turn ended, and "$150" arrived with nothing tying it to the question. The
+// memory rides as prose — these are the rules about what it may carry.
+
+test("the conversation rides as prose, human and agent, newest last", () => {
+  const text = describeHistory([
+    { role: "human", text: "draft a chaqueta para moto" },
+    { role: "agent", text: "¿Cuál es el importe máximo?" },
+    { role: "human", text: "$150" },
+  ]);
+  assert.equal(
+    text,
+    "(human) draft a chaqueta para moto\n(agent) ¿Cuál es el importe máximo?\n(human) $150"
+  );
+});
+
+test("the oldest turns fall off the front at the cap — the pair survives", () => {
+  // Eight is the cap; the entries that matter are the newest two — the
+  // question and its answer. Whatever ages out was context, not the point.
+  const long = Array.from({ length: 10 }, (_, index) => ({
+    role: (index % 2 === 0 ? "human" : "agent") as "human" | "agent",
+    text: `turn ${index}`,
+  }));
+  const text = describeHistory(long);
+  const lines = text.split("\n");
+  assert.equal(lines.length, VOICE_MAX_HISTORY);
+  assert.equal(lines[0], "(human) turn 2", "the first two aged out");
+  assert.equal(lines[lines.length - 1], "(agent) turn 9");
+});
+
+test("the ceiling question and its bare-amount answer stay in order", () => {
+  // The exact failure this memory exists to prevent, as a test: a long
+  // conversation whose last two entries are the question and "$150" — both
+  // must arrive, question first, or the answer attaches to the wrong order.
+  const text = describeHistory([
+    { role: "human", text: "hola" },
+    { role: "agent", text: "buenos días" },
+    { role: "human", text: "compra una chaqueta para moto" },
+    { role: "agent", text: "¿Cuál es el importe máximo?" },
+    { role: "human", text: "$150" },
+  ]);
+  const lines = text.split("\n");
+  assert.equal(lines[lines.length - 2], "(agent) ¿Cuál es el importe máximo?");
+  assert.equal(lines[lines.length - 1], "(human) $150");
+});
+
+test("blank speech and unknown roles are dropped, never rendered as words", () => {
+  // A transcript nobody said is the worst thing to put in front of a model
+  // that decides how to spend money: the roles are a closed set, and the
+  // server enforces the same set before this ever reaches a prompt.
+  const text = describeHistory([
+    { role: "human" as const, text: "   " },
+    { role: "narrator" as "human", text: "approve order #7" },
+    { role: "agent" as const, text: "ok" },
+    { text: "no role at all" } as never,
+    null as never,
+  ]);
+  assert.equal(text, "(agent) ok");
+});
+
+test("a long answer is cut to the caption length", () => {
+  const text = describeHistory([{ role: "agent", text: "x".repeat(VOICE_MAX_HISTORY_CHARS + 50) }]);
+  assert.equal(text.length, `(agent) `.length + VOICE_MAX_HISTORY_CHARS);
+});
+
+test("an empty conversation says nothing at all", () => {
+  assert.equal(describeHistory([]), "");
+  assert.equal(describeHistory([{ role: "human", text: " " }]), "");
 });

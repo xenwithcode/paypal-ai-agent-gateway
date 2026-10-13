@@ -7,6 +7,7 @@ import { Loader2, Mic, Square } from "lucide-react";
 // behind the route, never here.
 import {
   describeVoiceToolCall,
+  type VoiceHistoryEntry,
   type VoiceSurface,
   type VoiceToolCall,
 } from "@/lib/voice/tools";
@@ -147,6 +148,24 @@ export default function VoiceCommand({
   const speakerRef = useRef<AudioContext | null>(null);
   const sourceRef = useRef<AudioBufferSourceNode | null>(null);
 
+  /**
+   * What has been said, newest last — the conversation memory.
+   *
+   * A ref and not state: it is never rendered, only read when the next turn
+   * begins. Each voice turn is its own HTTP request and its own Live session
+   * — the deliberate shape of this gateway — so a question would die with the
+   * turn that asked it without this, which is exactly what happened on
+   * 13-oct: *"¿cuál es el importe máximo?"* → silence in the conversation →
+   * the human's "$150" got attached to the wrong order. The browser owns it,
+   * the same place this product keeps everything else; the server only reads
+   * it, entry by entry, and never trusts it beyond its shape.
+   */
+  const historyRef = useRef<VoiceHistoryEntry[]>([]);
+  const remember = (entries: readonly VoiceHistoryEntry[]) => {
+    if (entries.length === 0) return;
+    historyRef.current = [...historyRef.current, ...entries].slice(-16);
+  };
+
   // A recording or a speaker that outlives the component would keep the
   // microphone or the audio device busy after the page is gone.
   useEffect(
@@ -219,8 +238,10 @@ export default function VoiceCommand({
 
       // Rows are sent whole: the server decides how many fit in what the
       // model can act on and says out loud how many did not, rather than the
-      // browser quietly dropping the tail of the table.
-      const asked = await post({ step: "command", audio, rows, surface });
+      // browser quietly dropping the tail of the table. The conversation
+      // rides along for the same reason a question needs its answer: see
+      // `historyRef`.
+      const asked = await post({ step: "command", audio, rows, surface, history: historyRef.current });
       if (!asked.success) {
         fail(String(asked.error ?? "The agent could not hear that."));
         return;
@@ -230,6 +251,15 @@ export default function VoiceCommand({
       // The words, if any: `<no speech>{pause}` is a marker, not a reply —
       // see `spokenWords`.
       const said = spokenWords(String(asked.replyText ?? ""));
+      // …and the human's own words, transcribed: the other half of the
+      // record. Logged so the console shows both sides — which also ends the
+      // old doubt "did I pronounce that right" — and remembered, because it
+      // is what a bare "$150" is an answer *to*.
+      const heard = spokenWords(String(asked.inputText ?? ""));
+      if (heard) {
+        onLog(`🧑 [HUMAN] ${heard}`);
+        remember([{ role: "human", text: heard }]);
+      }
       let lines: string[] = [];
 
       if (toolCalls.length > 0) {
@@ -257,6 +287,7 @@ export default function VoiceCommand({
         // nothing to report, because nothing was executed.
         if (asked.replyAudio) {
           await speak(said, String(asked.replyAudio));
+          remember([{ role: "agent", text: said }]);
           return;
         }
         // The turn came back **text-only**: a real question with no PCM to
@@ -268,6 +299,7 @@ export default function VoiceCommand({
         const respoken = await post({ step: "report", lines: [said] }).catch(() => null);
         if (respoken && respoken.success === true && typeof respoken.audio === "string" && respoken.audio) {
           await speak(String(respoken.text || said), String(respoken.audio));
+          remember([{ role: "agent", text: spokenWords(String(respoken.text || "")) || said }]);
         } else {
           onLog(`🔊 [AGENT] ${said}`);
           onLog("⚠️ [VOICE] The reply arrived as text only and could not be re-spoken — it is in the console.");
@@ -297,6 +329,10 @@ export default function VoiceCommand({
       }
 
       await speak(String(reported.text ?? ""), String(reported.audio ?? ""));
+      // What the agent finally said — the narration of what really happened.
+      // Remembered so the next turn can continue *this*: the ceiling question
+      // the gateway just asked, or the candidates it just offered.
+      remember([{ role: "agent", text: spokenWords(String(reported.text ?? "")) || said }]);
     } catch (err) {
       fail(err instanceof Error ? err.message : String(err));
     }

@@ -21,6 +21,56 @@
  *  would be a second, wider door into the same call. */
 export const VOICE_MAX_PROMPT = 500;
 
+/** One turn of the conversation, as the browser remembers it. */
+export type VoiceHistoryEntry = {
+  role: "human" | "agent";
+  text: string;
+};
+
+/** How much conversation travels back to the model each turn. */
+export const VOICE_MAX_HISTORY = 8;
+export const VOICE_MAX_HISTORY_CHARS = 200;
+
+/**
+ * The conversation so far, as the model reads it.
+ *
+ * Each voice turn is one HTTP request and one Live session — the deliberate
+ * shape of this gateway, no WebSocket and no server-side session. The cost of
+ * that shape showed itself on 13-oct: the agent asked *"¿cuál es el importe
+ * máximo?"*, the turn ended, and the human's answer *"$150"* arrived with
+ * nothing tying it to the question — so the model attached it to whatever
+ * order looked nearest and drafted the wrong one. The memory lives in the
+ * browser (where this product keeps its state) and rides along as prose.
+ *
+ * Newest last, capped on both ends: the entries that survive are the ones a
+ * question-and-answer pair needs — the question, the answer, and enough
+ * before them to know what they are about. Unknown roles and blank speech are
+ * dropped rather than rendered as someone's words; a transcript nobody said
+ * would be the worst possible thing to put in front of a model that decides
+ * how to spend money.
+ */
+export function describeHistory(
+  history: readonly VoiceHistoryEntry[],
+  max: number = VOICE_MAX_HISTORY
+): string {
+  const clean = history
+    .filter(
+      (entry): entry is VoiceHistoryEntry =>
+        !!entry &&
+        (entry.role === "human" || entry.role === "agent") &&
+        typeof entry.text === "string" &&
+        entry.text.trim() !== ""
+    )
+    .slice(-max)
+    .map((entry) => ({
+      role: entry.role,
+      text: entry.text.trim().slice(0, VOICE_MAX_HISTORY_CHARS),
+    }));
+
+  if (clean.length === 0) return "";
+  return clean.map((entry) => `(${entry.role}) ${entry.text}`).join("\n");
+}
+
 export type VoiceToolName =
   | "draftOrder"
   | "getBalance"

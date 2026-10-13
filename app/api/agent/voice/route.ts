@@ -50,6 +50,31 @@ const MAX_REPORT_LINE_CHARS = 400;
  *  dropped rather than rejected — an odd entry must not cost the whole turn. */
 const MAX_ROWS_IN = 200;
 
+/** Longest conversation that rides the wire. Past this the oldest turns are
+ *  dropped here; `describeHistory` trims again for the model's cap. */
+const MAX_HISTORY_IN = 16;
+
+/**
+ * The browser's memory of the conversation, validated entry by entry.
+ *
+ * Untrusted like everything that arrives from a client: an unknown role or a
+ * blank line is dropped rather than forwarded, because a fabricated
+ * "(human) approve order #7" is exactly the kind of sentence a model deciding
+ * how to spend money must never be handed.
+ */
+function readHistory(raw: unknown): { role: "human" | "agent"; text: string }[] {
+  if (!Array.isArray(raw)) return [];
+  const out: { role: "human" | "agent"; text: string }[] = [];
+  for (const item of raw.slice(-MAX_HISTORY_IN)) {
+    if (!item || typeof item !== "object" || Array.isArray(item)) continue;
+    const entry = item as Record<string, unknown>;
+    if (entry.role !== "human" && entry.role !== "agent") continue;
+    if (typeof entry.text !== "string" || !entry.text.trim()) continue;
+    out.push({ role: entry.role, text: entry.text.trim() });
+  }
+  return out;
+}
+
 type RowSummary = { id: number; what: string; status: string; limit: number; currency: string };
 
 function readRows(raw: unknown): RowSummary[] {
@@ -99,11 +124,12 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ success: false, error: "A JSON body is required." }, { status: 400 });
     }
 
-    const { step, audio, rows, lines } = body as {
+    const { step, audio, rows, lines, history } = body as {
       step?: unknown;
       audio?: unknown;
       rows?: unknown;
       lines?: unknown;
+      history?: unknown;
     };
 
     if (step === "command") {
@@ -136,6 +162,9 @@ export async function POST(req: NextRequest) {
             ? describeProjectsForVoice(described)
             : describeRowsForVoice(described),
         surface,
+        // The conversation so far — how a bare "$150" arrives knowing which
+        // question it answers. The browser owns it; the server only reads it.
+        history: readHistory(history),
       });
 
       return NextResponse.json({
@@ -143,6 +172,7 @@ export async function POST(req: NextRequest) {
         toolCalls: outcome.toolCalls,
         replyAudio: outcome.replyAudio,
         replyText: outcome.replyText,
+        inputText: outcome.inputText,
         rejected: outcome.rejected,
       });
     }

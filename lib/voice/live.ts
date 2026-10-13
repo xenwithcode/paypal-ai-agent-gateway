@@ -27,9 +27,11 @@ import { GoogleGenAI, Modality, type FunctionDeclaration, type LiveServerMessage
 // different region than the text model is.
 import { genaiClientFor } from "@/lib/gemini";
 import {
+  describeHistory,
   isVoiceSurface,
   toolsFor,
   validateVoiceToolCall,
+  type VoiceHistoryEntry,
   type VoiceSurface,
   type VoiceToolCall,
 } from "@/lib/voice/tools";
@@ -80,6 +82,10 @@ type TurnResult = {
   audio: string;
   /** The transcript of that audio, in chunks. */
   transcript: string;
+  /** The *human's* speech, transcribed — what the model heard, in chunks.
+   *  Logged so the record shows both sides of the conversation, and kept as
+   *  the memory that ties a bare "$150" to the question it answers. */
+  inputTranscript: string;
   /** Text modality, which this configuration does not request but the type
    *  allows; kept separate so the two can never interleave into one string. */
   text: string;
@@ -129,6 +135,7 @@ async function runTurn(
     responseModalities: Modality[];
     tools?: { functionDeclarations: FunctionDeclaration[] }[];
     outputAudioTranscription?: object;
+    inputAudioTranscription?: object;
     speechConfig?: object;
     systemInstruction?: { parts: { text: string }[] };
   },
@@ -141,7 +148,15 @@ async function runTurn(
     );
   }
 
-  const result: TurnResult = { audioChunks: [], audio: "", transcript: "", text: "", toolCalls: [], rejected: "" };
+  const result: TurnResult = {
+    audioChunks: [],
+    audio: "",
+    transcript: "",
+    inputTranscript: "",
+    text: "",
+    toolCalls: [],
+    rejected: "",
+  };
   let settled = false;
 
   const turn = new Promise<TurnResult>((resolve, reject) => {
@@ -233,6 +248,12 @@ function ingest(message: LiveServerMessage, into: TurnResult): void {
   // who cannot play it will ever see.
   const spoken = message.serverContent?.outputTranscription?.text;
   if (spoken) into.transcript += spoken;
+
+  // …and the transcript of what the *human* spoke: the other half of the
+  // record, and the raw material of the conversation memory. Without it the
+  // next turn cannot know that "$150" answered a ceiling question.
+  const heard = message.serverContent?.inputTranscription?.text;
+  if (heard) into.inputTranscript += heard;
 }
 
 function accept(raw: { id?: string; name?: string; args?: Record<string, unknown> }, into: TurnResult): void {
@@ -279,7 +300,11 @@ const SPEECH = { voiceConfig: { prebuiltVoiceConfig: { voiceName: VOICE } } };
  * screen can run, so the model is never asked to choose between a command
  * nobody will execute and silence.
  */
-function commandInstructions(surface: VoiceSurface, rows: string): string {
+function commandInstructions(
+  surface: VoiceSurface,
+  rows: string,
+  historyText: string
+): string {
   const shared = [
     "",
     "Rules:",
@@ -288,21 +313,31 @@ function commandInstructions(surface: VoiceSurface, rows: string): string {
     "3. When you call a tool, also SPEAK one short line — ten words or fewer, in the language the human spoke — naming what you are about to ask the gateway to do, as if thinking out loud while it works: \"Searching for chelsea boots under two hundred dollars.\" The human hears it right away. This is an intention, never a result.",
     "4. Otherwise answer in one short spoken sentence, twenty words or fewer, in the language the human spoke. No lists, no markdown, no greetings.",
     "5. If you cannot tell which record they mean, ask — one short question. Do not guess an id.",
-    // The gateway refuses an amount-less draft before it searches anything,
-    // so asking here is not politeness — it is the same door, reached one
-    // turn earlier and out loud. Choosing the number yourself is the one
-    // thing neither of you may do.
-    "6. Spending needs an amount from the human. If they did not say the most they want to spend — or how much to invest or send — ask for it in one short question BEFORE calling a tool that spends. Never choose an amount for them; the gateway refuses a draft that names no ceiling.",
+    // The fix for the closed cycle, seen for real on 13-oct: the agent asked
+    // for a ceiling, the turn ended, and "$150" arrived with nothing tying it
+    // to the question — so the model attached it to the nearest order in the
+    // table and drafted the wrong one. Continuity is the browser's memory,
+    // handed back as prose; this rule is what makes the model use it.
+    "6. A conversation continues across turns. When your newest line asked a question — an amount, which record — and the human's newest words answer it, carry that same task on with what they just gave you; do not restart it and do not replace it with a different order. If they name only an amount and no question of yours is waiting, ask which order it is for — never attach an amount to an order they did not name.",
+    "7. Spending needs an amount from the human. If they did not say the most they want to spend — or how much to invest or send — ask for it in one short question BEFORE calling a tool that spends. Never choose an amount for them; the gateway refuses a draft that names no ceiling.",
   ];
+
+  // The memory, newest last: what the human said, as they said it, and what
+  // you answered. Absent on a first turn — a fresh conversation opens with
+  // the table, not with a phantom history.
+  const conversation = historyText
+    ? ["", "The conversation so far (newest last):", historyText].join("\n")
+    : "";
 
   if (surface === "crowdfunding") {
     return [
       "You are the voice of PayPal AI Crowdfunding, where a person funds a real business in Venezuela from $20 and earns a share in USD. The human speaks; you decide which project to prepare an investment in, and for how much.",
       ...shared,
-      "7. An investment you ask for is only *prepared* — the panel fills with that project and amount, the server judges it against the campaign's band and goal, and the human approves it in PayPal. Say it that way: you prepare it, they approve it.",
+      "8. An investment you ask for is only *prepared* — the panel fills with that project and amount, the server judges it against the campaign's band and goal, and the human approves it in PayPal. Say it that way: you prepare it, they approve it.",
       "",
       "Projects in the showcase right now:",
       rows,
+      conversation,
     ].join("\n");
   }
 
@@ -312,6 +347,7 @@ function commandInstructions(surface: VoiceSurface, rows: string): string {
     "",
     "Orders on the table right now:",
     rows,
+    conversation,
   ].join("\n");
 }
 
@@ -343,6 +379,8 @@ export type VoiceCommandOutcome = {
   /** Base64 PCM at 24 kHz — the model's voice, when it used it. */
   replyAudio: string;
   replyText: string;
+  /** The human's own words, as the model heard them. Empty when silence. */
+  inputText: string;
   /** Why a requested command will not run. Empty when nothing was refused. */
   rejected: string;
 };
@@ -363,19 +401,32 @@ export async function askVoiceAgent(input: {
   rows: string;
   /** Which screen this turn belongs to. Unknown values fall back to the dashboard. */
   surface?: VoiceSurface;
+  /**
+   * What was said before this turn, as prose — the browser's memory, newest
+   * last. Each turn is its own session by design; this is how a question
+   * survives the end of the turn that asked it.
+   */
+  history?: readonly VoiceHistoryEntry[];
 }): Promise<VoiceCommandOutcome> {
   // Normalised here rather than trusted from the route: this module owns the
   // vocabulary, and a surface nobody can run would send the model a tool list
   // the handler has no case for.
   const surface = isVoiceSurface(input.surface) ? input.surface : "dashboard";
+  const historyText = describeHistory(input.history ?? []);
 
   const result = await runTurn(
     {
       responseModalities: [Modality.AUDIO],
       tools: [{ functionDeclarations: declarationsFor(surface) }],
       outputAudioTranscription: {},
+      // The human's side of the transcript: logged so the record shows both
+      // halves, and kept as the memory that ties a bare "$150" to the
+      // ceiling question it answers.
+      inputAudioTranscription: {},
       speechConfig: SPEECH,
-      systemInstruction: { parts: [{ text: commandInstructions(surface, input.rows) }] },
+      systemInstruction: {
+        parts: [{ text: commandInstructions(surface, input.rows, historyText) }],
+      },
     },
     (session) =>
       session.sendClientContent({
@@ -393,6 +444,7 @@ export async function askVoiceAgent(input: {
     toolCalls: result.toolCalls,
     replyAudio: result.audio,
     replyText: result.transcript || result.text,
+    inputText: result.inputTranscript,
     rejected: result.rejected,
   };
 }
