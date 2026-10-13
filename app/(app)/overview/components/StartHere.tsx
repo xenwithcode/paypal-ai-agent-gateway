@@ -14,8 +14,9 @@ import { PenLine, ClipboardCheck, ShieldCheck, X } from "lucide-react";
  * engineer what they were looking at from the parts, which is time the demo
  * does not have and attention the thesis cannot spare.
  *
- * So: the thesis, in three steps, above everything else — and gone after one
- * read. The dismissal is remembered in `localStorage` rather than being
+ * So: the thesis in one sentence, its three steps beneath it, above
+ * everything else — and gone after one read. The dismissal is remembered in
+ * `localStorage` rather than being
  * session state, because a strip that comes back on every reload is an
  * advertisement, and the one-liner left behind brings it back on purpose.
  *
@@ -112,6 +113,14 @@ export default function StartHere() {
           <X className="h-4 w-4" strokeWidth={2} aria-hidden="true" />
         </button>
       </div>
+
+      {/* The moat, said once, above the steps that prove it: the one
+          sentence a visitor should be able to repeat after closing the tab.
+          The verb order *is* the argument — prepares, approves, pays: three
+          different places, and only the last one holds money. */}
+      <p className="mt-2 text-sm font-semibold italic text-slate-700">
+        The agent prepares. You approve. Our server pays.
+      </p>
 
       <ol className="mt-3 grid grid-cols-1 gap-3 md:grid-cols-3">
         {STEPS.map((step, index) => {

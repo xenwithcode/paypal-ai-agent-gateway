@@ -163,6 +163,21 @@ npm run dev
 Open the URL the dev server prints — **http://localhost:3000** unless that
 port is taken, in which case it picks the next free one and says so.
 
+**For the judge in a hurry** — three clicks that explain the whole product:
+
+1. **`/overview`** — the strip at the top *is* the thesis: the agent
+   prepares, you approve, our server pays. Then press the microphone and say
+   what may be bought.
+2. **Click any amount in *Money in flight*** — the chart drills into the
+   order behind the number.
+3. **`/crowdfunding`** — the one screen where money grows rather than leaves:
+   pick a project on the map, pledge with PayPal, then release the hold the
+   same way every hold in this app is released.
+
+> Prefer `npm run demo` over `npm run dev` when showing it to somebody: the
+> production server does not compile a route on its first visit, so the first
+> click on every page is instant.
+
 > **No credentials yet?** Everything still runs. The server logs that it is using a demo balance and a deterministic policy fallback, and every screen keeps working. FX rates are live regardless — they need no keys at all.
 
 | Script | Purpose |
@@ -170,6 +185,7 @@ port is taken, in which case it picks the next free one and says so.
 | `npm run dev` | Dev server with hot reload |
 | `npm run build` | Production build — **stop `dev` first** |
 | `npm start` | Serve the production build |
+| `npm run demo` | Build **and** serve production in one step — what a judge should run: no per-route compile, so the first click is instant (**stop `dev` first**) |
 | `npm run lint` / `lint:fix` | ESLint |
 | `npm test` | Test suite — transition rules, condition evaluation, the ceiling bands, the window, the charge and hold judgements, history readers, the rate limiter, the column derivations, and the contract the spoken agent works to. Uses Node's built-in runner, so no test dependency. |
 
