@@ -1,0 +1,32 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 800 400" role="img" aria-label="Illustration: coffee hills with a tree and an industrial roaster">
+  <defs>
+    <linearGradient id="sky" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#e5effd"/>
+      <stop offset="1" stop-color="#f4f8ff"/>
+    </linearGradient>
+  </defs>
+  <rect width="800" height="400" fill="url(#sky)"/>
+  <circle cx="120" cy="86" r="32" fill="#f79009" opacity="0.85"/>
+  <!-- hills -->
+  <path d="M0 250 Q160 150 320 236 T640 226 T800 250 V400 H0 Z" fill="#099250" opacity="0.9"/>
+  <path d="M0 300 Q200 220 420 296 T800 300 V400 H0 Z" fill="#087443"/>
+  <!-- coffee tree -->
+  <rect x="176" y="214" width="14" height="70" rx="6" fill="#101828"/>
+  <circle cx="150" cy="200" r="34" fill="#099250"/>
+  <circle cx="212" cy="196" r="38" fill="#099250"/>
+  <circle cx="182" cy="166" r="30" fill="#16b364"/>
+  <circle cx="146" cy="204" r="7" fill="#b42318"/>
+  <circle cx="206" cy="190" r="7" fill="#b42318"/>
+  <circle cx="182" cy="196" r="7" fill="#b42318"/>
+  <!-- roaster drum -->
+  <rect x="470" y="238" width="180" height="16" rx="6" fill="#101828"/>
+  <rect x="486" y="176" width="140" height="70" rx="35" fill="#0e4491"/>
+  <circle cx="556" cy="211" r="24" fill="#fafcff"/>
+  <circle cx="556" cy="211" r="12" fill="#a9c5ec"/>
+  <rect x="614" y="246" width="26" height="18" rx="4" fill="#101828"/>
+  <!-- flame -->
+  <path d="M520 268 q10 -22 20 0 q-6 -8 -10 -8 q-4 0 -10 8 Z" fill="#f79009"/>
+  <path d="M526 268 q5 -12 10 0 q-3 -4 -5 -4 q-2 0 -5 4 Z" fill="#f5a524"/>
+  <!-- steam -->
+  <path d="M556 168 q-8 -14 0 -26 q8 -12 0 -24" stroke="#a9c5ec" stroke-width="6" fill="none" stroke-linecap="round"/>
+</svg>

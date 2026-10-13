@@ -1,0 +1,40 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 800 400" role="img" aria-label="Illustration: a neighbourhood market with a striped awning">
+  <defs>
+    <linearGradient id="sky" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#e5effd"/>
+      <stop offset="1" stop-color="#f4f8ff"/>
+    </linearGradient>
+    <linearGradient id="facade" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#0e4491"/>
+      <stop offset="1" stop-color="#0042a1"/>
+    </linearGradient>
+  </defs>
+  <rect width="800" height="400" fill="url(#sky)"/>
+  <circle cx="660" cy="84" r="34" fill="#f79009" opacity="0.85"/>
+  <rect x="0" y="330" width="800" height="70" fill="#d4e3f8"/>
+  <!-- storefront -->
+  <rect x="180" y="120" width="440" height="215" rx="10" fill="url(#facade)"/>
+  <rect x="205" y="150" width="390" height="120" rx="6" fill="#fafcff"/>
+  <!-- awning -->
+  <g>
+    <rect x="160" y="104" width="480" height="26" rx="8" fill="#101828"/>
+    <path d="M160 130 h60 l-14 26 h-46 z" fill="#099250"/>
+    <path d="M220 130 h60 l-14 26 h-46 z" fill="#fafcff"/>
+    <path d="M280 130 h60 l-14 26 h-46 z" fill="#099250"/>
+    <path d="M340 130 h60 l-14 26 h-46 z" fill="#fafcff"/>
+    <path d="M400 130 h60 l-14 26 h-46 z" fill="#099250"/>
+    <path d="M460 130 h60 l-14 26 h-46 z" fill="#fafcff"/>
+    <path d="M520 130 h60 l-14 26 h-46 z" fill="#099250"/>
+    <path d="M580 130 h60 l-14 26 h-46 z" fill="#fafcff"/>
+  </g>
+  <!-- counter with produce -->
+  <rect x="230" y="238" width="340" height="70" rx="8" fill="#101828"/>
+  <circle cx="290" cy="238" r="17" fill="#099250"/>
+  <circle cx="332" cy="238" r="17" fill="#f79009"/>
+  <circle cx="374" cy="238" r="17" fill="#099250"/>
+  <rect x="420" y="222" width="46" height="34" rx="6" fill="#a9c5ec"/>
+  <rect x="480" y="228" width="40" height="28" rx="6" fill="#3d7acd"/>
+  <!-- open sign -->
+  <rect x="352" y="166" width="96" height="30" rx="8" fill="#0042a1"/>
+  <rect x="364" y="176" width="72" height="10" rx="5" fill="#a9c5ec"/>
+</svg>

@@ -2,6 +2,8 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import Image from "next/image";
+import Link from "next/link";
 import { Sprout } from "lucide-react";
 import EmptyState from "../components/EmptyState";
 import VoiceCommand from "../components/VoiceCommand";
@@ -132,6 +134,40 @@ export default function CrowdfundingView({
 
   /** The panel beside the map — where a selection lands, and where the voice already scrolls. */
   const panelHostRef = useRef<HTMLDivElement | null>(null);
+
+  /**
+   * The row the last pledge created, and whether its money already moved.
+   *
+   * Kept so the confirmation can point at its own way out: a reservation is
+   * money set aside, and money set aside can be given back — the release
+   * lives in Overview, where every hold lives, rather than as a second
+   * release button here that would have to agree with the first one forever.
+   */
+  const [lastPledgeRow, setLastPledgeRow] = useState<{ id: number; captured: boolean } | null>(
+    null
+  );
+
+  /**
+   * Back out of a selection that has not been paid.
+   *
+   * The panel had no way out: a reader who picked the wrong project could
+   * only pick another, and wanting to *clear* is its own gesture — undo, not
+   * redo. Nothing has been charged at this point (the order is created only
+   * when PayPal is pressed), so the honest reset clears everything the
+   * attempt touched: the project, the amount, the notes, the refusal memory.
+   * A reservation that already exists — after PayPal approves — is real
+   * money set aside, and it keeps its own way out, pointed at from the
+   * confirmation.
+   */
+  const resetSelection = useCallback(() => {
+    setSelected(null);
+    setAmount("20");
+    setPledge(null);
+    setPaypalNote(null);
+    setLastPledgeRow(null);
+    lastFailure.current = null;
+    lastOrder.current = null;
+  }, []);
 
   /**
    * A payment that did not happen is still an event, and it belongs in the
@@ -442,6 +478,7 @@ export default function CrowdfundingView({
         project: selected.id,
       };
       appendPolicyRow(row);
+      setLastPledgeRow({ id: row.id, captured: false });
       recordEvent(
         `💰 [CROWDFUNDING] ${money(value)} reserved for "${selected.name}" · PayPal order ${info.orderId} · closes ${selected.deadline}.`
       );
@@ -484,6 +521,7 @@ export default function CrowdfundingView({
             recordEvent(`✅ [CROWDFUNDING] Captured ${money(value)} for "${selected.name}" — the campaign was already funded.`);
             said = `Paid ${money(value)} to ${selected.name}. The campaign was already funded, so the money moved — it is yours to see in PayPal's sandbox.`;
             setPledge({ kind: "ok", text: said });
+            setLastPledgeRow({ id: row.id, captured: true });
           } else {
             said = data.error ?? "The capture was refused — the reservation stands and nothing was taken.";
             setPledge({ kind: "error", text: said });
@@ -593,6 +631,27 @@ export default function CrowdfundingView({
             aria-label={`Invest in ${selected.name}`}
             className="space-y-4 rounded-2xl border border-slate-200 bg-white p-5 shadow-sm"
           >
+            {/* An investor buys with their eyes. The illustration ships with
+                the repo — local, drawn, and labelled for exactly what it is:
+                this showcase holds no photographs of businesses that have not
+                been audited, and a stock photo would imply otherwise. */}
+            {selected.image && (
+              <div className="space-y-1">
+                <div className="overflow-hidden rounded-xl border border-slate-100">
+                  <Image
+                    src={selected.image}
+                    alt={`Illustration of ${selected.name}`}
+                    width={800}
+                    height={400}
+                    unoptimized
+                    className="h-32 w-full object-cover sm:h-40"
+                  />
+                </div>
+                <p className="text-[10px] text-slate-400">
+                  Illustrative image — this showcase does not hold photographs of the businesses.
+                </p>
+              </div>
+            )}
             <div className="flex flex-wrap items-start justify-between gap-3">
               <div className="min-w-0">
                 <h2 className="text-base font-semibold text-slate-900">
@@ -695,24 +754,45 @@ export default function CrowdfundingView({
             {/* The real thing: PayPal's own button, an order our server creates. */}
             {envelope ? (
               <div className="space-y-2">
-                <PayPalAuthorizeButton
-                  clientId={paypalClientId}
-                  amount={value.toFixed(2)}
-                  currency="USD"
-                  description={`${envelope.what} — closes ${selected.deadline}`}
-                  customId={`${CROWDFUNDING_PREFIX}${selected.id}`}
-                  payeeEmail={DIRECT_TO_BUSINESS ? selected.payeeEmail : ""}
-                  policy={envelope}
-                  disabled={busy}
-                  onOrderCreated={(orderId) => {
-                    lastOrder.current = orderId;
-                    recordEvent(
-                      `🧾 [CROWDFUNDING] PayPal order ${orderId} created — ${money(value)} for "${selected.name}", waiting for your approval.`
-                    );
-                  }}
-                  onAuthorized={(info) => void onAuthorized(info)}
-                  onUnavailable={reportFailure}
-                />
+                <div className="flex items-stretch gap-2">
+                  <div className="min-w-0 flex-1">
+                    <PayPalAuthorizeButton
+                      clientId={paypalClientId}
+                      amount={value.toFixed(2)}
+                      currency="USD"
+                      description={`${envelope.what} — closes ${selected.deadline}`}
+                      customId={`${CROWDFUNDING_PREFIX}${selected.id}`}
+                      payeeEmail={DIRECT_TO_BUSINESS ? selected.payeeEmail : ""}
+                      policy={envelope}
+                      disabled={busy}
+                      onOrderCreated={(orderId) => {
+                        lastOrder.current = orderId;
+                        recordEvent(
+                          `🧾 [CROWDFUNDING] PayPal order ${orderId} created — ${money(value)} for "${selected.name}", waiting for your approval.`
+                        );
+                      }}
+                      onAuthorized={(info) => void onAuthorized(info)}
+                      onUnavailable={reportFailure}
+                    />
+                  </div>
+                  {/* The way out, beside the way in: a reader who picked the
+                      wrong project must not have to pick another one to undo
+                      this one. Nothing is charged before PayPal — the order is
+                      created only when the button is pressed — so the reset
+                      clears the attempt whole. */}
+                  <button
+                    type="button"
+                    onClick={resetSelection}
+                    title="Clear this selection and start again — nothing has been charged."
+                    aria-label="Change project — clear this selection"
+                    className="flex w-14 shrink-0 flex-col items-center justify-center gap-1 rounded-xl border border-slate-300 bg-white text-slate-500 transition hover:border-slate-400 hover:bg-slate-50 hover:text-slate-700"
+                  >
+                    <span aria-hidden="true" className="text-sm leading-none">
+                      ✕
+                    </span>
+                    <span className="text-[9px] font-semibold leading-tight">Change</span>
+                  </button>
+                </div>
                 <p className="text-center text-[11px] leading-relaxed text-slate-400">
                   PayPal asks you to approve. The money is reserved, not taken: it is captured only
                   if the campaign reaches its goal.
@@ -745,6 +825,38 @@ export default function CrowdfundingView({
                 }`}
               >
                 {pledge.text}
+              </p>
+            )}
+
+            {/* The reservation's own way out, pointed at rather than
+                duplicated: a hold is released in Overview, where every hold is
+                released — a second release button here would be a second
+                opinion about the same money, and this product keeps one. */}
+            {pledge && lastPledgeRow && (
+              <p className="text-[11px] leading-relaxed text-slate-400">
+                {lastPledgeRow.captured ? (
+                  <>
+                    The settled stake lives in{" "}
+                    <Link
+                      href={`/overview?draft=${lastPledgeRow.id}`}
+                      className="font-medium text-blue-600 underline-offset-2 hover:underline"
+                    >
+                      Overview — open its card
+                    </Link>
+                    .
+                  </>
+                ) : (
+                  <>
+                    Changed your mind? It is a reservation, not a payment —{" "}
+                    <Link
+                      href={`/overview?draft=${lastPledgeRow.id}`}
+                      className="font-medium text-blue-600 underline-offset-2 hover:underline"
+                    >
+                      open it in Overview and release it
+                    </Link>
+                    , the same way every hold is released.
+                  </>
+                )}
               </p>
             )}
           </section>

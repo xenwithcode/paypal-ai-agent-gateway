@@ -145,6 +145,15 @@ export type Project = {
   /** How many people are already in. Social proof, and the only count shown. */
   investors: number;
   /**
+   * An illustration of the project, served from this repository.
+   *
+   * Local only, and never a photograph: this showcase holds no pictures of
+   * businesses that have not been audited, and a stock photo implying
+   * otherwise would be the exact kind of invention the rest of this page
+   * refuses. The card says out loud that the image is illustrative.
+   */
+  image?: string;
+  /**
    * The PayPal account the funding is directed to — written into the order as
    * its payee, so the money is aimed at the business at the moment the order
    * is created rather than by anything that happens after.
@@ -245,6 +254,11 @@ export function normaliseProjects(value: unknown, today: Date = new Date()): Pro
     if (!risk || !RISKS.includes(risk as Risk)) return null;
     if (raw.seed !== undefined && typeof raw.seed !== "boolean") return null;
 
+    // An illustration is decoration, so a bad path drops the illustration and
+    // never the project — and it must be a local one: a remote URL would be a
+    // claim about a photograph this showcase does not hold.
+    const image = text(raw.image) ?? "";
+
     seen.add(id);
     projects.push({
       id,
@@ -262,6 +276,7 @@ export function normaliseProjects(value: unknown, today: Date = new Date()): Pro
       lat,
       lng,
       investors,
+      ...(image.startsWith("/projects/") ? { image } : {}),
       ...(typeof raw.seed === "boolean" ? { seed: raw.seed } : {}),
     });
   }

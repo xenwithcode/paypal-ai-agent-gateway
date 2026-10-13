@@ -2,6 +2,7 @@
 "use client";
 
 import { useMemo } from "react";
+import Image from "next/image";
 import { AgGridReact } from "ag-grid-react";
 import type { ColDef } from "ag-grid-community";
 // Registration, licence and palette, shared with every other grid in the app.
@@ -41,17 +42,32 @@ function NameCell(params: { data?: Project }) {
   if (!project) return <span>{String(project ?? "")}</span>;
 
   return (
-    <span className="flex h-full min-w-0 flex-col justify-center gap-0.5 px-1 py-1">
-      <span className="flex min-w-0 items-center gap-2">
-        <span className="truncate text-[13px] font-semibold text-slate-900">{project.name}</span>
-        {project.seed && (
-          <span className="shrink-0 rounded border border-slate-200 bg-slate-50 px-1.5 py-0.5 text-[9px] font-bold uppercase tracking-wide text-slate-500">
-            demo
-          </span>
-        )}
-      </span>
-      <span className="truncate text-[11px] leading-tight text-slate-400">
-        {project.city} · {project.what}
+    <span className="flex h-full min-w-0 items-center gap-2 px-1 py-1">
+      {/* The project, drawn: an investor buys with their eyes, and the
+          illustration ships with the repo — local, labelled, never a
+          photograph of a business that has not been audited. */}
+      {project.image && (
+        <Image
+          src={project.image}
+          alt=""
+          width={36}
+          height={36}
+          unoptimized
+          className="h-9 w-9 shrink-0 rounded-lg border border-slate-100 object-cover"
+        />
+      )}
+      <span className="flex min-w-0 flex-col justify-center gap-0.5">
+        <span className="flex min-w-0 items-center gap-2">
+          <span className="truncate text-[13px] font-semibold text-slate-900">{project.name}</span>
+          {project.seed && (
+            <span className="shrink-0 rounded border border-slate-200 bg-slate-50 px-1.5 py-0.5 text-[9px] font-bold uppercase tracking-wide text-slate-500">
+              demo
+            </span>
+          )}
+        </span>
+        <span className="truncate text-[11px] leading-tight text-slate-400">
+          {project.city} · {project.what}
+        </span>
       </span>
     </span>
   );

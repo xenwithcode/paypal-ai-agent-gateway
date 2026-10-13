@@ -1,0 +1,45 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 800 400" role="img" aria-label="Illustration: shelves of medical supplies with a green cross">
+  <defs>
+    <linearGradient id="sky" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#e5effd"/>
+      <stop offset="1" stop-color="#f4f8ff"/>
+    </linearGradient>
+  </defs>
+  <rect width="800" height="400" fill="url(#sky)"/>
+  <!-- warehouse wall -->
+  <rect x="90" y="70" width="620" height="270" rx="12" fill="#fafcff" stroke="#d4e3f8" stroke-width="4"/>
+  <!-- cross -->
+  <rect x="612" y="98" width="66" height="66" rx="14" fill="#099250"/>
+  <rect x="634" y="112" width="22" height="38" rx="6" fill="#fafcff"/>
+  <rect x="626" y="120" width="38" height="22" rx="6" fill="#fafcff"/>
+  <!-- shelves -->
+  <rect x="126" y="140" width="380" height="12" rx="4" fill="#101828"/>
+  <rect x="126" y="230" width="380" height="12" rx="4" fill="#101828"/>
+  <rect x="126" y="308" width="500" height="12" rx="4" fill="#101828"/>
+  <!-- boxes top shelf -->
+  <rect x="140" y="96" width="70" height="44" rx="6" fill="#a9c5ec"/>
+  <rect x="222" y="104" width="56" height="36" rx="6" fill="#3d7acd"/>
+  <rect x="290" y="92" width="78" height="48" rx="6" fill="#0042a1"/>
+  <rect x="380" y="106" width="52" height="34" rx="6" fill="#a9c5ec"/>
+  <!-- boxes middle shelf -->
+  <rect x="140" y="184" width="56" height="46" rx="6" fill="#099250"/>
+  <rect x="208" y="192" width="70" height="38" rx="6" fill="#aaf0c4"/>
+  <rect x="290" y="182" width="60" height="48" rx="6" fill="#3d7acd"/>
+  <rect x="362" y="196" width="80" height="34" rx="6" fill="#0042a1"/>
+  <!-- vials bottom shelf -->
+  <g fill="#0e4491">
+    <rect x="142" y="266" width="18" height="42" rx="6"/>
+    <rect x="170" y="266" width="18" height="42" rx="6"/>
+    <rect x="198" y="266" width="18" height="42" rx="6"/>
+  </g>
+  <g fill="#099250">
+    <rect x="240" y="272" width="18" height="36" rx="6"/>
+    <rect x="268" y="272" width="18" height="36" rx="6"/>
+  </g>
+  <rect x="312" y="258" width="96" height="50" rx="8" fill="#101828"/>
+  <rect x="326" y="272" width="68" height="10" rx="5" fill="#a9c5ec"/>
+  <rect x="424" y="264" width="60" height="44" rx="6" fill="#f79009"/>
+  <!-- floor crate -->
+  <rect x="520" y="252" width="90" height="56" rx="8" fill="#0e4491"/>
+  <rect x="546" y="252" width="38" height="56" fill="#101828" opacity="0.35"/>
+</svg>

@@ -14,7 +14,8 @@
     "lng": -66.855,
     "investors": 1420,
     "payeeEmail": "supermercado-express@example.com",
-    "seed": true
+    "seed": true,
+    "image": "/projects/supermercado-express-chacao.svg"
   },
   {
     "id": "finca-cafe-el-saman",
@@ -31,7 +32,8 @@
     "lng": -68.79,
     "investors": 386,
     "payeeEmail": "finca-el-saman@example.com",
-    "seed": true
+    "seed": true,
+    "image": "/projects/finca-cafe-el-saman.svg"
   },
   {
     "id": "distribuidora-medica-caracas",
@@ -48,7 +50,8 @@
     "lng": -66.9036,
     "investors": 902,
     "payeeEmail": "distribuidora-medica@example.com",
-    "seed": true
+    "seed": true,
+    "image": "/projects/distribuidora-medica-caracas.svg"
   },
   {
     "id": "agropecuaria-el-cacao",
@@ -65,6 +68,7 @@
     "lng": -69.35,
     "investors": 118,
     "payeeEmail": "agropecuaria-el-cacao@example.com",
-    "seed": true
+    "seed": true,
+    "image": "/projects/agropecuaria-el-cacao.svg"
   }
 ]
