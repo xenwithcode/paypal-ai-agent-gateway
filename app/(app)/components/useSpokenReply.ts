@@ -137,7 +137,14 @@ export function useSpokenReply(onLog: (message: string) => void) {
           return false;
         }
         if (data.text) logRef.current(`🔊 [AGENT] ${data.text}`);
-        if (!data.audio) return false;
+        if (!data.audio) {
+          // Text without audio is the one failure that looks exactly like
+          // success in the console — a 🔊 line and silence. Say it.
+          if (data.text) {
+            logRef.current("⚠️ [VOICE] The reply came back as text only — nothing to play.");
+          }
+          return false;
+        }
 
         // Only now the speaker: a refusal here costs sound, never record.
         if (context.state === "suspended") await context.resume();

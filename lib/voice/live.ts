@@ -251,8 +251,8 @@ function commandInstructions(surface: VoiceSurface, rows: string): string {
     "Rules:",
     "1. When the human asks you to DO something, call exactly one tool. Never claim an action happened — the gateway executes it and tells you what really occurred.",
     "2. When the human asks about money or status, call the tool that reads it. Never state a figure from memory.",
-    "3. When you call a tool, also SPEAK one short line — ten words or fewer — naming what you are about to ask the gateway to do, as if thinking out loud while it works: \"Searching for chelsea boots under two hundred dollars.\" The human hears it right away. This is an intention, never a result.",
-    "4. Otherwise answer in one short spoken sentence, twenty words or fewer. No lists, no markdown, no greetings.",
+    "3. When you call a tool, also SPEAK one short line — ten words or fewer, in the language the human spoke — naming what you are about to ask the gateway to do, as if thinking out loud while it works: \"Searching for chelsea boots under two hundred dollars.\" The human hears it right away. This is an intention, never a result.",
+    "4. Otherwise answer in one short spoken sentence, twenty words or fewer, in the language the human spoke. No lists, no markdown, no greetings.",
     "5. If you cannot tell which record they mean, ask — one short question. Do not guess an id.",
     // The gateway refuses an amount-less draft before it searches anything,
     // so asking here is not politeness — it is the same door, reached one

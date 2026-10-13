@@ -180,6 +180,17 @@ export async function parseUserIntention(
     `never return an "expires" date that has already passed. ` +
     `The user's available balance is ${availableBalance}. If the requested ` +
     `ceiling exceeds it, reduce the ceiling to the available balance. ` +
+    // The human may speak or type in any language — Spanish is expected in
+    // this product's own market, and the voice layer sometimes hands over a
+    // Spanish prompt verbatim. Only the free-text fields follow their words:
+    // the machine reads numbers and ISO dates, so "150 dólares" and "el
+    // viernes" have to land exactly where "150 dollars" and "this Friday"
+    // would. This is not decoration — a ceiling misread in translation is a
+    // ceiling the server enforces wrong.
+    `The request may arrive in any language — Spanish among them. Read ` +
+    `amounts, ceilings and dates exactly as you would in English ("150 ` +
+    `dólares" is 150 USD, "el viernes" is this coming Friday); keep "what" ` +
+    `in the human's own words. ` +
     `Respond only with JSON matching the provided schema.\n` +
     `Rules:\n` +
     // The schema's example showed "price <= 60" but never said when to

@@ -14,8 +14,10 @@ import {
 type Phase = "idle" | "listening" | "thinking" | "speaking";
 
 /** Longest a single recording runs before it stops itself. A recorder nobody
- *  can end is a recorder that holds the microphone open by mistake. */
-const MAX_SECONDS = 15;
+ *  can end is a recorder that holds the microphone open by mistake — and a
+ *  cap sized for an essay, in a product where the requests are one sentence.
+ *  Ten seconds is several breaths; the operator can also stop it by hand. */
+const MAX_SECONDS = 10;
 
 /** What Live takes natively. The browser's own rate is resampled to this, so
  *  the server never has to guess what it was handed. */
@@ -24,6 +26,23 @@ const TARGET_RATE = 16_000;
 // The reply decoder is shared: the typed path speaks through the same bytes
 // at the same rate, and one fix lands for both.
 import { playPcmReply } from "./voicePlayback";
+
+/**
+ * What the model actually *said*, with Live's own silence markers removed.
+ *
+ * A turn that carries no speech comes back transcribed as `<no speech>{pause}`
+ * — observed for real against this configuration on 13-oct, along with a
+ * twenty-eight-byte audio payload. Left in, that string is logged as a reply
+ * the agent gave, which it did not: a marker is not a word, and a console
+ * line is a record.
+ */
+function spokenWords(raw: string): string {
+  return raw
+    .replace(/<no speech>/gi, " ")
+    .replace(/\{pause\}/gi, " ")
+    .replace(/\s+/g, " ")
+    .trim();
+}
 
 /**
  * Convert one block of captured audio to 16 kHz PCM16.
@@ -208,6 +227,9 @@ export default function VoiceCommand({
       }
 
       const toolCalls: VoiceToolCall[] = Array.isArray(asked.toolCalls) ? asked.toolCalls : [];
+      // The words, if any: `<no speech>{pause}` is a marker, not a reply —
+      // see `spokenWords`.
+      const said = spokenWords(String(asked.replyText ?? ""));
       let lines: string[] = [];
 
       if (toolCalls.length > 0) {
@@ -219,8 +241,8 @@ export default function VoiceCommand({
         // while the gateway works, not only the verdict afterwards. Playing
         // it does not weaken rule 1 — it is an *intent*, and what happened is
         // still narrated from the console lines below, after the handlers.
-        if (asked.replyText || asked.replyAudio) {
-          await speak(String(asked.replyText ?? ""), String(asked.replyAudio ?? ""));
+        if (said || asked.replyAudio) {
+          await speak(said, String(asked.replyAudio ?? ""));
         }
         setPhase("thinking");
         lines = await onExecute(toolCalls);
@@ -230,10 +252,27 @@ export default function VoiceCommand({
         if (asked.rejected) lines = [`⚠️ [VOICE] ${String(asked.rejected)}`, ...lines];
       } else if (asked.rejected) {
         lines = [`⚠️ [VOICE] ${String(asked.rejected)}`];
-      } else if (asked.replyText) {
-        // It answered in prose — a question back at the human. Play it and
-        // there is nothing to report, because nothing was executed.
-        await speak(String(asked.replyText), String(asked.replyAudio ?? ""));
+      } else if (said || asked.replyAudio) {
+        // It answered in prose — a question back at the human, and there is
+        // nothing to report, because nothing was executed.
+        if (asked.replyAudio) {
+          await speak(said, String(asked.replyAudio));
+          return;
+        }
+        // The turn came back **text-only**: a real question with no PCM to
+        // play — seen for real on 13-oct, where the operator read "¿cuál es
+        // el presupuesto máximo?" in the console and heard silence. A
+        // question nobody hears is a question nobody can answer, so the
+        // report step speaks the same sentence — and that call is known to
+        // come back with audio.
+        const respoken = await post({ step: "report", lines: [said] }).catch(() => null);
+        if (respoken && respoken.success === true && typeof respoken.audio === "string" && respoken.audio) {
+          await speak(String(respoken.text || said), String(respoken.audio));
+        } else {
+          onLog(`🔊 [AGENT] ${said}`);
+          onLog("⚠️ [VOICE] The reply arrived as text only and could not be re-spoken — it is in the console.");
+          setPhase("idle");
+        }
         return;
       } else {
         setError("Nothing came back from that. Say it again, or type it.");
@@ -268,8 +307,14 @@ export default function VoiceCommand({
       setPhase("idle");
       return;
     }
-    onLog(`🔊 [AGENT] ${text}`);
+    if (text) onLog(`🔊 [AGENT] ${text}`);
     if (!audio) {
+      // Text without audio used to look exactly like a spoken reply in the
+      // console — a 🔊 line and silence, which is how 13-oct's "¿cuál es el
+      // presupuesto máximo?" was read and never heard. The prose branch
+      // re-speaks through `report` when it can; this is the path where even
+      // that failed, and silence must never again arrive unexplained.
+      onLog("⚠️ [VOICE] The reply came back as text only — nothing to play.");
       setPhase("idle");
       return;
     }

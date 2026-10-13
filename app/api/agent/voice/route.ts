@@ -31,7 +31,7 @@ import {
 /**
  * Largest recording accepted, as base64 characters.
  *
- * Fifteen seconds of PCM16 at 16 kHz is 480 KB, or 640 KB once encoded. This
+ * Ten seconds of PCM16 at 16 kHz is 320 KB, or about 427 KB once encoded. This
  * bounds what arrives *before* it is decoded, which is the only place a size
  * limit saves the work it is meant to save.
  */
@@ -39,7 +39,7 @@ const MAX_AUDIO_CHARS = 900_000;
 
 /** Longest a single recording may be, in seconds — the same cap the browser
  *  enforces, re-stated here because a client's cap is a request, not a rule. */
-const MAX_RECORDING_SECONDS = 15;
+const MAX_RECORDING_SECONDS = 10;
 
 /** The console is capped at 100 lines; asking the model to narrate more than
  *  the log can hold would produce a reply about events nobody can see. */

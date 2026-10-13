@@ -107,9 +107,11 @@ export const VOICE_TOOLS: readonly VoiceTool[] = [
   {
     name: "draftOrder",
     description:
-      "Draft a purchase order from what the user asked for. Put the WHOLE request into `prompt` as one natural-language line, keeping every amount, merchant, date and condition they said — for example " +
+      "Draft a purchase order from what the user asked for. Put the WHOLE request into `prompt` as one natural-language line — in the user's own language — keeping every amount, merchant, date and condition they said; " +
+      "never drop an amount, not even when you shorten, rephrase or translate the request. For example " +
       '"white sneakers, size 10, only if the price drops to 60 USD or less, by Friday". ' +
-      "Drafting creates a row awaiting approval; it does not spend anything.",
+      "Drafting creates a row awaiting approval; it does not spend anything. " +
+      "If the request names no amount at all, do NOT draft: ask the human for the maximum first.",
     parameters: {
       type: "OBJECT",
       properties: {
