@@ -5,6 +5,11 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Sprout } from "lucide-react";
 import EmptyState from "../components/EmptyState";
 import VoiceCommand from "../components/VoiceCommand";
+// The agent's voice for outcomes that happen *outside* a voice turn — the
+// reservation confirmation after PayPal approves is exactly that: the spoken
+// turn ended when the panel was prepared, and the money's fate arrives later,
+// from a button. Same hook, same `report` step, same console line.
+import { useSpokenReply } from "../components/useSpokenReply";
 import type { VoiceToolCall } from "@/lib/voice/tools";
 import ProjectGrid from "./ProjectGrid";
 import PortfolioCard from "./PortfolioCard";
@@ -113,6 +118,22 @@ export default function CrowdfundingView({
   const lastOrder = useRef<string | null>(null);
 
   /**
+   * The agent speaks the outcome, however it arrived.
+   *
+   * The reservation confirmation used to exist only as text — beside the
+   * button and in the shared console — because the voice turn that *prepared*
+   * this pledge had already ended by the time PayPal approved it. The
+   * settlement is not a turn's narration; it is its own event, and this hook
+   * is how any screen says one out loud: the same `report` step, the same
+   * `🔊 [AGENT]` line, the same rules about narrating the record and nothing
+   * else.
+   */
+  const spokenReply = useSpokenReply(recordEvent);
+
+  /** The panel beside the map — where a selection lands, and where the voice already scrolls. */
+  const panelHostRef = useRef<HTMLDivElement | null>(null);
+
+  /**
    * A payment that did not happen is still an event, and it belongs in the
    * console Overview reads — not only in a message beside the button that
    * caused it. The row is never written, because nothing was reserved, so
@@ -200,6 +221,18 @@ export default function CrowdfundingView({
     };
   }, [refreshInvestments]);
 
+  // The panel sits beside the map, above the grid: when a row selects it,
+  // bring it into view — a panel filled off-screen is a panel nobody
+  // approves. `nearest` keeps it gentle: nothing scrolls when it is already
+  // where the eye is, and the voice's own reveal stays the loud one.
+  useEffect(() => {
+    if (!selected) return;
+    const timer = window.setTimeout(() => {
+      panelHostRef.current?.scrollIntoView({ behavior: "smooth", block: "nearest" });
+    }, 80);
+    return () => window.clearTimeout(timer);
+  }, [selected]);
+
   // What the model is told about, in the shape the voice route accepts.
   //
   // `limit` here is **what the campaign is still missing** — the number that
@@ -228,6 +261,7 @@ export default function CrowdfundingView({
    * button would have shown: the voice gets a microphone in front of the same
    * door, not a wider one.
    */
+  const { prime: primeSpeaker, speakLines } = spokenReply;
   const executeVoiceTool = useCallback(
     async (calls: VoiceToolCall[]): Promise<string[]> => {
       const captured: string[] = [];
@@ -242,6 +276,11 @@ export default function CrowdfundingView({
       for (const call of calls) {
         switch (call.name) {
           case "investInProject": {
+            // Inside the mic's gesture: the speaker the *settlement* will use
+            // later — when PayPal approves, no click of ours is on the stack —
+            // is paid for now, while a gesture still is.
+            primeSpeaker();
+
             const index = Math.trunc(Number(call.args.project));
             const amount = Number(call.args.amount);
             const project = projects[index];
@@ -313,7 +352,7 @@ export default function CrowdfundingView({
 
       return captured;
     },
-    [projects]
+    [projects, primeSpeaker]
   );
 
   const value = Number(amount);
@@ -373,6 +412,14 @@ export default function CrowdfundingView({
       if (!selected || !envelope) return;
       setBusy(true);
       setPledge(null);
+      // The speaker, paid for while a click is still on the stack: by the time
+      // this callback runs, the human's last gesture was PayPal's own UI in a
+      // popup — and a speaker created after that starts muted, with no error
+      // anyone can see. Sticky activation has long since happened on this page
+      // (the mic, the buttons), so a context built now is allowed to talk.
+      primeSpeaker();
+      /** The sentence the card will show — and the agent will say, out loud. */
+      let said: string | null = null;
 
       const row: PolicyRow = {
         id: Date.now(),
@@ -435,33 +482,31 @@ export default function CrowdfundingView({
               conditionDetail: `Paid through PayPal · order ${info.orderId} · capture ${info.authorizationId}`,
             });
             recordEvent(`✅ [CROWDFUNDING] Captured ${money(value)} for "${selected.name}" — the campaign was already funded.`);
-            setPledge({
-              kind: "ok",
-              text: `Paid ${money(value)} to ${selected.name}. The campaign was already funded, so the money moved — it is yours to see in PayPal's sandbox.`,
-            });
+            said = `Paid ${money(value)} to ${selected.name}. The campaign was already funded, so the money moved — it is yours to see in PayPal's sandbox.`;
+            setPledge({ kind: "ok", text: said });
           } else {
-            setPledge({
-              kind: "error",
-              text: data.error ?? "The capture was refused — the reservation stands and nothing was taken.",
-            });
+            said = data.error ?? "The capture was refused — the reservation stands and nothing was taken.";
+            setPledge({ kind: "error", text: said });
           }
         } catch {
-          setPledge({
-            kind: "error",
-            text: "Could not reach the capture service — the reservation stands and nothing was taken.",
-          });
+          said = "Could not reach the capture service — the reservation stands and nothing was taken.";
+          setPledge({ kind: "error", text: said });
         }
       } else {
-        setPledge({
-          kind: "ok",
-          text: `${money(value)} reserved for ${selected.name}. Nothing is taken yet: it is captured when the campaign reaches its goal, and released if it does not close by ${selected.deadline}.`,
-        });
+        // The sentence the operator quoted back, now spoken as well as shown:
+        // the reservation is the moment the whole product exists for, and a
+        // confirmation only half of the senses receive is half a confirmation.
+        said = `${money(value)} reserved for ${selected.name}. Nothing is taken yet: it is captured when the campaign reaches its goal, and released if it does not close by ${selected.deadline}.`;
+        setPledge({ kind: "ok", text: said });
       }
 
       refreshInvestments();
       setBusy(false);
+      // Spoken from the record, never from a hope: this is the same sentence
+      // the card shows, through the same `report` step the voice loop uses.
+      if (said) void speakLines([said]);
     },
-    [selected, envelope, value, refreshInvestments]
+    [selected, envelope, value, refreshInvestments, primeSpeaker, speakLines]
   );
 
   if (projects.length === 0) {
@@ -519,32 +564,10 @@ export default function CrowdfundingView({
         />
       </section>
 
-      {/* What *I* hold, above the catalogue of what I could hold. */}
-      <PortfolioCard investments={investments} projects={projects} />
-
-      {/* The action of the page, named: the table above it answers "what do I
-          have?" and this one answers "what can I do?" — a heading is how a
-          reader scanning from the top finds the second one. */}
-      <section aria-label="Choose a project">
-        <h2 className="text-base font-semibold text-slate-900">
-          Choose the project you want to invest in
-        </h2>
-        <p className="mt-1 max-w-[70ch] text-xs leading-relaxed text-slate-500">
-          Click a row — or a pin on the map below — to open the panel and fund it with PayPal.
-          Or say it out loud, up above, and the agent prepares it for you.
-        </p>
-        <div className="mt-3">
-          <ProjectGrid projects={projects} onSelected={setSelected} />
-        </div>
-      </section>
-
-      <p className="text-xs leading-relaxed text-slate-400">
-        {projects.length} projects · every row marked <span className="font-semibold">demo</span> is
-        a sample record: no audit has been performed on it. Returns are what the project offers, not
-        what anybody has been paid.
-      </p>
-
-      <div className="grid grid-cols-1 gap-4 lg:grid-cols-[minmax(0,1fr)_minmax(340px,460px)]">
+      <div
+        ref={panelHostRef}
+        className="grid grid-cols-1 gap-4 lg:grid-cols-[minmax(0,1fr)_minmax(340px,460px)]"
+      >
         <section
           aria-label="Projects on the map"
           className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm"
@@ -562,7 +585,7 @@ export default function CrowdfundingView({
 
         {!selected ? (
           <div className="flex items-center justify-center rounded-2xl border border-dashed border-slate-300 bg-white px-5 py-6 text-center text-sm text-slate-500">
-            Select a pin on the map — or a row above — to see the business, and what your dollars cost
+            Select a pin on the map — or a row below — to see the business, and what your dollars cost
             in bolívares today at the official BCV rate.
           </div>
         ) : (
@@ -727,6 +750,34 @@ export default function CrowdfundingView({
           </section>
         )}
       </div>
+      {/* The action of the page, named: the map above it answers "what is
+          on offer?" and this one answers "what do I pick?" — a heading is
+          how a reader scanning from the top finds the second one. Below the
+          map, because choosing happens after seeing. */}
+      <section aria-label="Choose a project">
+        <h2 className="text-base font-semibold text-slate-900">
+          Choose the project you want to invest in
+        </h2>
+        <p className="mt-1 max-w-[70ch] text-xs leading-relaxed text-slate-500">
+          Click a row — or a pin on the map above — to open the panel and fund it with PayPal.
+          Or say it out loud, up in the blue strip, and the agent prepares it for you.
+        </p>
+        <div className="mt-3">
+          <ProjectGrid projects={projects} onSelected={setSelected} />
+        </div>
+      </section>
+
+      <p className="text-xs leading-relaxed text-slate-400">
+        {projects.length} projects · every row marked <span className="font-semibold">demo</span> is
+        a sample record: no audit has been performed on it. Returns are what the project offers, not
+        what anybody has been paid.
+      </p>
+
+      {/* What *I* hold — last on purpose: a visitor who has just arrived
+          wants to see what is on offer (the map), then what they would pick
+          (the grid), and only after that what they already hold. */}
+      <PortfolioCard investments={investments} projects={projects} />
+
     </div>
   );
 }
