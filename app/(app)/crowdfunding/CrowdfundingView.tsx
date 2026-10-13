@@ -708,7 +708,11 @@ export default function CrowdfundingView({
                   aria-describedby="cf-amount-bounds"
                   className="w-full rounded-xl border border-slate-200 bg-white p-2.5 font-mono text-sm outline-none focus:border-blue-400 focus:ring-2 focus:ring-blue-100"
                 />
-                <div className="mt-2 flex gap-2">
+                {/* The row used to overflow its half of the grid and slide
+                    under the conversion box beside it, eating the last pill —
+                    wrapping keeps every amount inside its own column at any
+                    panel width. */}
+                <div className="mt-2 flex flex-wrap gap-2">
                   {PILL_AMOUNTS.map((pill) => (
                     <button
                       key={pill}
@@ -909,8 +913,8 @@ function Header() {
         PayPal AI Crowdfunding
       </h1>
       <p className="max-w-[70ch] text-sm leading-relaxed text-slate-500">
-        <span className="font-semibold text-slate-700">
-          It&apos;s where your PayPal money becomes truly &quot;smart.&quot;
+        <span className="font-semibold italic text-slate-700">
+          Beyond smart money—this is where your capital multiplies.
         </span>{" "}
         Finance a real business in Venezuela from ${MIN_INVESTMENT_USD} to $
         {MAX_INVESTMENT_USD.toLocaleString("en-US")} and receive your share in USD. You choose
