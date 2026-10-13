@@ -95,6 +95,13 @@ function Card({
           <p className="truncate text-xs text-slate-400">
             {[product.brand, product.category].filter(Boolean).join(" · ") || "unbranded"}
           </p>
+          {/* Why this candidate survived the relevance judge — the answer to
+              the question a card only seems to answer by existing: *why is
+              this here?* Absent when no judge ran, which is the card this
+              strip used to show unconditionally. */}
+          {product.reason && (
+            <p className="mt-1 text-[11px] leading-snug text-blue-700">{product.reason}</p>
+          )}
         </div>
 
         <div className="flex items-baseline justify-between gap-2">

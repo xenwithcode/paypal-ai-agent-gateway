@@ -1345,6 +1345,15 @@ export default function AgentGrid({
 
         setPrompt("");
 
+        // Why the strip is about to be empty, when it is: the relevance
+        // judge found no candidate that IS what was asked for — said here,
+        // through the same funnel the voice reads from, so an absent strip
+        // arrives with an explanation instead of as silence. A spoken reply
+        // then narrates it like any other line, because it is one.
+        if (typeof data.searchNote === "string" && data.searchNote) {
+          addLog(`🔎 [SEARCH] ${data.searchNote}`);
+        }
+
         // The strip answers "which of these?" before the card answers "do you
         // approve it?" — approving a product before choosing between
         // products is the wrong way round. So when there is something to

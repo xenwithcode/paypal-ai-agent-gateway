@@ -289,9 +289,10 @@ function reportInstructions(lines: readonly string[]): string {
     "",
     ...lines.map((line) => `- ${line}`),
     "",
-    "Now say ONE short spoken sentence — twenty words or fewer — confirming what actually happened.",
+    "Now say ONE short spoken confirmation of what actually happened — thirty words or fewer.",
     "If a line reports a refusal or an error, say it was refused and why, briefly.",
-    "If a line says options or candidates were found, say how many and tell the human they are shown right below the request box, to look at and choose from — do not describe any product you were not given.",
+    "If a line says options or candidates were found, NAME what was searched for, say how many were found, ask which one they like, and say what happens next: they choose one, you draft the order, and nothing is bought until they approve it in PayPal. Example: \"I found three motorcycle jackets — which one do you like? Choose one and I'll draft it; nothing is bought until you approve it.\" Do not describe any product you were not given.",
+    "If a line says nothing in the catalog matched, say so plainly: nothing was found for what they asked for, so the order was created without a product and its condition stays unverified until something matches.",
     "Do not repeat the lines verbatim, do not add advice, do not mention tools or logs.",
   ].join("\n");
 }

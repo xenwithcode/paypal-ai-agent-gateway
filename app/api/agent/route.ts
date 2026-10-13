@@ -1,12 +1,15 @@
 // app/api/agent/route.ts
 import { NextRequest, NextResponse } from "next/server";
 import { getBalance } from "@/lib/paypal";
-import { parseUserIntention } from "@/lib/gemini";
+import { parseUserIntention, rankCandidates } from "@/lib/gemini";
 import { STATUS } from "@/lib/policy";
 // The meter in front of this route. It guards two spends, not one: the model
 // call below and the PayPal balance read that precedes it.
 import { agentRateLimit, keyFromHeaders } from "@/lib/rateLimit";
 import { searchCandidates, evaluateCondition, candidateRecords, CATALOG_SOURCE } from "@/lib/commerce/catalog";
+// What the relevance verdict means for the strip — pure, so the rule is
+// tested without a model standing in for it.
+import { applyRelevance } from "@/lib/commerce/relevance";
 // Isolated module that owns the Venezuela inflation-shield logic.
 import { processEmergencyDevaluationShield } from "@/lib/shields/InflationShield";
 
@@ -111,7 +114,22 @@ export async function POST(req: NextRequest) {
     // winner.
     const query = `${policy.what} ${policy.merchant}`.trim();
     const { candidates, matchedBy } = await searchCandidates(query);
-    const product = candidates[0] ?? null;
+    // The search is literal; the question is not. Asking for a "motorcycle
+    // riding jacket" in a catalog that holds motorcycles but no jackets
+    // returned three motorcycles — confidently offered, none of them a
+    // jacket. So the keyword hits are now judged against the intent before
+    // they reach the strip: only products that genuinely ARE what was asked
+    // for are offered, each with the judge's one-line reason. A judgement
+    // that cannot run keeps the keyword order exactly as it was — the human
+    // still chooses, the server still judges, and a missing opinion may
+    // never empty the strip on its own.
+    //
+    // The second model call of this request. The meter counts the request,
+    // not the calls: parsing the intent and ranking what the search found
+    // are one decision in two halves, and both bill the same cheap model.
+    const verdict = candidates.length > 0 ? await rankCandidates(policy.what, candidates) : null;
+    const relevance = applyRelevance(candidates, verdict, policy.what);
+    const product = relevance.kept[0] ?? null;
     const evaluation = evaluateCondition(policy.condition, product);
 
     // Computed once: the network scope shown to the approver and the one sent
@@ -159,11 +177,18 @@ export async function POST(req: NextRequest) {
         matchedId: product?.id ?? null,
         chosenId: null,
       },
-      // What else the search found. The agent used to keep its ranking to
-      // itself — the operator saw the product it preferred and never the ones
-      // it passed over, so the choice was invisible exactly where a human is
-      // meant to make it.
-      candidates,
+      // What else the search found, after the relevance judge has spoken:
+      // only the candidates that ARE what was asked for, best first, each
+      // carrying the one-line reason it was kept. The agent used to keep its
+      // ranking to itself — the operator saw the product it preferred and
+      // never the ones it passed over, so the choice was invisible exactly
+      // where a human is meant to make it.
+      candidates: relevance.kept,
+      /**
+       * The honest sentence when nothing matched — spoken and logged, so the
+       * absence of a strip is explained rather than merely visible.
+       */
+      searchNote: relevance.note,
       /** Which candidate the agent would have taken, so the strip can mark it. */
       matchedId: product?.id ?? null,
       openShellConfig: {

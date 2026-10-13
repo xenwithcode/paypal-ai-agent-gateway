@@ -10,6 +10,10 @@ import { GoogleGenAI, Type, type Schema } from "@google/genai";
 // `lib/catalog.ts` has one: tests load this module through Node's ESM
 // resolver, which does not guess — see the note on `allowImportingTsExtensions`.
 import { MODE, isMode, resolveExpiry } from "./policy.ts";
+// Type-only: what the relevance judge answers, spelled by the module that
+// decides what its answer means. Erased before bundling — this file is
+// server-side, but the import keeps one vocabulary for "the verdict".
+import type { RelevanceVerdict } from "./commerce/relevance.ts";
 
 const MODEL = process.env.GEMINI_MODEL ?? "gemini-3.8-flash";
 
@@ -243,6 +247,126 @@ export async function parseUserIntention(
       source: "fallback",
       reason: `The model call failed: ${message}`,
     };
+  }
+}
+
+/** Strict schema for the relevance verdict (Structured Outputs, same as the parser's). */
+const relevanceSchema: Schema = {
+  type: Type.OBJECT,
+  properties: {
+    noneMatch: {
+      type: Type.BOOLEAN,
+      description: "true when NOT ONE of the candidates is what the user asked for.",
+    },
+    picks: {
+      type: Type.ARRAY,
+      description:
+        "The candidates that genuinely ARE what the user asked for, best first. Empty when noneMatch is true.",
+      items: {
+        type: Type.OBJECT,
+        properties: {
+          id: { type: Type.NUMBER, description: "The candidate's catalog id." },
+          reason: {
+            type: Type.STRING,
+            description: "One short reason this product is what was asked for.",
+          },
+        },
+        required: ["id", "reason"],
+      },
+    },
+  },
+  required: ["noneMatch", "picks"],
+};
+
+/**
+ * Which of these products ARE what the user asked for — and why.
+ *
+ * The keyword search answers "which products mention these words"; this
+ * answers "which of these products is the thing", and the two are not the
+ * same question. The worked example is in this project's history: asking for
+ * a "motorcycle riding jacket" in a catalog that holds motorcycles but no
+ * jackets returned three motorcycles — confidently, with prices in the
+ * thousands, none of them a jacket.
+ *
+ * Returns `null` when nothing can be judged — no credentials, a failed call,
+ * a malformed answer — and the caller then keeps the keyword order exactly
+ * as it was. A missing opinion must never empty the strip; see
+ * `applyRelevance`, which owns that rule and is tested for it.
+ */
+export async function rankCandidates(
+  intent: string,
+  candidates: readonly {
+    id: number;
+    title: string;
+    brand?: string;
+    category: string;
+    price: number;
+  }[]
+): Promise<RelevanceVerdict | null> {
+  if (candidates.length === 0) return null;
+  const ai = getClient();
+  if (!ai) return null;
+
+  // Only what the judge needs to see: identity and category. The prose
+  // description of every product would triple the tokens for a question the
+  // title, brand and category already answer.
+  const shortlist = candidates.map((candidate) => ({
+    id: candidate.id,
+    title: candidate.title,
+    brand: candidate.brand ?? "",
+    category: candidate.category,
+    price: candidate.price,
+  }));
+
+  const systemInstruction =
+    `You are the relevance judge for PayPal AI Agent Gateway. ` +
+    `The human asked for: "${intent}". ` +
+    `Below are catalog candidates returned by a literal keyword search. ` +
+    `Keep ONLY the candidates that genuinely ARE what the human asked for — the same kind of product. ` +
+    `A motorcycle is not a jacket; a phone case is not a phone; sharing a brand does not make it a match. ` +
+    `For each kept candidate give ONE short reason it matches. ` +
+    `If not one of them is what was asked for, set noneMatch true and return no picks — ` +
+    `never keep a candidate to be polite: the human is about to be asked to spend money on it. ` +
+    `Respond only with JSON matching the provided schema.`;
+
+  try {
+    const response = await ai.models.generateContent({
+      model: MODEL,
+      contents: JSON.stringify({ intent, candidates: shortlist }),
+      config: {
+        systemInstruction,
+        responseMimeType: "application/json",
+        responseSchema: relevanceSchema,
+      },
+    });
+
+    const raw = response.text;
+    if (!raw) return null;
+
+    // Validated on the way out of the model, never trusted — the same rule
+    // the parser follows. An id the catalog did not return is ignored by
+    // `applyRelevance`, which is why it is allowed to arrive here.
+    const parsed: unknown = JSON.parse(raw);
+    if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) return null;
+    const data = parsed as { noneMatch?: unknown; picks?: unknown };
+    const picks = Array.isArray(data.picks)
+      ? data.picks
+          .filter(
+            (item): item is { id: unknown; reason: unknown } =>
+              !!item && typeof item === "object" && !Array.isArray(item)
+          )
+          .map((item) => ({
+            id: Number((item as { id: unknown }).id),
+            reason: String((item as { reason: unknown }).reason ?? ""),
+          }))
+          .filter((pick) => Number.isFinite(pick.id))
+      : [];
+    return { noneMatch: data.noneMatch === true, picks };
+  } catch {
+    // A failed ranking must not cost the operator the candidates the catalog
+    // did return — it costs only the ranking. The strip falls back to the
+    // keyword order, which is exactly what it was before this call existed.
+    return null;
   }
 }
 

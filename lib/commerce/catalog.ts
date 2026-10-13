@@ -43,6 +43,15 @@ export interface CatalogProduct {
   warrantyInformation: string;
   thumbnail?: string;
   /**
+   * Why the relevance judge kept this candidate — one line, on the card.
+   *
+   * Never written by the catalog: it is the model's answer to "why is this
+   * product what the human asked for?", attached by `/api/agent` after the
+   * search. Absent when the ranking could not run, which leaves the card
+   * exactly as it was.
+   */
+  reason?: string;
+  /**
    * Every image the catalog published for this product, largest first.
    *
    * `thumbnail` is a ~200px asset — fine inside a 36px grid cell, far too
