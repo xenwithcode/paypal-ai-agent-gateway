@@ -121,6 +121,12 @@ const intentionSchema: Schema = {
       type: Type.STRING,
       description: "ISO date (YYYY-MM-DD) after which this authority lapses. Empty if none.",
     },
+    searchQuery: {
+      type: Type.STRING,
+      description:
+        "When the request is not in English, the same item in English, for the catalog search — " +
+        "e.g. 'chaqueta para montar moto' → 'motorcycle riding jacket'. Empty string when the request is already in English.",
+    },
     mode: {
       type: Type.STRING,
       description: "'Autonomous' for small routine spends, 'Copilot' when a human must confirm.",
@@ -137,6 +143,16 @@ export type IntentionPolicy = {
   condition: string;
   expires?: string;
   mode: string;
+  /**
+   * The same item, in English, for the catalog search.
+   *
+   * The human's words stay in `what` — that is the record of what they
+   * asked for. But the demo catalog's titles are English, so a Spanish
+   * request searched by its own words finds nothing ("chaqueta" matches no
+   * product, and the honest no-match note is correct but avoidable). Empty
+   * when the request is already in English; the route falls back to `what`.
+   */
+  searchQuery?: string;
 };
 
 /**
@@ -190,7 +206,9 @@ export async function parseUserIntention(
     `The request may arrive in any language — Spanish among them. Read ` +
     `amounts, ceilings and dates exactly as you would in English ("150 ` +
     `dólares" is 150 USD, "el viernes" is this coming Friday); keep "what" ` +
-    `in the human's own words. ` +
+    `in the human's own words. When the request is not in English, also ` +
+    `fill "searchQuery" with the same item in English — the catalog the ` +
+    `gateway searches is English. ` +
     `Respond only with JSON matching the provided schema.\n` +
     `Rules:\n` +
     // The schema's example showed "price <= 60" but never said when to
@@ -451,6 +469,9 @@ function normalise(policy: unknown, availableBalance: string): IntentionPolicy {
     expires: asExpiry(source.expires),
     // Must match MODE exactly, or the AG Grid select editor shows an empty cell.
     mode: isMode(source.mode) ? source.mode : MODE.copilot,
+    // The English words for the catalog, when the request was not in English.
+    // Empty is a value here, not a absence: the route reads `|| what`.
+    searchQuery: asString(source.searchQuery),
   };
 }
 

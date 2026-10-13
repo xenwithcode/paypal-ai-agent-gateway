@@ -128,7 +128,12 @@ export async function POST(req: NextRequest) {
     // `matchProduct` would have picked, so asking for the list answers both
     // questions and the strip and the card can never disagree about the
     // winner.
-    const query = `${policy.what} ${policy.merchant}`.trim();
+    // The catalog speaks English; the human may not. `searchQuery` is the
+    // parser's English rendering of the same item — the record in `what`
+    // keeps the human's own words, the search uses the words the catalog
+    // answers to. Empty falls back to `what`, which is every English
+    // request and every request the parser could not translate.
+    const query = `${policy.searchQuery || policy.what} ${policy.merchant}`.trim();
     const { candidates, matchedBy } = await searchCandidates(query);
     // The search is literal; the question is not. Asking for a "motorcycle
     // riding jacket" in a catalog that holds motorcycles but no jackets

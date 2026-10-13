@@ -924,7 +924,7 @@ export default function AgentGrid({
       if (!row) return;
       if (total > 1) {
         addLog(
-          `📊 [FLIGHT] That segment holds ${total} orders — opened "${row.what}". Hover the segment to see them all.`
+          `📊 [FLIGHT] That segment holds ${total} orders — you opened "${row.what}".`
         );
       }
       setSelectedId(id);
