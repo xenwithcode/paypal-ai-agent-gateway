@@ -74,6 +74,8 @@ const TURN_TIMEOUT_MS = 25_000;
 
 /** What one turn produced. */
 type TurnResult = {
+  /** Base64 PCM chunks as they arrive — joined once, as bytes, at the end. */
+  audioChunks: string[];
   /** Concatenated base64 PCM — everything the model said, if it said it. */
   audio: string;
   /** The transcript of that audio, in chunks. */
@@ -85,6 +87,33 @@ type TurnResult = {
   /** Set when the model asked for something the gateway refuses to run. */
   rejected: string;
 };
+
+/**
+ * Join streamed base64 PCM into one decodable payload.
+ *
+ * Base64 is not concatenation-safe: a chunk that ends mid-quantum carries
+ * padding, and `"xxxx=" + "yyyy"` is invalid at the browser's `atob` — which
+ * is exactly the error an operator's console showed on 13-oct while the
+ * spoken question that sat in it stayed unplayable. Measured that night:
+ * every streamed reply carried a one-byte first chunk (`xxx=`), so *every*
+ * multi-chunk turn decoded to garbage, and the replies that had played
+ * before did so only by the alignment of their chunks.
+ *
+ * Decode each chunk to bytes and concatenate those: bytes have no alignment
+ * opinions, and the result is one canonical payload with its padding where
+ * it belongs — at the end.
+ */
+function joinPcmChunks(chunks: readonly string[]): string {
+  const buffers: Buffer[] = [];
+  for (const chunk of chunks) {
+    if (!chunk) continue;
+    // `Buffer.from` is lenient about malformed base64 — it decodes what it
+    // can and stops — which is the behaviour wanted here: one corrupt chunk
+    // must not cost the whole reply its voice.
+    buffers.push(Buffer.from(chunk, "base64"));
+  }
+  return Buffer.concat(buffers).toString("base64");
+}
 
 /**
  * Open a session, hand it to `send`, and wait for the turn to complete.
@@ -112,7 +141,7 @@ async function runTurn(
     );
   }
 
-  const result: TurnResult = { audio: "", transcript: "", text: "", toolCalls: [], rejected: "" };
+  const result: TurnResult = { audioChunks: [], audio: "", transcript: "", text: "", toolCalls: [], rejected: "" };
   let settled = false;
 
   const turn = new Promise<TurnResult>((resolve, reject) => {
@@ -142,7 +171,12 @@ async function runTurn(
         callbacks: {
           onmessage: (message: LiveServerMessage) => {
             ingest(message, result);
-            if (message.serverContent?.turnComplete) finish(() => resolve(result));
+            if (message.serverContent?.turnComplete)
+              finish(() => {
+                // Joined as bytes, once, here — see `joinPcmChunks`.
+                result.audio = joinPcmChunks(result.audioChunks);
+                resolve(result);
+              });
           },
           onerror: (event: ErrorEvent) =>
             finish(() =>
@@ -189,7 +223,7 @@ function ingest(message: LiveServerMessage, into: TurnResult): void {
   for (const part of message.serverContent?.modelTurn?.parts ?? []) {
     if (part.functionCall) accept(part.functionCall, into);
     if (part.inlineData?.data && (part.inlineData.mimeType ?? "").startsWith("audio/pcm")) {
-      into.audio += part.inlineData.data;
+      into.audioChunks.push(part.inlineData.data);
     }
     if (part.text) into.text += part.text;
   }
