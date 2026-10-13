@@ -39,6 +39,19 @@
           "counterparty"
         ],
         "note": "Dollars held by PayPal; bolívares between two people, outside the app."
+      },
+      {
+        "id": "crowdfunding-path",
+        "label": "PayPal AI Crowdfunding",
+        "focus": [
+          "operator",
+          "ui",
+          "judge",
+          "paypal",
+          "campaigns",
+          "business"
+        ],
+        "note": "A pledge is a purchase order: the campaign's band and goal are judged server-side, and the money captures only when the goal is met."
       }
     ]
   },
@@ -170,6 +183,35 @@
         190,
         62
       ]
+    },
+    {
+      "id": "campaigns",
+      "type": "database",
+      "label": "Campaign showcase",
+      "sublabel": "band · goal · return",
+      "pos": [
+        240,
+        455
+      ],
+      "size": [
+        180,
+        60
+      ],
+      "tag": "seeded"
+    },
+    {
+      "id": "business",
+      "type": "external",
+      "label": "Venezuelan business",
+      "sublabel": "receives the pledge when funded",
+      "pos": [
+        880,
+        560
+      ],
+      "size": [
+        190,
+        64
+      ]
     }
   ],
   "boundaries": [
@@ -219,14 +261,19 @@
       "id": "agent-judge",
       "from": "agent",
       "to": "judge",
-      "label": "order to judge"
+      "label": "order to judge",
+      "labelDy": 24
     },
     {
       "id": "judge-paypal",
       "from": "judge",
       "to": "paypal",
       "label": "authorize · capture",
-      "variant": "emphasis"
+      "variant": "emphasis",
+      "labelAt": [
+        833,
+        318
+      ]
     },
     {
       "id": "judge-store",
@@ -235,7 +282,11 @@
       "label": "orders · refusals",
       "variant": "dashed",
       "fromSide": "bottom",
-      "toSide": "top"
+      "toSide": "top",
+      "labelAt": [
+        693,
+        318
+      ]
     },
     {
       "id": "fx-rate",
@@ -252,7 +303,31 @@
       "to": "counterparty",
       "label": "dollars to the named account",
       "fromSide": "bottom",
-      "toSide": "top"
+      "toSide": "top",
+      "labelAt": [
+        975,
+        318
+      ]
+    },
+    {
+      "id": "campaign-vitrine",
+      "from": "campaigns",
+      "to": "ui",
+      "label": "projects · band · goal",
+      "fromSide": "left",
+      "toSide": "left"
+    },
+    {
+      "id": "pledge-to-business",
+      "from": "paypal",
+      "to": "business",
+      "label": "pledge · captured when funded",
+      "fromSide": "right",
+      "toSide": "right",
+      "labelAt": [
+        1094,
+        456
+      ]
     },
     {
       "id": "bolivares-between-them",
@@ -264,12 +339,12 @@
       "toSide": "bottom",
       "via": [
         [
-          130,
-          500
+          125,
+          530
         ],
         [
           975,
-          500
+          530
         ]
       ]
     }
@@ -297,7 +372,8 @@
       "dot": "amber",
       "title": "Two rails, and an exchange",
       "items": [
-        "PayPal AI Crowdfunding: fund a real business in Venezuela from $20, paid in USD",
+        "PayPal AI Crowdfunding: fund a real business in Venezuela from $20, paid in USD — a pledge is a purchase order through these same rails",
+        "The campaign's band, goal and return are read from the server's own catalog: a request may name a campaign, it cannot state its goal",
         "Exchange · USD ↔ VES: dollars held by PayPal, bolívares between two people",
         "A condition only a person can confirm — the agent may never settle it alone"
       ]
