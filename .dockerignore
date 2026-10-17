@@ -1,0 +1,11 @@
+# Nunca dentro de la imagen: claves, datos en ejecución, notas de trabajo.
+# `COPY . .` del Dockerfile copia lo que ESTE archivo permite — sin él,
+# `.env.local` (con el CLIENT_SECRET y la clave de Gemini) viajaría dentro
+# de la imagen publicada.
+.env*
+node_modules
+.next
+.git
+data
+TRABAJO-PROXIMA-SESION.md
+VIDEO-3MIN.md

@@ -3,6 +3,12 @@ import type { NextConfig } from "next";
 const nextConfig: NextConfig = {
   reactStrictMode: true,
 
+  // Next emits a self-contained server (`.next/standalone`) instead of the
+  // full node_modules tree — the shape Cloud Run wants: the image copies the
+  // standalone folder plus `public/` and `.next/static/`, and boots with
+  // `node server.js`. Local `npm run dev` and `npm start` are unaffected.
+  output: "standalone",
+
   // `@google/genai` reaches the Live API over a WebSocket, and webpack resolves
   // `ws` to Next's own compiled copy — whose `bufferutil` binding does not
   // export `mask` — so every session died on connect with

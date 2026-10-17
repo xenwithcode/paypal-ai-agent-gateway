@@ -1,0 +1,11 @@
+# Lo que Cloud Build recibe como contexto de build. Mismo criterio que
+# .dockerignore: ni claves, ni datos de ejecución, ni notas de trabajo.
+.gcloudignore
+.git
+.github
+.env*
+node_modules
+.next
+data
+TRABAJO-PROXIMA-SESION.md
+VIDEO-3MIN.md

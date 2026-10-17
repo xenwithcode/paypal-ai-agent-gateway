@@ -106,6 +106,10 @@ Approve **once**: *≤ 60 USD, this week, these merchants.* The agent then produ
 
 ## Quick start
 
+> **Just want to see it?** It is already running: **<https://paypal-ai-agent-906128164063.us-east1.run.app>**
+> — deployed on Cloud Run (us-east1), scale-to-zero, real PayPal sandbox orders. Everything
+> below is for running it yourself.
+
 **Requirements:** Node.js ≥ 20.9 · a [PayPal developer account](https://developer.paypal.com) · Google Gemini credentials — one of:
 - **Vertex AI** *(recommended)* — a [Google Cloud](https://console.cloud.google.com) project with the **Vertex AI API** enabled. Billed to that project, so hackathon credits cover it, and no key is stored anywhere.
 - **Gemini API** — a [Google AI Studio](https://aistudio.google.com) key. Separate billing from GCP credits.
