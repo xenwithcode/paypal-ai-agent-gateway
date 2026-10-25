@@ -502,34 +502,73 @@ function parseAmount(raw: string): number {
 }
 
 /**
- * Find the ceiling in free text. Naively taking the first number picks up
- * "size 10" and turns a shoe size into a budget, so the order matters:
- * currency-adjacent beats keyword-adjacent beats the first untouched number.
+ * A number sitting inside a date is a date, not a price.
+ *
+ * "hasta el 25 de octubre" names a deadline and the 25 belongs to it; read
+ * as a ceiling it would draft — and authorise — an order the human never
+ * priced. Weekdays count too, for the same reason: the number next to
+ * "Friday" is the date, not the money.
  */
-function extractCeiling(prompt: string): number {
-  // 1. Written next to a currency: "60 USD", "900 PYUSD", "1,200 VES".
-  const byCurrency = prompt.match(
-    /(\d[\d,]*(?:\.\d+)?)\s*(?:pyusd|usd|ves|dollars?|bol[ií]vares?)\b/i
+const DATE_WORDS =
+  /\b(?:january|february|march|april|may|june|july|august|september|october|november|december|monday|tuesday|wednesday|thursday|friday|saturday|sunday|today|tomorrow|enero|febrero|marzo|abril|mayo|junio|julio|agosto|septiembre|octubre|noviembre|diciembre|lunes|martes|mi[eé]rcoles|jueves|viernes|s[aá]bado|domingo|hoy|ma[nñ]ana)\b/i;
+
+function insideDate(prompt: string, index: number): boolean {
+  return (
+    DATE_WORDS.test(prompt.slice(Math.max(0, index - 12), index)) ||
+    DATE_WORDS.test(prompt.slice(index, index + 22))
   );
-  if (byCurrency) {
-    const n = parseAmount(byCurrency[1]);
-    if (n > 0) return n;
+}
+
+/**
+ * Find the ceiling in free text — or return **0 when the request names none**.
+ *
+ * This is the whole rule the gateway's question rests on: `0` is not "no
+ * number found, so invent one", it is "the human did not say what this may
+ * cost, so go and ask them". `buildDemoPolicy` used to fill the gap with 25%
+ * of the account balance, which meant that without credentials — the
+ * deployed demo — *every* request arrived with a ceiling nobody had said and
+ * the route's `limit <= 0` question never fired: the strip offered products
+ * for a budget the human never gave.
+ *
+ * So only two shapes count as a stated amount:
+ *
+ * 1. **Currency-adjacent** — "60 USD", "$500", "500 dólares". Unambiguous in
+ *    any language, so it is read even beside a weekday ("offers this Friday,
+ *    60 USD" is still 60 USD).
+ * 2. **Keyword-adjacent** — "under 900", "at most 80", "no más de 50". The
+ *    keyword is what makes a bare number mean money, and even here a number
+ *    inside a date is rejected.
+ *
+ * There is deliberately no third rule. "The first number in the sentence" is
+ * how a shoe size becomes a budget (`size 10`), how a quantity becomes one
+ * (`2 camisetas`) and how a deadline becomes one (`25 de octubre`) — three
+ * drafts of a spend nobody authorised. When the sentence is ambiguous the
+ * honest reading is the question, not a guess.
+ */
+export function extractCeiling(prompt: string): number {
+  // 1. Written next to a currency. `$` on either side counts as currency,
+  //    and `dólares` is spelled the way the product's own market spells it.
+  const currencyShapes = [
+    /(\d[\d,]*(?:\.\d+)?)\s*(?:pyusd|usd|ves|dollars?|d[oó]lares?|bol[ií]vares?|euros?)\b/gi,
+    /\$\s*(\d[\d,]*(?:\.\d+)?)/g,
+    /(\d[\d,]*(?:\.\d+)?)\s*\$/g,
+  ];
+  for (const shape of currencyShapes) {
+    for (const match of prompt.matchAll(shape)) {
+      const n = parseAmount(match[1]);
+      if (n > 0) return n;
+    }
   }
 
-  // 2. Next to a spending keyword: "price ... 60", "at most ... 900".
-  const byKeyword = prompt.match(
-    /\b(?:price|cost|max|budget|at most|up to|spend|limit|ceiling)\b[^0-9]{0,16}(\d[\d,]*(?:\.\d+)?)/i
-  );
-  if (byKeyword) {
-    const n = parseAmount(byKeyword[1]);
-    if (n > 0) return n;
-  }
-
-  // 3. First number that is not a size or quantity.
-  for (const match of prompt.matchAll(/\b(\d[\d,]*(?:\.\d+)?)\b/g)) {
-    const index = match.index ?? 0;
-    const preceding = prompt.slice(Math.max(0, index - 12), index);
-    if (/\b(size|qty|quantity|talla)\b/i.test(preceding)) continue;
+  // 2. Next to a spending keyword. The gap is short on purpose: a number
+  //    sixteen characters away from "budget" is a different clause. Matches
+  //    inside a date are skipped rather than ending the search — a deadline
+  //    at the head of the sentence must not hide a real amount later in it.
+  for (const match of prompt.matchAll(
+    /\b(?:price|cost[s]?|budget|max|maximum|at most|up to|spend|spending|limit|ceiling|under|below|no more than|no greater than|not more than|precio|coste|cuesta|gastar?|gasto|presupuesto|l[ií]mite|techo|no m[áa]s de|no mayor que|menor que|menos de|m[áa]ximo|hasta)\b[^0-9]{0,16}(\d[\d,]*(?:\.\d+)?)/gi
+  )) {
+    const index = (match.index ?? 0) + match[0].lastIndexOf(match[1]);
+    if (insideDate(prompt, index)) continue;
     const n = parseAmount(match[1]);
     if (n > 0) return n;
   }
@@ -596,8 +635,15 @@ function buildDemoPolicy(prompt: string, availableBalance: string): IntentionPol
 
   const merchant = KNOWN_MERCHANTS.find((m) => lower.includes(m.split(" ")[0].toLowerCase())) ?? "";
 
-  const requested = extractCeiling(prompt);
-  const limit = requested > 0 ? requested : Math.round(maxBalance * 0.25) || 100;
+  // 0 means the request named no amount — never "no amount, so take a slice
+  // of the balance". This used to be `Math.round(maxBalance * 0.25) || 100`,
+  // and with it the whole ask-first rule went missing on the path that needs
+  // it most: without credentials every draft arrived carrying a ceiling
+  // nobody had said (25% of the demo balance), so `/api/agent`'s
+  // `limit <= 0` guard never fired and the catalog was searched — and its
+  // candidates offered — for a budget the human never gave. The number that
+  // authorises a spend comes from the human or from nowhere.
+  const limit = extractCeiling(prompt);
   const capped = maxBalance > 0 ? Math.min(limit, maxBalance) : limit;
 
   // A spending cap phrased as a limit is a condition, not noise: "no more
@@ -615,7 +661,10 @@ function buildDemoPolicy(prompt: string, availableBalance: string): IntentionPol
     merchant,
     limit: capped,
     currency: /pyusd/i.test(prompt) ? "PYUSD" : "USD",
-    condition: conditional ? `price <= ${capped}` : "",
+    // Only when there is a ceiling to be the condition of: `price <= 0` would
+    // describe a spend nobody priced, and a draft that reached this line with
+    // no amount is refused by the route before anyone can read it.
+    condition: conditional && capped > 0 ? `price <= ${capped}` : "",
     // The fallback reads the deadline out of the sentence instead of out of a
     // model, so it gets the same treatment the model path gets: a phrase it
     // can read becomes a date, and a phrase it cannot stays as it was rather

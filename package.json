@@ -9,7 +9,7 @@
     "demo": "next build && next start",
     "lint": "eslint .",
     "lint:fix": "eslint . --fix",
-    "test": "node --experimental-strip-types --test tests/",
+    "test": "node --experimental-strip-types --test tests/*.test.ts",
     "audit:html": "node scripts/check-html-for-secrets.mjs"
   },
   "dependencies": {
