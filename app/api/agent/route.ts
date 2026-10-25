@@ -10,6 +10,9 @@ import { searchCandidates, evaluateCondition, candidateRecords, CATALOG_SOURCE }
 // What the relevance verdict means for the strip — pure, so the rule is
 // tested without a model standing in for it.
 import { applyRelevance } from "@/lib/commerce/relevance";
+// The sentence the gateway asks for a ceiling with — in the language the
+// request arrived in, because it is also the line the voice speaks aloud.
+import { ceilingQuestion } from "@/lib/ceilingQuestion";
 // Isolated module that owns the Venezuela inflation-shield logic.
 import { processEmergencyDevaluationShield } from "@/lib/shields/InflationShield";
 
@@ -111,12 +114,14 @@ export async function POST(req: NextRequest) {
     // ranking call, no money in motion on a number nobody said. The
     // `needsCeiling` flag tells the console this is a question rather than
     // a failure, and the voice path narrates it like any other line.
+    // The question itself is asked in the language of the request: the
+    // human who just wrote in Spanish is asked in Spanish, and the spoken
+    // agent repeats this same sentence out loud.
     if (policy.limit <= 0) {
       return NextResponse.json({
         success: false,
         needsCeiling: true,
-        error:
-          'Name the most this order may ever cost — an order without a ceiling is not an order this gateway drafts. Say it in the request, e.g. "a jacket for riding, under 150 dollars".',
+        error: ceilingQuestion(prompt),
       });
     }
 
