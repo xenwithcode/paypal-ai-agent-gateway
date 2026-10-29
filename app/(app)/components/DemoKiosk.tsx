@@ -20,12 +20,21 @@
 // effect cleanup bumps. Pause, skip and exit therefore interrupt cleanly
 // mid-step — which matters, because the alternative is a script that keeps
 // clicking after the judge pressed ✕.
+//
+// Narration: every caption is also read aloud through the browser's own
+// `speechSynthesis` — no API key, no latency, and the voice says exactly the
+// words on screen because both come from the same step. Which voice speaks is
+// decided in `lib/demo/narration.ts` (pure, tested): an English voice, the
+// least robotic one the machine has, or silence if there is none. The hold
+// after each caption is a *minimum* — the beat waits out the sentence, capped
+// so a broken engine cannot stall the run. The 🔈 switch in the bar mutes it
+// and remembers.
 
 "use client";
 
-import { useCallback, useEffect, useRef, useSyncExternalStore } from "react";
+import { useCallback, useEffect, useRef, useState, useSyncExternalStore } from "react";
 import { usePathname, useRouter } from "next/navigation";
-import { Pause, Play, RotateCcw, SkipForward, X } from "lucide-react";
+import { Pause, Play, RotateCcw, SkipForward, Volume2, VolumeX, X } from "lucide-react";
 
 import {
   exitDemo,
@@ -46,12 +55,16 @@ import {
   demoProgress,
   stepAt,
 } from "@/lib/demo/script";
+import { SPEECH_GRACE_MS, forSpeech, pickVoice } from "@/lib/demo/narration";
 
 /** Routes the driver knows how to be on; anything else is "not ours". */
 const DEMO_ROUTES: readonly string[] = DEMO_STEPS.map((step) => step.route);
 
 /** How long to wait for a page to register after navigating to it. */
 const SURFACE_TIMEOUT_MS = 12_000;
+
+/** Whether narration is on, remembered across sessions. Absent = on. */
+const VOICE_STORAGE_KEY = "paypal-ai-agent.demo.voice";
 
 function sleep(ms: number): Promise<void> {
   return new Promise((resolve) => {
@@ -73,6 +86,122 @@ export default function DemoKiosk() {
   const completedRef = useRef<Set<number>>(new Set());
   /** Where the driver was last, to tell a restart from a pause. */
   const lastIndexRef = useRef(0);
+
+  // Narration. `voiceOn` is the judge's switch ( remembered, default on );
+  // the speaking itself lives in refs because it must not re-render the bar
+  // on every utterance — the caption is the UI, the audio is a side effect.
+  const [voiceOn, setVoiceOn] = useState(true);
+  const voiceOnRef = useRef(voiceOn);
+  voiceOnRef.current = voiceOn;
+  /** Resolves when the utterance in flight ends — the driver waits on it. */
+  const speechRef = useRef<Promise<void> | null>(null);
+  /** Bumped by every `stopSpeech`, so a queued utterance knows it is stale. */
+  const speechRunRef = useRef(0);
+  /** Chrome hands out voices asynchronously; cached on mount, see below. */
+  const voicesRef = useRef<SpeechSynthesisVoice[]>([]);
+
+  // `getVoices()` answers `[]` until `voiceschanged` fires, which would make
+  // the *first* caption of every visit silently unspoken. The kiosk is mounted
+  // by the layout long before anyone presses ▶, so caching here means the
+  // list is warm by the time it is read.
+  useEffect(() => {
+    if (typeof window === "undefined" || !("speechSynthesis" in window)) return;
+    const synth = window.speechSynthesis;
+    const load = () => {
+      voicesRef.current = synth.getVoices();
+    };
+    load();
+    synth.addEventListener("voiceschanged", load);
+    return () => synth.removeEventListener("voiceschanged", load);
+  }, []);
+
+  // Silence everything spoken: called by pause, skip, exit, unmount, and the
+  // mute switch. Cancelling rather than letting the old caption finish is the
+  // point — two voices on top of each other is worse than a cut sentence.
+  const stopSpeech = useCallback(() => {
+    speechRunRef.current += 1;
+    speechRef.current = null;
+    if (typeof window !== "undefined" && "speechSynthesis" in window) {
+      window.speechSynthesis.cancel();
+    }
+  }, []);
+
+  // Read a caption aloud. Guarded three ways: no speech synthesis in this
+  // browser (SSR, or an old engine) → silently skip; no English voice on the
+  // machine → the judge reads the caption instead of an accent mangling it;
+  // voice switched off mid-flight → the run token makes it a no-op.
+  const speakCaption = useCallback((text: string) => {
+    if (typeof window === "undefined" || !("speechSynthesis" in window)) return;
+    const synth = window.speechSynthesis;
+    if (!synth) return;
+
+    const myRun = ++speechRunRef.current;
+    synth.cancel(); // never overlap with the previous beat
+
+    const deliver = (voice: SpeechSynthesisVoice) => {
+      // Voices can arrive between the check and here (`voiceschanged`), or
+      // the judge can mute while this callback waits: both make it a no-op.
+      if (speechRunRef.current !== myRun || !voiceOnRef.current) return;
+      const done = new Promise<void>((resolve) => {
+        const utterance = new SpeechSynthesisUtterance(forSpeech(text));
+        utterance.voice = voice;
+        utterance.lang = voice.lang;
+        // Neutral rate and pitch: the captions are written to be *read*, and
+        // the default of every engine is already conversational. A judge who
+        // wants them faster has the same switch as everybody else: mute.
+        utterance.onend = () => resolve();
+        utterance.onerror = () => resolve();
+        synth.speak(utterance);
+      }).then(() => {
+        if (speechRunRef.current === myRun) speechRef.current = null;
+      });
+      speechRef.current = done;
+    };
+
+    const cached = voicesRef.current.length ? voicesRef.current : synth.getVoices();
+    const ready = pickVoice(cached);
+    if (ready) {
+      deliver(ready);
+      return;
+    }
+
+    // No voice yet — on a cold `?demo=1` load Chrome may not have answered
+    // `voiceschanged` when the script starts. Wait for it (once) instead of
+    // losing the opening line; if nothing arrives, the caption stands alone.
+    const onVoices = () => {
+      synth.removeEventListener("voiceschanged", onVoices);
+      if (speechRunRef.current !== myRun) return;
+      voicesRef.current = synth.getVoices();
+      const voice = pickVoice(voicesRef.current);
+      if (voice) deliver(voice);
+    };
+    synth.addEventListener("voiceschanged", onVoices, { once: true });
+  }, []);
+
+  // Remember the judge's choice; absent or unreadable storage = default on.
+  useEffect(() => {
+    try {
+      const stored = window.localStorage.getItem(VOICE_STORAGE_KEY);
+      if (stored === "off") setVoiceOn(false);
+    } catch {
+      // Storage can throw in private modes; the default already stands.
+    }
+  }, []);
+
+  // Narrate the current caption whenever the demo starts a step (or resumes
+  // into one). The effect keys on (status, index): a skip moves the index and
+  // therefore reads the *next* caption, and a pause leaves `playing`, which
+  // lands in the stop branch below.
+  useEffect(() => {
+    if (state.status !== "playing" || !voiceOn) {
+      stopSpeech();
+      return;
+    }
+    const step = stepAt(state.index);
+    if (!step) return;
+    speakCaption(step.caption);
+    return stopSpeech;
+  }, [state.status, state.index, voiceOn, speakCaption, stopSpeech]);
 
   // The driver: one effect per (status, index, pathname). Each run of the
   // effect executes at most one step, then asks the bus to advance — which
@@ -144,6 +273,16 @@ export default function DemoKiosk() {
       await sleep(step.holdMs);
       if (!stillMine()) return;
 
+      // The hold is a reading minimum, not a schedule: if the narration is
+      // still saying the caption out loud, the beat waits for the sentence —
+      // but only for the grace period, so an engine that never fires `end`
+      // slows the demo down instead of stopping it.
+      const speaking = speechRef.current;
+      if (speaking) {
+        await Promise.race([speaking, sleep(SPEECH_GRACE_MS)]);
+        if (!stillMine()) return;
+      }
+
       if (state.index >= LAST_STEP_INDEX) finishDemo();
       else skipDemoStep();
     })();
@@ -156,12 +295,13 @@ export default function DemoKiosk() {
   // ✕ — hand the page back the way it was found before forgetting the run.
   const handleExit = useCallback(() => {
     runRef.current += 1;
+    stopSpeech();
     const surface = DEMO_ROUTES.includes(pathname)
       ? getDemoSurface(pathname as DemoRoute)
       : null;
     void surface?.actions.close?.();
     exitDemo();
-  }, [pathname]);
+  }, [pathname, stopSpeech]);
 
   // `?demo=1` starts the run from a URL — the recording-friendly entry point,
   // and the same flag the old sketch in the notes called `?demo=1`.
@@ -257,6 +397,32 @@ export default function DemoKiosk() {
             <SkipForward className="h-3.5 w-3.5" aria-hidden />
           </button>
         )}
+
+        {/* Narration on/off. Default on, remembered across runs: the demo
+            speaks its captions unless the judge says otherwise. */}
+        <button
+          type="button"
+          onClick={() => {
+            const next = !voiceOn;
+            setVoiceOn(next);
+            if (!next) stopSpeech();
+            try {
+              window.localStorage.setItem(VOICE_STORAGE_KEY, next ? "on" : "off");
+            } catch {
+              // Private mode: the choice holds for this session only.
+            }
+          }}
+          className="rounded-full p-1.5 text-slate-500 transition-colors hover:bg-slate-100 hover:text-slate-800"
+          title={voiceOn ? "Mute the narration" : "Read the captions aloud"}
+          aria-label={voiceOn ? "Mute the narration" : "Read the captions aloud"}
+          aria-pressed={voiceOn}
+        >
+          {voiceOn ? (
+            <Volume2 className="h-3.5 w-3.5" aria-hidden />
+          ) : (
+            <VolumeX className="h-3.5 w-3.5 text-slate-400" aria-hidden />
+          )}
+        </button>
 
         <button
           type="button"
