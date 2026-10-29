@@ -31,6 +31,7 @@ import {
 } from "@/lib/crowdfunding";
 import { convert, formatAsOf, formatSmart, type FxSnapshot } from "@/lib/fx/rates";
 import { MODE, STATUS, type PolicyEnvelope } from "@/lib/policy";
+import { registerDemoSurface } from "@/lib/demo/bus";
 import type { PolicyRow } from "../overview/types";
 import {
   appendPolicyRow,
@@ -88,6 +89,20 @@ const PILL_AMOUNTS = [20, 50, 100];
  */
 const DIRECT_TO_BUSINESS = false;
 
+/**
+ * The functions this page offers the ▶ Demo, by name.
+ *
+ * Declared here rather than inferred so the ref's no-op first value does not
+ * have to shadow every argument: the shape is the contract with the driver in
+ * `lib/demo/script.ts`, and it is the same shape the driver types against.
+ */
+type DemoCrowdfundingActions = {
+  selectProject: () => void;
+  setAmount: (arg?: string | number) => void;
+  revealPledge: () => void;
+  close: () => void;
+};
+
 export default function CrowdfundingView({
   projects,
   paypalClientId,
@@ -134,6 +149,14 @@ export default function CrowdfundingView({
 
   /** The panel beside the map — where a selection lands, and where the voice already scrolls. */
   const panelHostRef = useRef<HTMLDivElement | null>(null);
+  /**
+   * The block holding PayPal's button — the demo's last stop.
+   *
+   * Wrapped in its own host so the ▶ Demo can bring it into view and stop
+   * there. The kiosk scrolls to it and never presses it: the demo hands over
+   * exactly where a human is required, which is the whole claim.
+   */
+  const pledgeHostRef = useRef<HTMLDivElement | null>(null);
 
   /**
    * The row the last pledge created, and whether its money already moved.
@@ -168,6 +191,73 @@ export default function CrowdfundingView({
     lastFailure.current = null;
     lastOrder.current = null;
   }, []);
+
+  /**
+   * The ▶ Demo's handle on this page — same seam as Overview's.
+   *
+   * Three actions, all of them things a person here does with real clicks:
+   * pick a project on the map, type an amount, and look at the button. The
+   * fourth "action" is the important one, and it is an absence: the driver has
+   * no way to press the PayPal button, because nothing on this surface
+   * exposes one. The demo ends where the money would start.
+   *
+   * `handlersRef` is refreshed after every render (see the note in AgentGrid):
+   * the registered functions must never read a stale `selected`, and the
+   * registration itself must stay stable.
+   */
+  const demoHandlersRef = useRef<DemoCrowdfundingActions>({
+    selectProject: () => {},
+    setAmount: () => {},
+    revealPledge: () => {},
+    close: () => {},
+  });
+  useEffect(() => {
+    demoHandlersRef.current = {
+      // The map's own `onSelect`, pointed at the first campaign still open —
+      // a closed one cannot be pledged against and would leave the demo stuck
+      // on a sentence instead of a button.
+      selectProject: () => {
+        const open = projects.find((project) => daysLeft(project.deadline) > 0) ?? projects[0];
+        if (!open) return;
+        setSelected(open);
+        setPledge(null);
+        setPaypalNote(null);
+        window.setTimeout(
+          () => panelHostRef.current?.scrollIntoView({ block: "center" }),
+          60,
+        );
+      },
+      // The $50 pill's click.
+      setAmount: (arg) => {
+        setAmount(String(arg ?? "20"));
+      },
+      // Bring the button into view and stop. Deliberately the last thing the
+      // demo does with this page: pressing it would be the demo moving money,
+      // and this kiosk never does.
+      revealPledge: () => {
+        window.setTimeout(
+          () => pledgeHostRef.current?.scrollIntoView({ block: "center" }),
+          60,
+        );
+      },
+      // ✕ hands the page back as it was found — nothing was charged, so the
+      // reset clears the attempt whole.
+      close: () => resetSelection(),
+    };
+  });
+  useEffect(
+    () =>
+      registerDemoSurface({
+        route: "/crowdfunding",
+        actions: {
+          selectProject: () => demoHandlersRef.current.selectProject(),
+          setAmount: (arg) => demoHandlersRef.current.setAmount(arg),
+          revealPledge: () => demoHandlersRef.current.revealPledge(),
+          close: () => demoHandlersRef.current.close(),
+        },
+      }),
+    [],
+  );
 
   /**
    * A payment that did not happen is still an event, and it belongs in the
@@ -757,7 +847,7 @@ export default function CrowdfundingView({
 
             {/* The real thing: PayPal's own button, an order our server creates. */}
             {envelope ? (
-              <div className="space-y-2">
+              <div className="space-y-2" ref={pledgeHostRef}>
                 <div className="flex items-stretch gap-2">
                   <div className="min-w-0 flex-1">
                     <PayPalAuthorizeButton

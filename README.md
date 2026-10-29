@@ -38,6 +38,7 @@ Approve **once**: *≤ 60 USD, this week, these merchants.* The agent then produ
 | Capability | What you see |
 | --- | --- |
 | **Intent → order** | Type *"white sneakers, size 10, by Friday, only if the price drops to 60 USD"* and get a structured order: what, ceiling, **condition**, valid until, mode. |
+| **▶ Demo — the app that demos itself** | Press **`▶ Demo`** in the sidebar (or `?demo=1`, or *Rather watch? ▶ See it run itself*) and hands off: eleven narrated steps that walk Overview → *Money in flight* → crowdfunding, running the same handlers the buttons run — so a refusal by the server is watched by the judge too. Pause / skip / ✕ are theirs. It **stops in front of PayPal's button**: the demo never moves money, which is the thesis rather than a limitation. |
 | **Talk to it, by voice** | **🎙️ Talk to paypal-ai-agent**, above *Draft order*. You speak; Gemini Live decides what to ask for and returns it as a tool call; the gateway runs it through **the very handler the button uses**, the console prints every line, and the agent answers **out loud**. Its reply is written from the lines those handlers actually logged — so a refused capture is spoken as a refusal, and a balance question reads PayPal live instead of repeating a number it remembers. The text box is still there: voice is an addition to the keyboard, never a replacement for it. |
 | **Human-in-the-loop approval** | Every rule lands as `Awaiting approval`. The card opens itself after a draft — nothing is live until you authorize. |
 | **Approval card** | Click the product and the order opens as a card: real image, stock, rating, returns and SKU, then **your envelope** — ceiling, condition verdict, the one host it may reach. The catalog is re-read when it opens, so the price being judged is the price now. |
@@ -167,7 +168,11 @@ npm run dev
 Open the URL the dev server prints — **http://localhost:3000** unless that
 port is taken, in which case it picks the next free one and says so.
 
-**For the judge in a hurry** — three clicks that explain the whole product:
+**For the judge in a hurry** — press **`▶ Demo`** in the sidebar (or open
+`?demo=1`) and touch nothing: the app drives **itself** through the three
+clicks below, narrating each one, and stops in front of PayPal's button
+without ever pressing it. Prefer to click? The three clicks that explain the
+whole product are these:
 
 1. **`/overview`** — the strip at the top *is* the thesis: the agent
    prepares, you approve, our server pays. Then press the microphone and say
@@ -191,13 +196,24 @@ port is taken, in which case it picks the next free one and says so.
 | `npm start` | Serve the production build |
 | `npm run demo` | Build **and** serve production in one step — what a judge should run: no per-route compile, so the first click is instant (**stop `dev` first**) |
 | `npm run lint` / `lint:fix` | ESLint |
-| `npm test` | Test suite — transition rules, condition evaluation, the ceiling bands, the window, the charge and hold judgements, history readers, the rate limiter, the column derivations, and the contract the spoken agent works to. Uses Node's built-in runner, so no test dependency. |
+| `npm test` | Test suite — transition rules, condition evaluation, the ceiling bands, the window, the charge and hold judgements, history readers, the rate limiter, the column derivations, the contract the spoken agent works to, and the two rules the ▶ Demo runs under. Uses Node's built-in runner, so no test dependency. |
 
 > ⚠️ `npm run build` and `npm run dev` both write to `.next/`. The build wipes it, so running them together leaves the dev server serving stale artifacts and throwing `MODULE_NOT_FOUND`.
 
 ---
 
 ## Demo walkthrough
+
+> **Rather watch than click?** `▶ Demo` at the top of the sidebar — or the
+> *"Rather watch? ▶ See it run itself"* line in *StartHere*, or `?demo=1` on
+> any URL — runs this walkthrough **by itself**: eleven steps, each one calling
+> the same handler the button below calls, with a caption over every beat and
+> a pause / skip / ✕ bar the judge can take over. Two rules it is built under
+> and both have tests: **it never moves money** (it stops in front of PayPal's
+> button and hands over — the last click is the human's), and it only calls
+> functions the page really exposes. Same live server, same refusals: if the
+> gateway turns a step down, the run shows the refusal rather than narrating
+> around it.
 
 1. **Draft an order.** In the intent bar:
    `white sneakers, size 10, by Friday, only if the price drops to 60 USD or less`
@@ -272,8 +288,9 @@ Stated plainly, because a judge deserves to know exactly what they are looking a
 paypal-ai-agent/
 ├── app/
 │   ├── (app)/                      # route group — sidebar shell
-│   │   ├── layout.tsx              # fixed sidebar, stacked on mobile
-│   │   ├── components/Sidebar.tsx  # nav, FX switch, active state
+│   │   ├── layout.tsx              # fixed sidebar, the ▶ Demo player, stacked on mobile
+│   │   ├── components/Sidebar.tsx  # nav, ▶ Demo, FX switch, active state
+│   │   ├── components/DemoKiosk.tsx # the driver + the pause/skip/✕ bar (mounted once, in the layout)
 │   │   ├── hooks/useFxShield.ts    # shared opt-in state
 │   │   ├── hooks/usePaypalBalance.ts # the balance, re-read after money moves
 │   │   ├── overview/               # dashboard: intent bar, AG Grid, approval card, console
@@ -297,6 +314,7 @@ paypal-ai-agent/
 │   ├── layout.tsx  page.tsx  globals.css
 ├── lib/
 │   ├── policy.ts                   # STATUS / MODE + transition, charge, hold and offer judgements, ceiling bands
+│   ├── demo/{script,bus}.ts        # the ▶ Demo: the steps a judge watches · the store + the pages' registered handlers
 │   ├── gemini.ts                   # structured-output LLM call + auth for any region
 │   ├── voice/{tools,live}.ts       # what the spoken agent may do · the Live session
 │   ├── grid/setup.ts               # which modules the licence allows, and the grid's palette
@@ -315,7 +333,7 @@ paypal-ai-agent/
 │   ├── fx/{rates,providers}.ts     # conversion math + live feeds
 │   └── shields/                    # InflationShield, PagoMovilEngine
 ├── data/                           # runtime only, gitignored — the durable copy on disk
-├── tests/                          # 296 tests on node:test — transitions, conditions, ceiling bands, window, judgements, ledger, store, rate limit, grid columns, totals, offers, the spoken tool contract, which licence belongs to which manager, the position card's two ledgers
+├── tests/                          # 356 tests on node:test — transitions, conditions, ceiling bands, window, judgements, ledger, store, rate limit, grid columns, totals, offers, the spoken tool contract, which licence belongs to which manager, the position card's two ledgers, and the two rules the ▶ Demo runs under (it never moves money · it only calls what a page exposes)
 ├── public/architecture/            # Archify diagram + spec, served at /architecture
 ├── env.example  LICENSE
 ```

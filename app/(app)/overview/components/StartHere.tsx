@@ -3,6 +3,7 @@
 
 import { useEffect, useState } from "react";
 import { PenLine, ClipboardCheck, ShieldCheck, X } from "lucide-react";
+import { startDemo } from "@/lib/demo/bus";
 
 /**
  * The three sentences this page owes somebody who has never seen it.
@@ -45,6 +46,32 @@ const STEPS = [
   },
 ] as const;
 
+/**
+ * The way in for somebody who would rather watch than read.
+ *
+ * Both states of this strip carry it — the three steps a first-time visitor
+ * gets, and the one-line re-open everybody else does — because a judge is
+ * rarely a first-time visitor: they have opened the app before, on somebody
+ * else's laptop, and the strip they remember is the one they dismissed.
+ * Starting the demo dismisses it too, so the run is not fought over by the
+ * furniture it is demonstrating.
+ */
+function DemoLink({ onStarted }: { onStarted?: () => void }) {
+  return (
+    <button
+      type="button"
+      onClick={() => {
+        onStarted?.();
+        startDemo();
+      }}
+      title="The demo drives the app itself, and never moves money"
+      className="text-xs font-semibold text-amber-600 underline-offset-2 transition hover:text-amber-700 hover:underline"
+    >
+      ▶ See it run itself
+    </button>
+  );
+}
+
 export default function StartHere() {
   // `undefined` until the browser has answered, so the first render never
   // guesses: the strip and the one-liner are the same element's two states.
@@ -78,7 +105,8 @@ export default function StartHere() {
   // Already read: one line, no furniture.
   if (seen) {
     return (
-      <div className="flex justify-end">
+      <div className="flex items-center justify-end gap-4">
+        <DemoLink />
         <button
           onClick={() => setSeen(false)}
           className="text-xs font-medium text-slate-400 underline-offset-2 transition hover:text-slate-600 hover:underline"
@@ -143,6 +171,15 @@ export default function StartHere() {
           );
         })}
       </ol>
+
+      {/* The other entrance: reading three steps is one way in, watching the
+          app do it is the other — and the second one is shorter. It stops
+          before any money moves, which is said here rather than discovered
+          later. */}
+      <p className="mt-3 border-t border-blue-100 pt-3 text-xs text-slate-500">
+        Rather watch? <DemoLink onStarted={dismiss} /> — it drives the app itself and
+        stops before any money moves.
+      </p>
     </section>
   );
 }
