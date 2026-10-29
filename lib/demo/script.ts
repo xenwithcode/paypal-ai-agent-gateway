@@ -123,7 +123,10 @@ export const DEMO_STEPS: readonly DemoStep[] = [
     route: "/overview",
     caption: "You say what you want, in your own words — and no amount yet.",
     holdMs: 2600,
-    action: { surface: "/overview", name: "fillIntent", arg: "Quiero comprar unos tenis para correr" },
+    // English on purpose: the app answers in the language it is asked, and
+    // the judges read English. The bilingual path is a feature of the product,
+    // not something the walkthrough has to spend a beat proving.
+    action: { surface: "/overview", name: "fillIntent", arg: "I need new running shoes" },
   },
   {
     id: "ask-for-the-ceiling",
@@ -131,7 +134,7 @@ export const DEMO_STEPS: readonly DemoStep[] = [
     caption:
       "It will not search until it knows what you can spend — so it asks. No catalog, no prices, nothing bought.",
     holdMs: 4200,
-    action: { surface: "/overview", name: "draft", arg: "Quiero comprar unos tenis para correr" },
+    action: { surface: "/overview", name: "draft", arg: "I need new running shoes" },
   },
   {
     id: "type-with-amount",
@@ -172,12 +175,24 @@ export const DEMO_STEPS: readonly DemoStep[] = [
     action: { surface: "/overview", name: "openFromFlight" },
   },
   {
-    id: "move-to-crowdfunding",
-    route: "/crowdfunding",
+    // The crossing gets a beat of its own, on this side of it.
+    //
+    // This step used to be the one that navigated, which meant the screen
+    // jumped the instant its caption appeared — the judge read "one screen
+    // over" while the page was already tearing past, which is exactly the
+    // violent cut this beat exists to avoid. So it stays on Overview for the
+    // whole reading time, hands the page back (card, strip, ask), and the
+    // *next* step is the one that crosses. At least three seconds of the
+    // screen you are being told to leave, before you leave it.
+    id: "before-the-crossing",
+    route: "/overview",
     caption: "Same rules, one screen over: this is where money grows instead of leaving.",
     holdMs: 3400,
+    action: { surface: "/overview", name: "close" },
   },
   {
+    // The crossing itself: navigates, then picks. Its caption changes while
+    // the navigation is in flight, so it is written to read on either screen.
     id: "pick-a-project",
     route: "/crowdfunding",
     caption: "Pick a real business — the map is the list.",

@@ -631,18 +631,30 @@ export default function AgentGrid({
       // The chart's own drill-down, through `openOrderFromFlight` — the
       // function `Money in flight`'s click funnels into.
       //
-      // The card from the previous step is closed *first*, and that is the
-      // whole trick: the approval card is an overlay, so with it still open
-      // this beat narrates a chart nobody can see. Closing it, bringing the
-      // chart into sight and only then reopening the card a beat later gives
-      // the run the order the caption claims — the sum, then the order behind
-      // it — instead of two screens fighting over the same pixels.
+      // Two things make this beat read instead of stutter:
+      //
+      // 1. **The card from the previous step closes first.** It is an overlay,
+      //    so left open it covers the very chart this step narrates.
+      // 2. **It reopens on a different order.** The first version reopened the
+      //    order the previous step had just chosen, so the judge watched the
+      //    *same* product card appear twice with a chart in between — a
+      //    repetition nobody could explain. Now it picks the segment that
+      //    holds exactly one order, preferring the one that is money set
+      //    aside (`Reserved`), because that is the card with something to do
+      //    on it. Only a single-order segment is eligible: the real click on
+      //    a segment holding several *asks which*, and a demo that opened one
+      //    silently would be showing a gesture the product does not have.
       openFromFlight: () => {
         setSelectedId(null);
         revealWhenHidden(flightHostRef.current);
         window.setTimeout(() => {
-          const last = rowsRef.current[rowsRef.current.length - 1];
-          if (last) openOrderFromFlight(last.id, 1);
+          const rows = rowsRef.current;
+          const newest = rows[rows.length - 1];
+          const segments = [STATUS.reserved, STATUS.captured, STATUS.released, STATUS.pending];
+          const pick = segments
+            .map((status) => rows.filter((row) => row.status === status))
+            .find((group) => group.length === 1 && group[0].id !== newest?.id)?.[0];
+          if (pick) openOrderFromFlight(pick.id, 1);
         }, 1800);
       },
       // ✕ hands the page back as it was found: no card, no strip, no stale
