@@ -273,6 +273,33 @@ whole product are these:
    refused below. **Print / save as PDF** gives the report — no sidebar, no app
    chrome, just the table and its totals.
 
+### Approving as the buyer — the one click only a human makes
+
+Everything above executes through the app. The approval does not, and cannot:
+when **Authorize with PayPal AI Agent** hands off, PayPal opens its own
+checkout in a new tab and asks who is paying. That is the sandbox asking,
+with fake money, and it signs in with the app's test buyer:
+
+| Field | Value |
+| --- | --- |
+| Account | **John Doe** — personal (buyer) sandbox account |
+| Email | `sb-azwqp53197833@personal.example.com` |
+| Password | `PDA7371SD` |
+| Balance | 5,000 USD of fake money, editable in the sandbox dashboard |
+| Card on file | Visa test card already attached to the account |
+
+The three steps, in order: press the button in the app → PayPal opens its
+checkout → sign in with the row above and press **Approve**. The session then
+stays in the browser until it is closed, so the next approval needs no sign-in.
+
+**Sandbox only.** These credentials work where the app is configured to spend
+fake money, and nowhere else: sandbox and live are separate accounts with
+separate logins, and the same words on a live login would be real money. They
+are published so the walkthrough can be finished without a developer account
+of your own. What is *not* published — and never may be — is the client
+secret: that one authorises the merchant side, and it lives in `.env.local`
+locally and in Secret Manager on Cloud Run.
+
 ---
 
 ## What is real and what is simulated
