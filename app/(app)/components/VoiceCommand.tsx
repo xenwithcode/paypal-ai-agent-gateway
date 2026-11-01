@@ -11,6 +11,11 @@ import {
   type VoiceSurface,
   type VoiceToolCall,
 } from "@/lib/voice/tools";
+// One rule about a turn's last spoken line: did it end on a question that is
+// still waiting for an answer? Pure, so the browser ships it and a test pins
+// it — the decision it makes is the difference between a dialog that closes
+// on the agent's own question and one that is still listening for the amount.
+import { expectsReply } from "@/lib/voice/turn";
 
 type Phase = "idle" | "listening" | "thinking" | "speaking";
 
@@ -166,6 +171,23 @@ export default function VoiceCommand({
     historyRef.current = [...historyRef.current, ...entries].slice(-16);
   };
 
+  /**
+   * Whether this recording was opened *for* the agent's own question.
+   *
+   * The dialog used to close after every turn, including the turn that asked
+   * "how much?" — so a spoken order deliberately left without an amount read
+   * as an agent that had hung up, and the answer arrived at a closed dialog.
+   * When the last thing spoken was a question, the microphone opens itself
+   * again and the answer becomes the next turn of the same conversation.
+   *
+   * This flag exists for one quiet moment: if the human does not answer, the
+   * follow-up recording finds silence — and silence from a dialog the *user*
+   * opened deserves the "speak closer to the mic" line, while silence from
+   * one the agent opened on its own question is simply the dialog closing,
+   * which needs no scolding.
+   */
+  const followUpRef = useRef(false);
+
   // A recording or a speaker that outlives the component would keep the
   // microphone or the audio device busy after the page is gone.
   useEffect(
@@ -225,12 +247,38 @@ export default function VoiceCommand({
     void send(recorder.chunks);
   }
 
+  /**
+   * The turn is over — unless the last thing said was a question.
+   *
+   * A question the agent asked is half a conversation, and closing on it is
+   * what made *"¿cuánto tienes disponible?"* read as the dialog ending rather
+   * than as the agent waiting. So the microphone opens itself again, and the
+   * human's answer travels back as the next turn of this one — with the
+   * history intact, which is what lets the gateway carry the order on and
+   * finally search it. Anything else (a report, a confirmation, silence)
+   * leaves the dialog exactly where it was: closed, one click away.
+   */
+  function finishTurn(spoken: string) {
+    if (expectsReply(spoken)) void startListening({ followUp: true });
+  }
+
   /** The whole conversation: listen → ask → do → say. */
   async function send(chunks: readonly Int16Array[]) {
     setError("");
+    // Read once and cleared: only the recording that follows an open question
+    // is allowed to end quietly — see `followUpRef`.
+    const wasFollowUp = followUpRef.current;
+    followUpRef.current = false;
     try {
       const audio = toBase64(chunks);
       if (!audio) {
+        // The agent asked, the microphone opened itself, and nobody answered.
+        // That is a dialog closing on its own — not a person who mispronounced
+        // something — so it ends in silence rather than an error aimed at them.
+        if (wasFollowUp) {
+          setPhase("idle");
+          return;
+        }
         setError("Nothing was captured — speak closer to the mic, or type it.");
         setPhase("idle");
         return;
@@ -288,6 +336,8 @@ export default function VoiceCommand({
         if (asked.replyAudio) {
           await speak(said, String(asked.replyAudio));
           remember([{ role: "agent", text: said }]);
+          // A question is not the end of the dialog — see `finishTurn`.
+          finishTurn(said);
           return;
         }
         // The turn came back **text-only**: a real question with no PCM to
@@ -299,7 +349,9 @@ export default function VoiceCommand({
         const respoken = await post({ step: "report", lines: [said] }).catch(() => null);
         if (respoken && respoken.success === true && typeof respoken.audio === "string" && respoken.audio) {
           await speak(String(respoken.text || said), String(respoken.audio));
-          remember([{ role: "agent", text: spokenWords(String(respoken.text || "")) || said }]);
+          const reSpoken = spokenWords(String(respoken.text || "")) || said;
+          remember([{ role: "agent", text: reSpoken }]);
+          finishTurn(reSpoken);
         } else {
           onLog(`🔊 [AGENT] ${said}`);
           onLog("⚠️ [VOICE] The reply arrived as text only and could not be re-spoken — it is in the console.");
@@ -332,7 +384,12 @@ export default function VoiceCommand({
       // What the agent finally said — the narration of what really happened.
       // Remembered so the next turn can continue *this*: the ceiling question
       // the gateway just asked, or the candidates it just offered.
-      remember([{ role: "agent", text: spokenWords(String(reported.text ?? "")) || said }]);
+      const reportedSpoken = spokenWords(String(reported.text ?? "")) || said;
+      remember([{ role: "agent", text: reportedSpoken }]);
+      // …and if what it just said was a question, the dialog stays open for
+      // the answer: a ceiling the gateway asked for must not be asked of a
+      // microphone that has already been put away — see `finishTurn`.
+      finishTurn(reportedSpoken);
     } catch (err) {
       fail(err instanceof Error ? err.message : String(err));
     }
@@ -403,7 +460,11 @@ export default function VoiceCommand({
     return data;
   }
 
-  async function startListening() {
+  async function startListening(options?: { followUp?: boolean }) {
+    // A second click while the first recording is still open would orphan the
+    // first stream and leave two processors pushing chunks into one array.
+    if (recorderRef.current) return;
+    followUpRef.current = options?.followUp === true;
     setError("");
 
     // Created here, inside the click, so playback later has a context the

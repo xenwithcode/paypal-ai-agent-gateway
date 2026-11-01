@@ -14,6 +14,11 @@ import { MODE, isMode, resolveExpiry } from "./policy.ts";
 // decides what its answer means. Erased before bundling — this file is
 // server-side, but the import keeps one vocabulary for "the verdict".
 import type { RelevanceVerdict } from "./commerce/relevance.ts";
+// The transcript cleaner, shared with the voice layer: the spoken input this
+// module falls back to transcribing is the same text `lib/voice/live.ts`
+// hands back as a turn's `inputText`, and one vocabulary for "what a person
+// is recorded as having said" is worth more than two that could disagree.
+import { normaliseTranscription } from "./voice/turn.ts";
 
 const MODEL = process.env.GEMINI_MODEL ?? "gemini-3.8-flash";
 
@@ -723,6 +728,63 @@ export type SpokenResult = {
   /** Plain reason when nothing came back. Never a stack trace. */
   reason: string | null;
 };
+
+/**
+ * What the human said, when the Live session did not say it for us.
+ *
+ * The voice gateway keeps the conversation in the browser — each turn is one
+ * HTTP request — and the only thing that ties a bare *"150 dólares"* to the
+ * question it answers is the transcript of the turn that asked. Live is asked
+ * for that transcript on every turn (`inputAudioTranscription`), and measured
+ * on 1-nov it no longer returns one at all: sessions come back with
+ * `inputTranscription` absent while `outputTranscription` streams as always,
+ * so `inputText` arrived empty, the human's half of the memory was never
+ * written, and the answer to a ceiling question reached the model with no
+ * order attached to it — which is precisely the failure this memory exists
+ * to prevent.
+ *
+ * So this is the second opinion: the same audio, one cheap text call, used
+ * **only** when Live gave nothing. When Live does answer — as it did when the
+ * memory was built — this is never called and costs nothing.
+ *
+ * Never throws and never guesses: an absent client, a refused call and silent
+ * audio each come back as `""`, which is the honest value for "the human said
+ * nothing we could read" — a fabricated line in a transcript attributed to a
+ * person about to spend money would be the worst thing this function could do.
+ */
+export async function transcribeSpokenInput(base64: string, mimeType: string): Promise<string> {
+  const ai = getClient();
+  if (!ai || !base64) return "";
+
+  try {
+    const response = await ai.models.generateContent({
+      model: MODEL,
+      contents: [
+        {
+          role: "user",
+          parts: [
+            { inlineData: { mimeType, data: base64 } },
+            {
+              text:
+                "Transcribe the speech in this audio clip. Reply with ONLY the words the person said, " +
+                "in their own language and spelling. No quotation marks, no commentary, no translation. " +
+                "If the clip contains no speech, reply with nothing at all.",
+            },
+          ],
+        },
+      ],
+    });
+
+    // `normaliseTranscription` owns the shape: silence markers and wrapping
+    // quotes are the transcriber's business, not the model's to decide.
+    return normaliseTranscription(response.text);
+  } catch {
+    // Best effort by construction: a failed second opinion costs the memory
+    // one entry, never the turn. The caller falls back to the empty string,
+    // which is what the world looked like before this existed.
+    return "";
+  }
+}
 
 const spokenSchema: Schema = {
   type: Type.OBJECT,

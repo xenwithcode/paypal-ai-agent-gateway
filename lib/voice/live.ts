@@ -25,7 +25,7 @@ import { GoogleGenAI, Modality, type FunctionDeclaration, type LiveServerMessage
 // One definition of "how do I authenticate", reused from the module that
 // already owns it — with a different location, because Live is served from a
 // different region than the text model is.
-import { genaiClientFor } from "@/lib/gemini";
+import { genaiClientFor, transcribeSpokenInput } from "@/lib/gemini";
 import {
   describeHistory,
   isVoiceSurface,
@@ -35,6 +35,7 @@ import {
   type VoiceSurface,
   type VoiceToolCall,
 } from "@/lib/voice/tools";
+import { normaliseTranscription } from "@/lib/voice/turn";
 
 const MODEL = process.env.GEMINI_LIVE_MODEL?.trim() || "gemini-3.8-live";
 
@@ -440,11 +441,25 @@ export async function askVoiceAgent(input: {
       })
   );
 
+  // What the human said, from whichever of the two readers actually read it.
+  //
+  // Live is asked for its own transcription on every turn, and measured on
+  // 1-nov it stopped returning one (`inputText` came back empty while the
+  // reply transcribed as always). Without this line the browser never writes
+  // the human's half of the memory, so the answer to the agent's own question
+  // arrives on the next turn with nothing to answer *for* — the model sees a
+  // question and a bare amount and no order to attach them to, which is the
+  // "it asked again and did nothing" the operator heard. The second opinion
+  // is only asked when the first one said nothing; see `transcribeSpokenInput`.
+  const inputTranscript =
+    normaliseTranscription(result.inputTranscript) ||
+    (await transcribeSpokenInput(input.audio, "audio/pcm;rate=16000"));
+
   return {
     toolCalls: result.toolCalls,
     replyAudio: result.audio,
     replyText: result.transcript || result.text,
-    inputText: result.inputTranscript,
+    inputText: inputTranscript,
     rejected: result.rejected,
   };
 }
