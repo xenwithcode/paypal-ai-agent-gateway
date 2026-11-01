@@ -19,8 +19,28 @@ import type { RelevanceVerdict } from "./commerce/relevance.ts";
 // hands back as a turn's `inputText`, and one vocabulary for "what a person
 // is recorded as having said" is worth more than two that could disagree.
 import { normaliseTranscription } from "./voice/turn.ts";
+// The WAV header, for the same reason: this module is what turns a spoken
+// clip into a transcript when Live would not, and raw PCM is a format only
+// some of the models accept. Byte surgery belongs to the module that owns it.
+import { wavFromPcm16k } from "./voice/wav.ts";
 
-const MODEL = process.env.GEMINI_MODEL ?? "gemini-3.8-flash";
+/**
+ * Which text model answers for this server.
+ *
+ * `gemini-3.8-flash` was this project's default from the first commit and it
+ * is the wrong shape for a request a human waits on: measured on 1-nov against
+ * the same prompt, same schema and same region, it answered in 5.7 s, 27 s and
+ * **142 s** — and `thinkingBudget: 0` did not steady it (78 s with the budget
+ * off). A parser the operator waits for at 90 s is a parser that made the demo
+ * look broken.
+ *
+ * `gemini-2.5-flash` measured 1.3 s / 1.3 s / 1.8 s on the same prompt, and
+ * `gemini-3.1-flash-lite` 2.0–2.2 s. Speed is the reason for the choice —
+ * the schema is strict either way, and a fast answer a judge can watch beat a
+ * better answer nobody waits for. Override with `GEMINI_MODEL` if the day ever
+ * brings a model that is both.
+ */
+const MODEL = process.env.GEMINI_MODEL ?? "gemini-2.5-flash";
 
 /**
  * Where the request is served. Verified against a real project, not assumed:
@@ -368,6 +388,16 @@ export async function rankCandidates(
     `Below are catalog candidates returned by a literal keyword search. ` +
     `Keep ONLY the candidates that genuinely ARE what the human asked for — the same kind of product. ` +
     `A motorcycle is not a jacket; a phone case is not a phone; sharing a brand does not make it a match. ` +
+    // The other direction has a cost too, and it was measured: a prompt that
+    // only ever says what does NOT match makes a strict model reject the very
+    // thing that was asked for. With `gemini-3.1-flash-lite` and this prompt as
+    // it was, "white sneakers" came back noneMatch in three runs out of three —
+    // the catalog's white sneakers are named "Off White & Red", and a strict
+    // judge reads the red as a different shoe. Naming the boundary on both
+    // sides is what keeps a fast model correct: kept 3/3 with the example, and
+    // still rejects a motorcycle asked for as a jacket (2/2, both models).
+    `Names that describe the same thing still match: "Sports Sneakers Off White & Red" IS a pair of white sneakers, ` +
+    `and colour words in a product name are details, not a different kind of shoe. ` +
     `For each kept candidate give ONE short reason it matches. ` +
     `If not one of them is what was asked for, set noneMatch true and return no picks — ` +
     `never keep a candidate to be polite: the human is about to be asked to spend money on it. ` +
@@ -756,6 +786,14 @@ export async function transcribeSpokenInput(base64: string, mimeType: string): P
   const ai = getClient();
   if (!ai || !base64) return "";
 
+  // Raw PCM is what the browser sends and what Live takes natively — and what
+  // a text model refuses (`400 invalid argument`, measured on 1-nov). The
+  // same bytes in a WAV header are transcribed in 1.7 s, so the audio is
+  // wrapped rather than the microphone being asked to send something else.
+  const isRawPcm = /audio\/pcm/i.test(mimeType);
+  const data = isRawPcm ? wavFromPcm16k(base64) : base64;
+  const type = isRawPcm ? "audio/wav" : mimeType;
+
   try {
     const response = await ai.models.generateContent({
       model: MODEL,
@@ -763,7 +801,7 @@ export async function transcribeSpokenInput(base64: string, mimeType: string): P
         {
           role: "user",
           parts: [
-            { inlineData: { mimeType, data: base64 } },
+            { inlineData: { mimeType: type, data } },
             {
               text:
                 "Transcribe the speech in this audio clip. Reply with ONLY the words the person said, " +

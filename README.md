@@ -156,7 +156,9 @@ PAYPAL_ENVIRONMENT=Sandbox
 #   bash <(curl -sSL https://storage.googleapis.com/cloud-samples-data/adc/setup_adc.sh)
 GCP_PROJECT=your_gcp_project_id
 # Region and model are NOT independent choices: gemini-3.8-flash 404s from
-# us-central1 and answers from `global`. Verified against the real SDK.
+# us-central1 and answers from `global`. The text model is gemini-2.5-flash —
+# 1.3 s per call, where gemini-3.8-flash measured 5.7 s to 142 s on the same
+# prompt. Both verified against the real SDK.
 GCP_LOCATION=global
 
 # ── B) Gemini API (Google AI Studio) ────────────────────────────────────

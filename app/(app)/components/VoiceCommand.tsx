@@ -147,7 +147,9 @@ export default function VoiceCommand({
   const recorderRef = useRef<{
     stream: MediaStream;
     context: AudioContext;
-    processor: ScriptProcessorNode;
+    /** The worklet node that streams the microphone's blocks over its port.
+     *  `AudioWorkletNode`, not `ScriptProcessorNode` — see `public/voice-capture-worklet.js`. */
+    processor: AudioWorkletNode;
     chunks: Int16Array[];
   } | null>(null);
   const speakerRef = useRef<AudioContext | null>(null);
@@ -194,7 +196,10 @@ export default function VoiceCommand({
     () => () => {
       const recorder = recorderRef.current;
       if (recorder) {
-        recorder.processor.onaudioprocess = null;
+        // Close the port first: a worklet still delivering blocks into a
+        // context that is closing would push at a dead `AudioContext`.
+        recorder.processor.port.onmessage = null;
+        recorder.processor.disconnect();
         recorder.stream.getTracks().forEach((track) => track.stop());
         void recorder.context.close();
         recorderRef.current = null;
@@ -239,7 +244,11 @@ export default function VoiceCommand({
   function stopListening() {
     const recorder = recorderRef.current;
     if (!recorder) return;
-    recorder.processor.onaudioprocess = null;
+    // Port closed, node disconnected, then everything else — the same order as
+    // the unmount cleanup, for the same reason: no block may arrive after the
+    // consumer of those blocks is gone.
+    recorder.processor.port.onmessage = null;
+    recorder.processor.disconnect();
     recorder.stream.getTracks().forEach((track) => track.stop());
     void recorder.context.close();
     recorderRef.current = null;
@@ -471,10 +480,21 @@ export default function VoiceCommand({
     // browser already considers allowed to make sound.
     speakerRef.current ??= new AudioContext();
 
+    // Checked before the microphone is asked for: a browser with no worklet
+    // cannot record here at all, and requesting a permission it will never use
+    // is a prompt the operator has to dismiss for nothing.
+    const AudioCtor: typeof AudioContext | undefined =
+      typeof window === "undefined"
+        ? undefined
+        : (window.AudioContext ??
+          (window as unknown as { webkitAudioContext?: typeof AudioContext }).webkitAudioContext);
+
     if (
       typeof navigator === "undefined" ||
       !navigator.mediaDevices?.getUserMedia ||
-      typeof ScriptProcessorNode === "undefined"
+      !AudioCtor ||
+      typeof AudioWorkletNode === "undefined" ||
+      !("audioWorklet" in AudioCtor.prototype)
     ) {
       setError("This browser cannot capture audio — type the intent instead. It is always there.");
       return;
@@ -491,24 +511,29 @@ export default function VoiceCommand({
     }
 
     try {
-      const AudioCtor: typeof AudioContext =
-        window.AudioContext ?? (window as unknown as { webkitAudioContext: typeof AudioContext }).webkitAudioContext;
       const context = new AudioCtor({ sampleRate: TARGET_RATE });
+      // The capture logic runs on the audio thread, in its own file from
+      // `/public`: `ScriptProcessorNode` ran it on the main thread and Chrome
+      // now warns about it by name on every recording — see
+      // `public/voice-capture-worklet.js` for the three rules it carries over.
+      await context.audioWorklet.addModule("/voice-capture-worklet.js");
       const source = context.createMediaStreamSource(stream);
-      const processor = context.createScriptProcessor(4096, 1, 1);
+      const processor = new AudioWorkletNode(context, "voice-capture");
       const chunks: Int16Array[] = [];
       const fromRate = context.sampleRate;
 
-      processor.onaudioprocess = (event) => {
-        // A copy: the buffer the event hands over is reused on the next block,
-        // and holding it would play the whole recording back as the last
-        // four thousand samples repeated.
-        chunks.push(toPcm16(new Float32Array(event.inputBuffer.getChannelData(0)), fromRate));
+      processor.port.onmessage = (event: MessageEvent) => {
+        const block: unknown = event.data;
+        // The worklet transferred its own copy by buffer, so this Float32Array
+        // aliases nothing the audio thread still owns.
+        if (block instanceof Float32Array && block.length > 0) {
+          chunks.push(toPcm16(block, fromRate));
+        }
       };
 
       source.connect(processor);
-      // Connected so it fires, and deliberately silent: nothing is ever
-      // written to the output side, so the microphone does not come back
+      // Connected so the worklet is scheduled at all, and deliberately silent:
+      // it writes nothing to its outputs, so the microphone does not come back
       // through the speakers as feedback.
       processor.connect(context.destination);
 
@@ -517,7 +542,9 @@ export default function VoiceCommand({
       setPhase("listening");
     } catch (err) {
       stream.getTracks().forEach((track) => track.stop());
-      setError(err instanceof Error ? err.message : "The recording could not start.");
+      setError(
+        `The recording could not start${err instanceof Error && err.message ? ` (${err.message})` : ""} — type the intent instead.`
+      );
       setPhase("idle");
     }
   }
