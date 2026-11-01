@@ -130,6 +130,14 @@ Approve **once**: *≤ 60 USD, this week, these merchants.* The agent then produ
 > **Just want to see it?** It is already running: **<https://paypal-ai-agent-906128164063.us-east1.run.app>**
 > — deployed on Cloud Run (us-east1), scale-to-zero, real PayPal sandbox orders. Everything
 > below is for running it yourself.
+>
+> **The first visit after a quiet spell can take a few seconds — that is deliberate.** Cloud Run
+> runs this app *scale-to-zero*: the container stops when nobody is looking, which is the
+> architecture Google itself recommends for exactly this, so a demo nobody is watching costs
+> nothing at all. The trade is the **~5–15 s cold start** that the first page pays after such a
+> spell; every load after that is instant. Keeping an instance permanently warm instead would
+> bill **≈ $2.29/day** (1 vCPU + 1 GiB at $0.000024 per vCPU-second and $0.0000025 per
+> GiB-second) to save one visitor five seconds — not a trade to make with a hackathon's budget.
 
 **Requirements:** Node.js ≥ 20.9 · a [PayPal developer account](https://developer.paypal.com) · Google Gemini credentials — one of:
 - **Vertex AI** *(recommended)* — a [Google Cloud](https://console.cloud.google.com) project with the **Vertex AI API** enabled. Billed to that project, so hackathon credits cover it, and no key is stored anywhere.

@@ -15,6 +15,7 @@ import {
   Send,
   Sprout,
   Network,
+  ChartColumn,
   Target,
   FileText,
   Play,
@@ -42,11 +43,11 @@ const PRIMARY_NAV: NavItem[] = [
 /**
  * Reading, not operating.
  *
- * The three sections above exist to be *used*; these three exist to be read by
+ * The three sections above exist to be *used*; these four exist to be read by
  * someone deciding whether the thing above them is real — the architecture,
- * who it is for, and what is honestly left. They never light up as work in
- * progress elsewhere, so they get their own group rather than a row at the
- * bottom of the product's own navigation.
+ * how its data reaches the grids, who it is for, and what is honestly left.
+ * They never light up as work in progress elsewhere, so they get their own
+ * group rather than a row at the bottom of the product's own navigation.
  */
 const APPENDICES_NAV: NavItem[] = [
   {
@@ -54,6 +55,12 @@ const APPENDICES_NAV: NavItem[] = [
     label: "App Architecture",
     icon: Network,
     hint: "How the pieces fit, end to end",
+  },
+  {
+    href: "/appendices/ag-grid",
+    label: "AG Grid & Charts",
+    icon: ChartColumn,
+    hint: "Which widget renders what, and where each number comes from",
   },
   {
     href: "/appendices/target-market",
