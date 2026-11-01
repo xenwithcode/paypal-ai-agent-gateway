@@ -27,20 +27,30 @@ import { wavFromPcm16k } from "./voice/wav.ts";
 /**
  * Which text model answers for this server.
  *
- * `gemini-3.8-flash` was this project's default from the first commit and it
- * is the wrong shape for a request a human waits on: measured on 1-nov against
- * the same prompt, same schema and same region, it answered in 5.7 s, 27 s and
- * **142 s** — and `thinkingBudget: 0` did not steady it (78 s with the budget
- * off). A parser the operator waits for at 90 s is a parser that made the demo
- * look broken.
+ * Two measurements,1-nov, both against the real API — the second one is the
+ * one that decided.
  *
- * `gemini-2.5-flash` measured 1.3 s / 1.3 s / 1.8 s on the same prompt, and
- * `gemini-3.1-flash-lite` 2.0–2.2 s. Speed is the reason for the choice —
- * the schema is strict either way, and a fast answer a judge can watch beat a
- * better answer nobody waits for. Override with `GEMINI_MODEL` if the day ever
- * brings a model that is both.
+ * First, latency: `gemini-3.8-flash` — this project's default since the first
+ * commit — answered the same prompt and schema in 5.7 s, 27 s and **142 s**,
+ * and `thinkingBudget: 0` did not steady it (78 s with the budget off). A
+ * parser the operator waits on for 90 s is a parser that made the demo look
+ * broken; it was costing /api/agent 91–163 s end to end from Cloud Run.
+ *
+ * Then availability, which no local test can show: **the model must exist in
+ * the project the demo runs on.** `gemini-2.5-flash` measured 1.3 s and looks
+ * like the obvious answer — and it404s on `ppa-agent-demo`, the project
+ * behind the deployed app (*"your project does not have access to it"*), where
+ * the same call from a laptop on a different project succeeds. That is the
+ * failure mode this function already documents for regions: a model that does
+ * not exist is indistinguishable from one that failed.
+ *
+ * `gemini-3.1-flash-lite` exists on **both** projects, answers from `global`
+ * on both, and measured 720 ms–2.2 s. Speed is the reason; the schema is
+ * strict either way, and a fast answer a judge can watch beats a better
+ * answer nobody waits for. Override with `GEMINI_MODEL` — and check it on the
+ * project that will actually serve it.
  */
-const MODEL = process.env.GEMINI_MODEL ?? "gemini-2.5-flash";
+const MODEL = process.env.GEMINI_MODEL ?? "gemini-3.1-flash-lite";
 
 /**
  * Where the request is served. Verified against a real project, not assumed:
