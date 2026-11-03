@@ -101,6 +101,71 @@ test("an array of scalars stays a single cell", () => {
   );
 });
 
+/** How many header rows this set of columns would ask AG Grid for. */
+function headerRows(columns: (ColDef | ColGroupDef)[]): number {
+  return Math.max(
+    ...columns.map((column) =>
+      "children" in column && column.children ? 1 + headerRows(column.children) : 1
+    )
+  );
+}
+
+test("a branch deeper than the header is joined instead of adding a row", () => {
+  // PayPal nests five deep in places. AG Grid draws one header row for the
+  // deepest branch in the table, so without this rule one `cartInfo` line
+  // bought a 241px header with two blank rows under every other column.
+  const columns = columnDefsFor([
+    { cartInfo: { itemDetails: [{ itemPrice: { value: "10.00", currencyCode: "USD" } }] } },
+    { transactionInfo: { transactionAmount: { value: "1.00" } } },
+  ]);
+
+  assert.equal(headerRows(columns), 3, "three rows: a section, a field, a value");
+
+  const leaf = findColumn(columns, "cartInfo.itemDetails.0.itemPrice.value", "colId");
+  assert.ok(leaf, "the deep value keeps its full path — that is what reads it");
+  assert.equal(leaf.field, "cartInfo.itemDetails.0.itemPrice.value");
+  assert.equal(
+    leaf.headerName,
+    "[0].itemPrice.value",
+    "and the header says what was given up to fit"
+  );
+});
+
+test("a column of numbers is read as numbers, a column of identifiers is not", () => {
+  const columns = columnDefsFor([
+    {
+      transactionInfo: {
+        transactionAmount: { value: "149.99" },
+        transactionId: "5XY12345AB6789012",
+      },
+      postalCode: "28013",
+    },
+  ]);
+
+  const amount = findColumn(columns, "transactionInfo.transactionAmount.value", "colId");
+  assert.equal(amount?.type, "numericColumn", "money lines up on the right");
+  assert.equal(
+    amount?.cellClass,
+    "text-right tabular-nums",
+    "and its decimals land in one column — the class is written out because a colDef's cellClass replaces the type's"
+  );
+  assert.ok(
+    (amount?.comparator as (a: unknown, b: unknown) => number)("9.00", "1250.00") < 0,
+    "nine is less than twelve hundred, whatever the strings say"
+  );
+
+  assert.equal(
+    findColumn(columns, "transactionInfo.transactionId", "colId")?.type,
+    undefined,
+    "an identifier with digits in it stays text"
+  );
+  assert.equal(
+    findColumn(columns, "postalCode", "colId")?.type,
+    undefined,
+    "a column of whole numbers is a postcode, not money"
+  );
+});
+
 test("columns come from every record, not only the first", () => {
   // The one that a `rows[0]` implementation fails: a field that shows up
   // later would be invisible for the rest of the table.

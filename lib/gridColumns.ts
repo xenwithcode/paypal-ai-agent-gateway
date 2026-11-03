@@ -19,7 +19,30 @@
 import type { ColDef, ColGroupDef } from "ag-grid-community";
 
 /** One node of the path tree: a key seen in some record, and what nested under it. */
-type PathNode = { children: Map<string, PathNode> };
+type PathNode = {
+  children: Map<string, PathNode>;
+  /**
+   * Every scalar this key held across the records, in the order they arrived.
+   *
+   * The columns are named by the data, and so is how they are *read*: whether
+   * a column is money is decided by what is in it, not by whether its name
+   * happens to contain "amount" — a name is a guess, and PayPal has fields
+   * called `value` that hold a rate.
+   */
+  samples: unknown[];
+};
+
+/**
+ * How many rows the header may use.
+ *
+ * Three: a section, a field inside it, and the value. PayPal's records nest
+ * five deep (`cartInfo ▸ itemDetails ▸ [0] ▸ itemPrice ▸ value`), and AG Grid
+ * draws one header row for every level *anywhere* in the table — so one deep
+ * branch bought a 241px header with two blank rows under almost every column,
+ * which reads as a rendering fault rather than as nesting. The deep branch is
+ * not lost: its leaves are joined into one path and hung from the group above.
+ */
+const MAX_HEADER_DEPTH = 3;
 
 /**
  * Keys skipped while walking a record.
@@ -55,17 +78,107 @@ function collectPaths(value: Record<string, unknown> | unknown[], node: PathNode
 
     let next = node.children.get(key);
     if (!next) {
-      next = { children: new Map() };
+      next = { children: new Map(), samples: [] };
       node.children.set(key, next);
     }
-    if (nested) collectPaths(child as Record<string, unknown> | unknown[], next);
+    if (nested) {
+      collectPaths(child as Record<string, unknown> | unknown[], next);
+    } else {
+      next.samples.push(child);
+    }
   }
+}
+
+/**
+ * Whether every value in this column is a number that a person would want
+ * lined up.
+ *
+ * Two conditions, both about the reader. Every value has to parse — one word
+ * in the column and it is text, so `transactionId` never becomes a number
+ * because one record happened to be all digits. And at least one value has to
+ * carry a decimal, because a column of integers is a postal code or a
+ * quantity far more often than it is money, and right-aligning those would be
+ * a claim the data did not make.
+ */
+function readsAsNumbers(samples: readonly unknown[]): boolean {
+  const values = samples.filter(
+    (sample) => sample !== null && sample !== undefined && sample !== "" && typeof sample !== "object"
+  );
+  if (values.length === 0) return false;
+
+  const numbers = values.map((sample) =>
+    typeof sample === "number" ? sample : Number(String(sample).trim())
+  );
+  if (numbers.some((number) => !Number.isFinite(number))) return false;
+  return numbers.some((number) => !Number.isInteger(number));
+}
+
+/** Sorts numbers as numbers, and puts the blanks where a blank belongs: last. */
+function compareNumbers(left: unknown, right: unknown): number {
+  const a = typeof left === "number" ? left : Number(left);
+  const b = typeof right === "number" ? right : Number(right);
+  const aOk = left !== null && left !== undefined && left !== "" && Number.isFinite(a);
+  const bOk = right !== null && right !== undefined && right !== "" && Number.isFinite(b);
+  if (aOk && bOk) return a - b;
+  if (aOk) return -1;
+  if (bOk) return 1;
+  return 0;
+}
+
+/**
+ * One column leaf: the path it reads, the header it shows, and — when the
+ * values are numbers — how they line up and how they sort.
+ *
+ * `type: "numericColumn"` is AG Grid's own right-alignment, so a money column
+ * is right-aligned by the same rule every other right-aligned column in the
+ * library is, and `tabular-nums` is what stops `9.00` and `1250.00` from
+ * wobbling: the decimals have to land in one column for the eye to compare
+ * two amounts without reading them.
+ */
+function leafDef(colId: string, headerName: string, node: PathNode): ColDef {
+  const def: ColDef = { headerName, colId, field: colId, headerTooltip: colId };
+  if (readsAsNumbers(node.samples)) {
+    // `numericColumn` right-aligns the header the library's own way; the cell
+    // class is written out rather than inherited because a colDef's cellClass
+    // *replaces* the type's — and `tabular-nums` is the half that makes the
+    // decimals land in one column.
+    def.type = "numericColumn";
+    def.cellClass = "text-right tabular-nums";
+    // The header too: a figure right-aligned under a left-aligned label is
+    // half an alignment, and the page's own money column right-aligns both.
+    def.headerClass = "text-right";
+    def.comparator = compareNumbers;
+  }
+  return def;
+}
+
+/**
+ * Every leaf under a node, as columns that hang one level up.
+ *
+ * The header keeps the path that was given up: `[0].itemPrice.value` says
+ * where the number came from, which is the one thing a joined header has to
+ * keep in order not to become a lie.
+ */
+function leavesUnder(node: PathNode, prefix: string, headerPrefix: string): ColDef[] {
+  const columns: ColDef[] = [];
+  for (const [key, child] of node.children) {
+    const path = prefix ? `${prefix}.${key}` : key;
+    const name = /^\d+$/.test(key) ? `[${key}]` : key;
+    const header = headerPrefix ? `${headerPrefix}.${name}` : name;
+    if (child.children.size === 0) {
+      columns.push(leafDef(path, header, child));
+    } else {
+      columns.push(...leavesUnder(child, path, header));
+    }
+  }
+  return columns;
 }
 
 function toColumns(
   node: PathNode,
   prefix: string,
-  lead: readonly string[]
+  lead: readonly string[],
+  depth = 0
 ): (ColDef | ColGroupDef)[] {
   const entries = Array.from(node.children);
   // Sorted only when somebody asked for an order. The default keeps whatever
@@ -75,31 +188,32 @@ function toColumns(
     ? [...entries].sort((a, b) => rankOf(prefix, a[0], lead) - rankOf(prefix, b[0], lead))
     : entries;
 
-  return ordered.map(([key, child]) => {
+  return ordered.flatMap(([key, child]) => {
     const path = prefix ? `${prefix}.${key}` : key;
     // Array positions are numbers, and a header of bare `0` reads as a column
     // named zero rather than as "the first of these".
     const headerName = /^\d+$/.test(key) ? `[${key}]` : key;
 
     if (child.children.size === 0) {
-      return {
-        headerName,
-        colId: path,
-        // A dotted field is how AG Grid reads a nested value, so the cell
-        // needs no accessor of its own.
-        field: path,
-        headerTooltip: path,
-      };
+      return [leafDef(path, headerName, child)];
     }
 
-    return {
-      headerName,
-      groupId: path,
-      // Keep the group's columns together when one is sorted or resized, so
-      // `transactionAmount` never ends up parked beside `feeAmount`'s parent.
-      marryChildren: true,
-      children: toColumns(child, path, lead),
-    };
+    // One row too deep for the header: keep every leaf it holds, join their
+    // remaining path into the header, and hang them from this group instead.
+    if (depth + 1 >= MAX_HEADER_DEPTH) {
+      return leavesUnder(child, path, headerName);
+    }
+
+    return [
+      {
+        headerName,
+        groupId: path,
+        // Keep the group's columns together when one is sorted or resized, so
+        // `transactionAmount` never ends up parked beside `feeAmount`'s parent.
+        marryChildren: true,
+        children: toColumns(child, path, lead, depth + 1),
+      },
+    ];
   });
 }
 
@@ -149,7 +263,7 @@ export function columnDefsFor(
   rows: readonly object[],
   options: ColumnOptions = {}
 ): (ColDef | ColGroupDef)[] {
-  const root: PathNode = { children: new Map() };
+  const root: PathNode = { children: new Map(), samples: [] };
   for (const row of rows) {
     collectPaths(row as Record<string, unknown>, root);
   }

@@ -1,7 +1,7 @@
 // app/(app)/activity/LiveTransactions.tsx
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { ArrowLeftRight, MousePointerClick, TriangleAlert } from "lucide-react";
 import type { TransactionsResult } from "@/lib/paypal";
 import { summariseTransactions } from "@/lib/transactionTotals";
@@ -44,6 +44,21 @@ const TRANSACTION_LEAD = [
   "transactionInfo.transactionId",
   "payerInfo.emailAddress",
   "payerInfo.payerName",
+] as const;
+
+/**
+ * What never scrolls away: when it happened, how much, and in what currency.
+ *
+ * These are the first three columns the order above puts on screen, so pinning
+ * them moves nothing — it only stops the other thirty-eight from taking them
+ * off the left edge as the reader looks for the identifier they need. An
+ * amount without its currency is not a smaller fact, it is a different one,
+ * which is why the pair is pinned together rather than the number alone.
+ */
+const TRANSACTION_PINNED = [
+  "transactionInfo.transactionInitiationDate",
+  "transactionInfo.transactionAmount.value",
+  "transactionInfo.transactionAmount.currencyCode",
 ] as const;
 
 /**
@@ -118,6 +133,15 @@ export default function LiveTransactions() {
   // index, so clicking the open row again can close it without keeping a
   // position that a re-fetch would have invalidated.
   const [selected, setSelected] = useState<Record<string, unknown> | null>(null);
+  // Where the detail lands, so opening it brings it to the reader. The panel
+  // sits below the whole grid — a grid of twenty rows is taller than a screen
+  // — and a detail opened a screen below the row that was clicked is a detail
+  // that did not open as far as the reader is concerned. `nearest` moves only
+  // as far as it must, and not at all when the panel is already in view.
+  const detailRef = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    if (selected) detailRef.current?.scrollIntoView({ behavior: "smooth", block: "nearest" });
+  }, [selected]);
 
   useEffect(() => {
     let cancelled = false;
@@ -187,6 +211,8 @@ export default function LiveTransactions() {
               rows={result.rows}
               label="Transactions PayPal recorded, last 30 days"
               lead={TRANSACTION_LEAD}
+              pinned={TRANSACTION_PINNED}
+              selected={selected}
               onRowClicked={(record) => {
                 // Clicking the open row again closes it: a second control just
                 // to dismiss would be one more thing to hunt for.
@@ -196,11 +222,13 @@ export default function LiveTransactions() {
             />
 
             {selected ? (
-              <TransactionDetail
-                record={selected}
-                title={titleFor(selected, result.rows.indexOf(selected))}
-                onClose={() => setSelected(null)}
-              />
+              <div ref={detailRef}>
+                <TransactionDetail
+                  record={selected}
+                  title={titleFor(selected, result.rows.indexOf(selected))}
+                  onClose={() => setSelected(null)}
+                />
+              </div>
             ) : (
               // Discoverability, not decoration: nothing about a grid says it
               // can be clicked, and a vertical reading that only exists after

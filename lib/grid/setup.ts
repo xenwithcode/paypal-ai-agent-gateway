@@ -135,6 +135,13 @@ export const gridTheme: Theme = themeQuartz.withParams({
   borderColor: "#eaecf0",
   borderRadius: 8,
 
+  // AG Grid gives an auto-height grid a 150px body whether its rows need it
+  // or not — with two records that is 66px of nothing inside the border, which
+  // reads as a table that stopped half-way. The grid is sized by its rows; that
+  // minimum is for a grid that has none, and neither screen here ever shows
+  // one (an empty answer is a sentence, not a grid).
+  autoHeightMinBodyHeight: "0px",
+
   fontFamily:
     '-apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif',
   dataFontSize: 14,
