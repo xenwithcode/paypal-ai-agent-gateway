@@ -19,10 +19,10 @@ export const metadata = {
 // performance, it is the client id below. Without this the page is
 // prerendered **at build time**, where `PAYPAL_CLIENT_ID` does not exist yet
 // (it arrives with the container from Secret Manager), so the build bakes
-// `""` into the HTML and every visitor — the ▶ Demo stops here — reads
+// `""` into the HTML and every visitor reads
 // *"PayPal is unavailable here (No PayPal client id is configured.)"* on the
 // one screen whose last beat is PayPal's own button. Found by watching the
-// kiosk finish on the live URL, not by reading the code.
+// page on the live URL, not by reading the code.
 export const dynamic = "force-dynamic";
 
 export default function CrowdfundingPage() {

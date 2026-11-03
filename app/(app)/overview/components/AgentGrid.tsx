@@ -45,7 +45,6 @@ import type { VoiceToolCall } from "@/lib/voice/tools";
 // and the window reader — the same function the judge uses, so the cell and
 // the refusal agree about what "valid until" means.
 import { STATUS, MODE, MODE_OPTIONS, isStatus, readExpiry, type HoldAction } from "@/lib/policy";
-import { registerDemoSurface } from "@/lib/demo/bus";
 import StartHere from "./StartHere";
 import Term from "../../components/Term";
 import type { PolicyRow } from "../types";
@@ -200,21 +199,6 @@ const SEED_ROWS: PolicyRow[] = [
 const EXAMPLE_INTENT =
   "white sneakers, size 10, by Friday, only if the price drops to 60 USD or less";
 
-/**
- * The functions this page offers the ▶ Demo, by name.
- *
- * The names are not local taste: `lib/demo/script.ts` lists them, and a test
- * fails if a step calls one this page does not expose. Declared here so the
- * ref's no-op first value does not have to shadow every argument.
- */
-type DemoOverviewActions = {
-  fillIntent: (arg?: string | number) => void;
-  draft: (arg?: string | number) => Promise<void>;
-  choose: () => void;
-  openFromFlight: () => void;
-  close: () => void;
-};
-
 export default function AgentGrid({
   balance,
   balances,
@@ -239,10 +223,6 @@ export default function AgentGrid({
   // nobody approves, which is a rule this project already learned once.
   const panelHostRef = useRef<HTMLDivElement | null>(null);
   const pickerHostRef = useRef<HTMLDivElement | null>(null);
-  // The third landing spot, and for the same reason as the other two: the demo
-  // brings the reader to *Money in flight* before it drills into an order, and
-  // a chart scrolled past is a chart nobody saw the drill-down come from.
-  const flightHostRef = useRef<HTMLDivElement | null>(null);
   const [prompt, setPrompt] = useState("");
   const [loading, setLoading] = useState(false);
   const [fraudAlert, setFraudAlert] = useState<{ active: boolean; msg: string }>({ active: false, msg: "" });
@@ -580,108 +560,6 @@ export default function AgentGrid({
     if (rowData === SEED_ROWS) return;
     writePolicyRows(rowData);
   }, [rowData]);
-
-  /**
-   * The ▶ Demo's handle on this page — the seam that makes a self-driving demo
-   * possible without pretending.
-   *
-   * `AgentGrid` exposes nothing from outside (no context, no imperative ref),
-   * and simulating clicks would mean fighting React's controlled inputs. So
-   * the page registers *its own functions* with `lib/demo/bus.ts`, and the
-   * driver in the layout asks for them by name. Every action below is the same
-   * function a button calls — `draft` is the Draft order button's request,
-   * `choose` is the candidate strip's own handler — which is what keeps the
-   * run honest: if the server refuses a step, the judge watches the refusal
-   * happen to the demo too.
-   *
-   * The ref is refreshed after every render with no dependency list, so the
-   * registered functions never call a stale closure (the choose action reads
-   * `candidates`, which only exists after a search). The registration itself
-   * runs once and stays put.
-   */
-  const demoHandlersRef = useRef<DemoOverviewActions>({
-    fillIntent: () => {},
-    draft: async () => {},
-    choose: () => {},
-    openFromFlight: () => {},
-    close: () => {},
-  });
-  useEffect(() => {
-    demoHandlersRef.current = {
-      // "Use the example ↖"'s job, done to whatever the script says: text in
-      // the box, nothing submitted yet.
-      fillIntent: (arg) => {
-        setPrompt(String(arg ?? ""));
-        setIntentError(null);
-        inputRef.current?.scrollIntoView({ block: "center" });
-        inputRef.current?.focus();
-      },
-      // The Draft order button, pressed for them — same fetch, same funnel,
-      // same console lines. `revealResults` brings the answer into sight the
-      // way a spoken draft does.
-      draft: async (arg) => {
-        await draftOrderFrom(String(arg ?? ""), { revealResults: true });
-      },
-      // The strip's own "this one" click. There is no candidate until a
-      // search lands one, and no demo step asks for one before that.
-      choose: () => {
-        const first = candidates[0];
-        if (first) void handleChoose(first);
-      },
-      // The chart's own drill-down, through `openOrderFromFlight` — the
-      // function `Money in flight`'s click funnels into.
-      //
-      // Two things make this beat read instead of stutter:
-      //
-      // 1. **The card from the previous step closes first.** It is an overlay,
-      //    so left open it covers the very chart this step narrates.
-      // 2. **It reopens on a different order.** The first version reopened the
-      //    order the previous step had just chosen, so the judge watched the
-      //    *same* product card appear twice with a chart in between — a
-      //    repetition nobody could explain. Now it picks the segment that
-      //    holds exactly one order, preferring the one that is money set
-      //    aside (`Reserved`), because that is the card with something to do
-      //    on it. Only a single-order segment is eligible: the real click on
-      //    a segment holding several *asks which*, and a demo that opened one
-      //    silently would be showing a gesture the product does not have.
-      openFromFlight: () => {
-        setSelectedId(null);
-        revealWhenHidden(flightHostRef.current);
-        window.setTimeout(() => {
-          const rows = rowsRef.current;
-          const newest = rows[rows.length - 1];
-          const segments = [STATUS.reserved, STATUS.captured, STATUS.released, STATUS.pending];
-          const pick = segments
-            .map((status) => rows.filter((row) => row.status === status))
-            .find((group) => group.length === 1 && group[0].id !== newest?.id)?.[0];
-          if (pick) openOrderFromFlight(pick.id, 1);
-        }, 1800);
-      },
-      // ✕ hands the page back as it was found: no card, no strip, no stale
-      // question in the box.
-      close: () => {
-        setSelectedId(null);
-        setCandidates([]);
-        setPendingRow(null);
-        setMatchedId(null);
-        setIntentError(null);
-      },
-    };
-  });
-  useEffect(
-    () =>
-      registerDemoSurface({
-        route: "/overview",
-        actions: {
-          fillIntent: (arg) => demoHandlersRef.current.fillIntent(arg),
-          draft: (arg) => demoHandlersRef.current.draft(arg),
-          choose: () => demoHandlersRef.current.choose(),
-          openFromFlight: () => demoHandlersRef.current.openFromFlight(),
-          close: () => demoHandlersRef.current.close(),
-        },
-      }),
-    [],
-  );
 
   /**
    * Ask the server to move a policy through its lifecycle.
@@ -1981,9 +1859,7 @@ export default function AgentGrid({
 
           `onOpenOrder` closes the loop the other way: from the sum back to
           the order, which is the question a reader points at the bar and asks. */}
-      <div ref={flightHostRef}>
-        <MoneyInFlight rows={rowData} onOpenOrder={openOrderFromFlight} />
-      </div>
+      <MoneyInFlight rows={rowData} onOpenOrder={openOrderFromFlight} />
 
       {/* The console as a shared component: Recurring reads the record this
           one writes, so there is one place the tone rules and the empty

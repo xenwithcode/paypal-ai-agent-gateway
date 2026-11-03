@@ -18,10 +18,8 @@ import {
   ChartColumn,
   Target,
   FileText,
-  Play,
 } from "lucide-react";
 import { useFxShield } from "../hooks/useFxShield";
-import { startDemo } from "@/lib/demo/bus";
 
 type NavItem = {
   href: string;
@@ -31,13 +29,18 @@ type NavItem = {
   hint?: string;
 };
 
-/** Sections every user sees. Global-first: spend governance is the core. */
+/**
+ * Sections every user sees, ordered by how much they matter to the product:
+ * the console first, then the thesis (orders a machine can check), then the
+ * rails that run without the agent, and the plain transfer last — it is the
+ * one feature here that exists in every payment app.
+ */
 const PRIMARY_NAV: NavItem[] = [
   { href: "/overview", label: "Overview", icon: LayoutDashboard, hint: "Intents, policies and the live event console" },
-  { href: "/send", label: "Send money", icon: Send, hint: "Pay a person by PayPal, or prepare a local Pago Móvil" },
+  { href: "/commerce", label: "Agentic Commerce", icon: ScrollText, hint: "Structured orders a machine can check before money moves" },
   { href: "/recurring", label: "Recurring payments", icon: CreditCard, hint: "Spotify, Netflix, Prime Video and the rest" },
   { href: "/activity", label: "Activity", icon: Activity, hint: "Income, spending, blocked attempts and refunds" },
-  { href: "/commerce", label: "Agentic Commerce", icon: ScrollText, hint: "Structured orders a machine can check before money moves" },
+  { href: "/send", label: "Send money", icon: Send, hint: "Pay a person by PayPal, or prepare a local Pago Móvil" },
 ];
 
 /**
@@ -101,33 +104,6 @@ function NavLink({ item, active }: { item: NavItem; active: boolean }) {
   );
 }
 
-/**
- * ▶ Demo — the kiosk entry.
- *
- * Not a link: there is no page to go to, there is a run to start. It sits in
- * the nav on purpose (and above Overview, where a first-time visitor looks):
- * the demo is an experience, and burying it with the documentation would take
- * the "BOOM" out of it. `DemoKiosk`, mounted in the layout, does the rest —
- * it navigates to Overview on its own and drives the app from there.
- */
-function DemoButton() {
-  return (
-    <button
-      type="button"
-      onClick={() => startDemo()}
-      title="Watch the agent work — it drives the app itself, and never moves money"
-      className={cx(
-        "flex shrink-0 items-center gap-2.5 rounded-xl border px-3 py-2 text-sm font-semibold transition md:shrink",
-        "border-amber-200 bg-amber-50 text-amber-800 hover:border-amber-300 hover:bg-amber-100",
-        "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-amber-500 focus-visible:ring-offset-2"
-      )}
-    >
-      <Play className="h-4 w-4 shrink-0" strokeWidth={2} aria-hidden="true" />
-      <span className="whitespace-nowrap">Demo</span>
-    </button>
-  );
-}
-
 export default function Sidebar() {
   const pathname = usePathname();
   // Shared with the FX page and the Pago Móvil page, so all three agree.
@@ -164,10 +140,6 @@ export default function Sidebar() {
         <span className="hidden px-3 pb-1 pt-1 text-[11px] font-semibold uppercase tracking-wider text-blue-600 md:block">
           Workspace
         </span>
-
-        {/* First in the group, on purpose: a visitor who has never seen the
-            app should be able to watch it before they read it. */}
-        <DemoButton />
 
         {PRIMARY_NAV.map((item) => (
           <NavLink key={item.href} item={item} active={isActive(item.href)} />
