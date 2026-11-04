@@ -13,12 +13,15 @@
  * know what they are looking at. Those are different readers, and the second
  * one is the one who decides.
  *
- * It opens with the thesis in five lines, then does the thing a judge actually
- * needs: it follows one dollar through the whole product — an order that was
- * approved, held, and given back — using a real record from this sandbox, ids
- * and all. Everything else on the page is support for that story: what is
- * real, what is simulated, what was designed and deliberately not built, how
- * to run it, and what each word on the screen means.
+ * It opens with the thesis in five lines, then with the problem the product
+ * was designed against — Venezuela, and the three features that exist only
+ * because of it — then does the thing a judge actually needs: it follows one
+ * dollar through the whole product — an order that was approved, held, and
+ * given back — using a real record from this sandbox, ids and all. Everything
+ * else on the page is support for that story: what is real, what is
+ * simulated, what was designed and deliberately not built, how to run it,
+ * what each word on the screen means, and how the whole answers the brief the
+ * hackathon sets.
  *
  * The rule the other appendices opened with has not changed, and it matters
  * more here than anywhere: **no claim without something behind it**. Where a
@@ -28,7 +31,7 @@
 export const metadata = {
   title: "Final Notes · PayPal AI Agent Gateway",
   description:
-    "How a dollar moves through this product — approved, held, settled or given back — with a real record; what is real, what is simulated, what is not built, and how to run it.",
+    "Why this was built — the problem behind three features — how a dollar moves through the product with a real record; what is real, what is simulated, what is not built, and how to run it.",
 };
 
 /** The thesis, before any of the machinery. */
@@ -113,6 +116,8 @@ export default function FinalNotesAppendix() {
           <h1 className="text-2xl font-bold tracking-tight text-slate-900">Final Notes</h1>
           <p className="mt-2 max-w-[70ch] text-sm leading-relaxed text-slate-500">
             The manual, in the order a judge reads it: what this is in five lines, then{" "}
+            <span className="font-medium text-slate-700">why it was designed this way</span> — the
+            problem behind three of its features — then{" "}
             <span className="font-medium text-slate-700">one dollar followed through the whole
             product</span> — approved, held, and given back — using a real record from this
             sandbox. Then what is real, what is simulated, what was designed and deliberately not
@@ -138,8 +143,72 @@ export default function FinalNotesAppendix() {
         </ol>
       </Section>
 
-      {/* ── 2 · How the money moves — the page's centre of gravity ──── */}
-      <Section id="money-moves" title="2 · How the money moves — one dollar, start to finish">
+      {/* ── 2 · Why it is designed this way ──────────────────────────── */}
+      <Section id="why" title="2 · Why it is designed this way — one problem, three features">
+        <p className="mt-3 max-w-[76ch] text-sm leading-relaxed text-slate-600">
+          This product was not designed from a feature list. It was designed from a place:{" "}
+          <span className="font-semibold text-slate-900">Venezuela</span>, where I live — a
+          bimonetary economy where money has two jobs no single balance can do at once: dollars to
+          hold value, bolívares to spend it. The three features below are the schedule an agent
+          keeps whether or not you remember it, the balance that would otherwise lose value while it
+          waits, and the exchange the country runs every day <em className="italic">without</em>{" "}
+          PayPal.
+        </p>
+
+        <div className="mt-4 grid grid-cols-1 gap-4 lg:grid-cols-3">
+          <Feature
+            name="Recurring Payments"
+            says="Services your agent keeps paid on schedule — Spotify, Netflix, Prime Video. You add one once; it runs on its own until you take it off."
+            why="The one payment where forgetting costs money — and where asking again every month is exactly the rubber stamp this product exists to replace. The date is stored as the order's own condition, so the schedule sits under the same envelope and the same server judge as everything else: drafted first, approved once, settled on the day it is due and refused before it."
+          />
+          <Feature
+            name="FX Shield · Protect & grow"
+            says="Converts a balance that would otherwise lose value in a devaluing currency into PYUSD the moment it arrives — and converts it back at the moment you actually spend."
+            why="Designed for Venezuela, where I live: holding bolívares is a decision to lose value slowly, and nobody should have to watch a rate to keep what they earned. It is a switch rather than a default — not every user lives in an inflationary economy — and every rate it quotes is read from the published BCV feed at the moment of the conversion, never remembered. The deposit is a labelled test input and the rail that spends it back is a preview, as the honesty list below says; the rate and the arithmetic are real."
+          />
+          <Feature
+            name="Pay in bolívares"
+            says="USD → VES and back, with PayPal holding one side — how I intend to use PayPal agent for the exchange this country runs every day."
+            why="Venezuela is bimonetary in practice — dollars to hold value, bolívares to spend it — and the exchange between them runs every day in both directions, to an equivalent I estimate in the billions of dollars a month — an estimate, not a measurement. Almost all of it moves through channels PayPal does not participate in today: Zelle, and direct deals between people. This build adapts that local problem to what PayPal can already do: the dollar leg is a real PayPal order held by PayPal, the bolívar leg happens between the two people bank to bank, and neither side goes first — the dollars are captured only when a person confirms the bolívares arrived, and released when the window closes. A market of this size that PayPal does not serve is a market PayPal gives away."
+          />
+        </div>
+
+        {/* The brief, answered in the words it asks in — here rather than at
+            the end, because this is the section a judge reads when asking
+            why any of it exists. */}
+        <div className="mt-5 rounded-xl border-l-4 border-blue-300 bg-blue-50 p-4 text-sm leading-relaxed text-slate-700">
+          <p className="font-semibold text-slate-900">How this answers the brief.</p>
+          <ul className="mt-2 space-y-1.5">
+            <li>
+              <span className="font-semibold text-slate-900">Build something ambitious</span> — an
+              idea (a purchase order an agent cannot break) turned into a working project using
+              PayPal and AI: real sandbox orders, a server that judges every attempt before PayPal
+              sees it, a model in two voices, and grids that draw money they did not invent.
+            </li>
+            <li>
+              <span className="font-semibold text-slate-900">Explore what&apos;s next</span> — new
+              ways people, businesses and agents interact with money: consent given once per policy
+              instead of once per transaction, an agent that keeps a schedule, a balance that defends
+              itself, and an exchange where neither side has to go first.
+            </li>
+            <li>
+              <span className="font-semibold text-slate-900">Show what you can build</span> — a live
+              URL, a repository, and four appendices: every figure sourced or labelled, and every
+              simulated rail saying so on the screen that simulates it.
+            </li>
+          </ul>
+          <p className="mt-3">
+            <span className="font-semibold text-slate-900">The joint project.</span> PayPal AI Agent
+            is how I imagine PayPal&apos;s next evolution: the button that approves every transaction
+            becomes the envelope that approves once — and a market that today settles on trust gets
+            the judgement, the hold and the record that every other payment in this product already
+            has.
+          </p>
+        </div>
+      </Section>
+
+      {/* ── 3 · How the money moves — the page's centre of gravity ──── */}
+      <Section id="money-moves" title="3 · How the money moves — one dollar, start to finish">
         <p className="mt-3 max-w-[76ch] text-sm leading-relaxed text-slate-600">
           Every screen in this product is a view of the same four states. An order is drafted and
           judged; if it is approved, PayPal <span className="font-semibold text-slate-900">holds</span>{" "}
@@ -231,8 +300,8 @@ export default function FinalNotesAppendix() {
         </p>
       </Section>
 
-      {/* ── 3 · The dashboard, read out loud ─────────────────────────── */}
-      <Section id="dashboard" title="3 · Your dashboard, read out loud">
+      {/* ── 4 · The dashboard, read out loud ─────────────────────────── */}
+      <Section id="dashboard" title="4 · Your dashboard, read out loud">
         <p className="mt-3 max-w-[76ch] text-sm leading-relaxed text-slate-600">
           <em>How much can you actually spend?</em> — the first card on Overview — is the same
           story told as a position. It shows <span className="font-semibold text-slate-900">two
@@ -270,8 +339,8 @@ export default function FinalNotesAppendix() {
         </p>
       </Section>
 
-      {/* ── 4 · Real · simulated · not built ─────────────────────────── */}
-      <Section id="honesty" title="4 · What is real, what is simulated, what was never built">
+      {/* ── 5 · Real · simulated · not built ─────────────────────────── */}
+      <Section id="honesty" title="5 · What is real, what is simulated, what was never built">
         <p className="mt-3 max-w-[76ch] text-sm leading-relaxed text-slate-600">
           Three lists, kept apart — because the difference between them is the whole argument of
           the product. Nothing is presented as finished that is not.
@@ -283,8 +352,8 @@ export default function FinalNotesAppendix() {
         </div>
       </Section>
 
-      {/* ── 5 · Run it ───────────────────────────────────────────────── */}
-      <Section id="run" title="5 · Run it in three commands">
+      {/* ── 6 · Run it ───────────────────────────────────────────────── */}
+      <Section id="run" title="6 · Run it in three commands">
         <p className="mt-3 max-w-[76ch] text-sm leading-relaxed text-slate-600">
           The repository is written so that a judge who clones it gets a working app: the
           Enterprise features fall back to Community when there is no licence key, and the pages
@@ -304,8 +373,8 @@ npm run dev                    # http://localhost:3000`}
         </p>
       </Section>
 
-      {/* ── 6 · The vocabulary ───────────────────────────────────────── */}
-      <Section id="vocabulary" title="6 · The vocabulary, in one sentence each">
+      {/* ── 7 · The vocabulary ───────────────────────────────────────── */}
+      <Section id="vocabulary" title="7 · The vocabulary, in one sentence each">
         <p className="mt-3 max-w-[76ch] text-sm leading-relaxed text-slate-600">
           This product invented no words — but it uses a few precisely, and a screen that assumes
           the reader already knows them is a screen that loses them. Hovering any of them in the
@@ -332,8 +401,8 @@ npm run dev                    # http://localhost:3000`}
         </dl>
       </Section>
 
-      {/* ── 7 · Security ─────────────────────────────────────────────── */}
-      <Section id="security" title="7 · Security posture, in four layers">
+      {/* ── 8 · Security ─────────────────────────────────────────────── */}
+      <Section id="security" title="8 · Security posture, in four layers">
         <ol className="mt-3 max-w-[76ch] space-y-2 text-sm leading-relaxed text-slate-600">
           <li>
             <span className="font-semibold text-slate-900">1 · The model is told, never
@@ -467,6 +536,27 @@ function ReadAloud({ block, line, why }: { block: string; line: string; why: str
 }
 
 /**
+ * One feature, the sentence it opens with, and the problem it answers.
+ *
+ * Deliberately the same grammar as `ReadAloud` above: a judge who has read
+ * *what the dashboard says* meets the same shape for *why the feature exists*
+ * — the claim first, the reason underneath, and the caveat in the smallest
+ * type, because a feature described without what it does not do is an advert.
+ */
+function Feature({ name, says, why }: { name: string; says: string; why: string }) {
+  return (
+    <div className="flex flex-col rounded-xl border border-slate-100 bg-slate-50 p-4">
+      <h3 className="text-xs font-semibold uppercase tracking-wide text-slate-900">{name}</h3>
+      <p className="mt-1.5 text-sm font-medium leading-relaxed text-slate-700">{says}</p>
+      <p className="mt-2 text-xs leading-relaxed text-slate-500">
+        <span className="font-semibold uppercase tracking-wide">Why it exists · </span>
+        {why}
+      </p>
+    </div>
+  );
+}
+
+/**
  * The three honest lists, side by side.
  *
  * Kept from the page this one grew out of, and kept in the same shape on
@@ -539,7 +629,7 @@ const SIMULATED = [
   },
   {
     what: "The four funding campaigns",
-    how: "Labelled on every row: real structure and coordinates, no audit behind them. The pledge in section 2 is a real sandbox record against one of them.",
+    how: "Labelled on every row: real structure and coordinates, no audit behind them. The pledge in section 3 is a real sandbox record against one of them.",
   },
   {
     what: "The Pago Móvil rail",
