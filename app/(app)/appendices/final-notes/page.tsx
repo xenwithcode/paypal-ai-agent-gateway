@@ -125,7 +125,7 @@ export default function FinalNotesAppendix() {
           </p>
         </div>
         <span className="shrink-0 rounded-full border border-emerald-200 bg-emerald-50 px-2.5 py-1 text-[10px] font-bold uppercase tracking-wide text-emerald-700">
-          Written 11 October 2026
+          Written 3 November 2026
         </span>
       </header>
 
