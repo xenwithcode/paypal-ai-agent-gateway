@@ -37,7 +37,7 @@ Approve **once**: *≤ 60 USD, this week, these merchants.* The agent then produ
 
 | Capability | What you see |
 | --- | --- |
-| **Intent → order** | Type *"white sneakers, size 10, by Friday, only if the price drops to 60 USD"* and get a structured order: what, ceiling, **condition**, valid until, mode. |
+| **Intent → order** | Type *"white sneakers, size 10, by Friday, only if the price drops to 60 USD"* and get a structured order: what, ceiling, **condition**, valid until, mode. **Name no amount and it asks instead** — no catalog search, no row — because an order without a ceiling is a blank cheque. |
 | **Talk to it, by voice** | **🎙️ Talk to paypal-ai-agent**, above *Draft order*. You speak; Gemini Live decides what to ask for and returns it as a tool call; the gateway runs it through **the very handler the button uses**, the console prints every line, and the agent answers **out loud**. Its reply is written from the lines those handlers actually logged — so a refused capture is spoken as a refusal, and a balance question reads PayPal live instead of repeating a number it remembers. The text box is still there: voice is an addition to the keyboard, never a replacement for it. |
 | **Human-in-the-loop approval** | Every rule lands as `Awaiting approval`. The card opens itself after a draft — nothing is live until you authorize. |
 | **Approval card** | Click the product and the order opens as a card: real image, stock, rating, returns and SKU, then **your envelope** — ceiling, condition verdict, the one host it may reach. The catalog is re-read when it opens, so the price being judged is the price now. |
@@ -60,7 +60,7 @@ Approve **once**: *≤ 60 USD, this week, these merchants.* The agent then produ
 | **Manifests a machine can fetch** | Every stored order is served as a manifest by `GET /api/manifest` — the same document the card in Agentic Commerce shows, built by the same function. `POST /api/manifest` answers the question the other side of a trade asks: *does this payment fit these terms?* It is judged by the same rules a buyer's charge is, plus the one rule only a seller has — nothing below the price is accepted. |
 | **Recurring** | Add a service — its type, its URL, the amount and the date it is due — **by typing or by speaking**: the microphone fills the form and stops there, because speech is another way to say something, not a way to have already agreed to it. Either way it is **drafted, never activated**: it lands as *Awaiting approval*, the row says *whose* answer it is waiting for, and the Approve button is on the row itself. The date is stored as the order's own condition, so the agent settles it when the day comes and refuses before it — even for a service no catalog has ever heard of, because a schedule is compared against the clock rather than a price. Standing allowances from Overview appear beside them; removing needs a deliberate second click, and a settled row keeps its receipt rather than a button that would erase it. |
 | **Manifest reader** | Agentic Commerce shows the machine-readable record behind each order — ceiling, endpoint, condition, expiry, mode — with absent fields marked absent, and **View as JSON**. |
-| **Send money** | Three rails: **USD** first, because that is what PayPal settles in, then the stablecoin, then a Venezuelan bank behind the FX opt-in. Name a recipient and an amount, see *recipient gets* / *you pay* before committing, and the recipient is written into the order **before** anything is authorized. |
+| **Send money** | Three rails: **USD** first, because that is what PayPal settles in, then the stablecoin, and behind the FX opt-in the **USD ↔ VES exchange** — PayPal holds the dollars, the bolívares go bank to bank between the two people, and a person confirms arrival before anything captures. On the transfer rails, name a recipient and an amount, see *recipient gets* / *you pay* before committing, and the recipient is written into the order **before** anything is authorized. |
 | **Grow — `/crowdfunding`** | Capital that grows instead of leaving — built for a two-currency country: real Venezuelan businesses pinned on a map, each with a goal, an **annual return**, a **committee grade (A–C)** and the collateral behind it. Pledge **$20–$1,000** through PayPal's own button — the server judges the band, the goal and the closing date (`judgeInvestment`, every violation and not just the first) — and the money is **reserved, not taken**: captured only when the campaign reaches its goal, released rather than taken when it closes short. |
 | **Your position, drawn** | *Invested so far · Paid · Reserved · Earning now · Returned* — with a ring of the three states your money can be in, and a projection that always draws what you put in beside what the offered rate would do to it. The projects table is **AG Grid**; the ring and the curve are **AG Charts** (Community — MIT, no licence key): an instant visual overview of the position, in the same palette the rest of the app speaks. |
 
@@ -143,8 +143,8 @@ Approve **once**: *≤ 60 USD, this week, these merchants.* The agent then produ
 - **Gemini API** — a [Google AI Studio](https://aistudio.google.com) key. Separate billing from GCP credits.
 
 ```bash
-git clone <your-repo-url>
-cd paypal-ai-agent
+git clone https://github.com/xenwithcode/paypal-ai-agent-gateway.git
+cd paypal-ai-agent-gateway
 npm install
 cp env.example .env.local
 ```
@@ -197,14 +197,25 @@ npm run dev
 Open the URL the dev server prints — **http://localhost:3000** unless that
 port is taken, in which case it picks the next free one and says so.
 
-**For the judge in a hurry** — three clicks explain the whole product:
+**For the judge in a hurry** — start with two searches, then three clicks:
 
-1. **`/overview`** — the strip at the top *is* the thesis: the agent
-   prepares, you approve, our server pays. Then press the microphone and say
-   what may be bought.
-2. **Click any amount in *Money in flight*** — the chart drills into the
+1. **`/overview` — search with no amount.** The strip at the top *is* the
+   thesis (the agent prepares, you approve, our server pays). Now type only
+   what you want — `white sneakers, size 10` — and press **Draft order**.
+   **Nothing is drafted.** The gateway answers with a question instead —
+   *"Name the most this order may ever cost — an order without a ceiling is
+   not an order this gateway drafts"* — **before it reads a single product**:
+   no catalog search, no row, no card. An agent that could spend a number
+   nobody said would be a blank cheque with a chat window on it. Ask in
+   Spanish and it asks back in Spanish.
+2. **The same search, now with an amount.** `white sneakers, size 10, under
+   60 USD` → this time it searches, a row appears with its ceiling and
+   condition, and the approval card opens itself. Two searches, one
+   difference — that difference is the whole product. (The microphone above
+   the box says the same thing out loud.)
+3. **Click any amount in *Money in flight*** — the chart drills into the
    order behind the number.
-3. **`/crowdfunding`** — the one screen where money grows rather than leaves:
+4. **`/crowdfunding`** — the one screen where money grows rather than leaves:
    pick a project on the map, pledge with PayPal, then release the hold the
    same way every hold in this app is released.
 
@@ -229,7 +240,13 @@ port is taken, in which case it picks the next free one and says so.
 
 ## Walkthrough
 
-1. **Draft an order.** In the intent bar:
+1. **Draft an order — and watch it refuse without an amount first.** In the
+   intent bar, type only `white sneakers, size 10` and press **Draft order**:
+   no row appears. The console prints `💬 [AGENT] Name the most this order may
+   ever cost — an order without a ceiling is not an order this gateway
+   drafts.` and the same sentence shows under the box — the gateway asked
+   **before** reading a single product: no search, no strip, no card. Now add
+   the amount:
    `white sneakers, size 10, by Friday, only if the price drops to 60 USD or less`
    → press **Draft order**. A row appears: *What* `white sneakers, size 10…`,
    *Ceiling* `60 USD`, *Condition* `price <= 60`, *Mode* `Autonomous`, status
@@ -259,7 +276,8 @@ port is taken, in which case it picks the next free one and says so.
 
 5. **Open FX Shield** in the sidebar → live rate table with sources and dates, plus a converter that reports what the holding would be worth in 30 days.
 
-6. **Capture an order**, then **Open Activity** → it appears in the purchase history
+6. **Capture an order**, then open **Activity** in the sidebar → it appears
+   in the purchase history
    unmarked, beside the seeded rows that are chipped `Sample`, with the charges it
    refused below. **Print / save as PDF** gives the report — no sidebar, no app
    chrome, just the table and its totals.
@@ -313,7 +331,11 @@ Stated plainly, because a judge deserves to know exactly what they are looking a
 
 | Piece | Status |
 | --- | --- |
-| **Payment execution** | The sandbox chain is wired end to end — `createOrder` (intent `AUTHORIZE`) → `authorizeOrder` → `captureOrder` / `voidPayment` through `@paypal/paypal-server-sdk`. A hold reports `live` only when it actually carries an `authorizationId`; without one it reports `demo` and says no funds moved. The recipient rides the same chain: the payee is written into the order itself, so PayPal directs the funds rather than a later call being able to redirect them. What is still unproven is the payer's own approval in the browser — that click is the one step only the operator can perform. |
+| **Payment execution** | The sandbox chain is wired end to end — `createOrder` (intent `AUTHORIZE`) → `authorizeOrder` → `captureOrder` / `voidPayment` through `@paypal/paypal-server-sdk`. A hold reports `live` only when it actually carries an `authorizationId`; without one it reports `demo` and says no funds moved. The recipient rides the same chain: the payee is written into the order itself, so PayPal directs the funds rather than a later call being able to redirect them. What has been proven and what has not: the payer's own approval in PayPal's
+checkout **has** been run against the sandbox — the order and authorization
+ids it produced are printed in *Final Notes* — and it remains the one step
+only a human can perform: the walkthrough below hands the judge the test
+buyer's sign-in so they can make that click themselves. |
 | **Enforcement** | The judgement is real and runs on the server — ceiling, endpoint allow-list, recipient, policy state, expiry window and autonomy mode — and it now stands on the money path itself: in front of `POST /api/paypal/orders` before an order exists, on every `capture`, and on every charge sent to `/api/policy/check`. **What is still modelled:** the envelope travels from the browser (the row lives in browser storage until server-side persistence lands), so the server judges the envelope it is given rather than one it owns; and the *isolation* — real kernel isolation needs an OpenShell sandbox, Phase 2. |
 | **The autonomous agent** | Real: it runs on a timer, **the server judges every pass**, and a capture goes through the same PayPal path as a click — a live one prints its own `captureId`. What is modelled is the *schedule*: it ticks while this page is open, rather than a worker that wakes on its own. |
 | **Transfers and QR** | The conversion maths is real against the live BCV rate. No funds move, and the panel labels itself a preview rather than reporting a settlement. |
@@ -335,8 +357,11 @@ paypal-ai-agent/
 │   │   ├── hooks/useFxShield.ts    # shared opt-in state
 │   │   ├── hooks/usePaypalBalance.ts # the balance, re-read after money moves
 │   │   ├── overview/               # dashboard: intent bar, AG Grid, approval card, console
-│   │   ├── recurring/  activity/  commerce/  send/   # allowances · ledger · manifests · transfers
-│   │   │   └── VoiceFill.tsx         # optional: fills the form, never submits it
+│   │   ├── recurring/              # allowances · VoiceFill (fills the form, never submits)
+│   │   ├── activity/  commerce/    # the ledger · the manifests
+│   │   ├── send/                   # transfers · the USD ↔ VES exchange (behind FX Shield)
+│   │   ├── crowdfunding/           # the Growth pillar: map, campaigns, pledge, position
+│   │   ├── appendices/             # architecture · AG Grid · target market · final notes
 │   │   ├── components/EventConsole.tsx  # one console, one record, two surfaces
 │   │   ├── components/VoiceCommand.tsx  # mic → command → execute → speak back
 │   │   └── fx/                     # live rates, converter
@@ -348,15 +373,17 @@ paypal-ai-agent/
 │   ├── api/paypal/orders/route.ts  # create · authorize, judged against the envelope first
 │   ├── api/paypal/transactions/route.ts # GET — the account's own record, live
 │   ├── api/paypal/balance/route.ts  # GET — the figure, re-read after something moved it
+│   ├── api/paypal/balances/route.ts # GET — every currency the account holds, on demand
 │   ├── api/fx/route.ts             # cached live FX proxy
 │   ├── api/recurring/parse/route.ts # speech → the four fields, metered like every model call
+│   ├── api/recurring/plans/route.ts # GET — the billing plans the account already has, live
 │   ├── api/store/route.ts          # GET · PUT — the durable copy of the two records
 │   ├── api/manifest/route.ts       # GET — every order as a manifest · POST — does this payment fit?
 │   ├── layout.tsx  page.tsx  globals.css
 ├── lib/
 │   ├── policy.ts                   # STATUS / MODE + transition, charge, hold and offer judgements, ceiling bands
 │   ├── gemini.ts                   # structured-output LLM call + auth for any region
-│   ├── voice/{tools,live}.ts       # what the spoken agent may do · the Live session
+│   ├── voice/{tools,live,turn,wav}.ts # the spoken contract · the Live session · turn rules · WAV headers
 │   ├── grid/setup.ts               # which modules the licence allows, and the grid's palette
 │   ├── grid/licence.ts             # reads a key before it reaches a manager (two stores exist)
 │   ├── paypal.ts                   # server-only client, balance, order lifecycle, transactions
@@ -375,6 +402,7 @@ paypal-ai-agent/
 ├── data/                           # runtime only, gitignored — the durable copy on disk
 ├── tests/                          # 353 tests on node:test — transitions, conditions, ceiling bands, window, judgements, ledger, store, rate limit, grid columns, totals, offers, the spoken tool contract, which licence belongs to which manager, and the position card's two ledgers
 ├── public/architecture/            # Archify diagram + spec, served at /architecture
+├── scripts/check-html-for-secrets.mjs  # what `npm run audit:html` runs against the built app
 ├── env.example  LICENSE
 ```
 
@@ -389,8 +417,8 @@ paypal-ai-agent/
 - **No internal error leakage.** Production returns a generic message; detail goes to the server log only.
 - **A rate is never guessed.** If the BCV feed is unreachable the FX path raises instead of converting at a plausible-but-wrong number.
 - **Rate limiting on `/api/agent`.** A sliding window in memory — 20 requests a minute per caller, checked **before the body is read**. It guards two spends: the model call and the PayPal balance read behind it. It is a loop detector, not a meter: a person drafting orders never gets near it, an effect that never settles goes through it in seconds. Deliberately in-process and dependency-free — a judge who has no service running must still be able to run `npm run dev`, and a setup instruction that fails is worse than a limit that covers one process. Refusals return `429` with `Retry-After`, and the console prints them as `⏳ [LIMIT]` rather than as the agent turning an order down, because nothing was judged.
-- **The durable copy is a file, and it is not protected.** `PUT /api/store` writes two arrays to `data/store.json` — atomically, size-capped, and with a payload that is refused rather than defaulted if it arrives without the ledger of refused charges (a missing array sent as `[]` would erase it). It carries **no authentication**: it is localhost, holding what one browser would otherwise hold alone. Anyone who can reach this server can replace those two arrays, and nothing else. Auth is the same roadmap item as below.
-- **Not yet implemented:** authentication, CSRF hardening. Required before public hosting — tracked in the roadmap.
+- **The durable copy is a file, and it is not protected.** `PUT /api/store` writes two arrays to `data/store.json` — atomically, size-capped, and with a payload that is refused rather than defaulted if it arrives without the ledger of refused charges (a missing array sent as `[]` would erase it). It carries **no authentication**: on a local run it is localhost, holding what one browser would otherwise hold alone — and on the public deployment the same endpoint answers anyone on the internet, because the service allows unauthenticated requests. Anyone who can reach this server can replace those two arrays, and nothing else: no money path reads them as authority, every judgement still runs server-side against the envelope it is given. Auth is the roadmap item below.
+- **Not yet implemented:** authentication, CSRF hardening. The deployment linked in Quick start is public today and stores only the two demo arrays through the endpoint above; auth is required before anything more sensitive is exposed — tracked in the roadmap.
 - **Standing consent (level 3 in [`SECURITY.md`](SECURITY.md)) — designed, not built:** charge later without a new approval, through PayPal's own Billing Agreement / vaulted token, inside a per-move and per-month ceiling, recorded as `consentId · ceiling · window · revoked` and revocable in one action that says what happens to what is already reserved.
 
 ---
@@ -399,21 +427,23 @@ paypal-ai-agent/
 
 ### Next — the spine of the thesis
 
-1. **The payer's own approval, run once for real.** The chain is built against
-   the sandbox — `createOrder` (intent `AUTHORIZE`) → `authorizeOrder` →
-   `captureOrder` → `voidPayment` — and a hold reports `live` only when it
-   carries an `authorizationId`. The step nobody but the operator can perform
-   is clicking PayPal's own button in a browser; until that happens every hold
-   reports `demo` and says so. It is also what stands between the Send money
-   section and a transfer that has actually been approved.
+1. **A transfer the payer approved end to end.** The click itself has been
+   run for real — the crowdfunding pledge documented in *Final Notes* carries
+   PayPal's own order and authorization ids, and a hold reports `live` only
+   when it carries an `authorizationId` — but no **Send money** transfer has
+   been through it yet. That is the step between the transfer rails and money
+   that has actually moved, and only a human in PayPal's checkout can perform
+   it.
 
 ### Done
 
+- **The payer's approval, run for real** — a human clicked Approve in PayPal's own checkout against this sandbox: the order and authorization ids it produced are recorded in *Final Notes*, and every hold carrying an `authorizationId` reports `live` instead of `demo`.
+- **Activity from Transaction Search v1** — `searchTransactions` over the last 30 days renders the account's own records beside the local ledgers: what the policy allowed, and what it refused — the one PayPal never sees.
 - **Conditional Holds** — `Reserved` / `Captured` / `Released`, with the transition rules shared between the server and the button that offers them. Capture is refused whenever the condition is unmet *or unverifiable*, and is re-judged on every attempt rather than trusted from draft time.
 - **Server-side enforcement** — `/api/policy/check` compares an attempted charge against the ceiling, the endpoint allow-list and the policy's state; `/api/holds` performs the transitions. The browser reports what it wants; it does not get to declare that its condition is satisfied.
 - **Approval card** — the product card ACP and UCP put in front of the human, plus the envelope neither of them carries. Re-read from the catalog each time it opens.
 - **Order persistence** — rows survive a reload, are validated on read, and are re-checked against the live catalog on mount.
-- **Send money** — the transfer rails moved out of the dashboard into their own section, with USD first because that is what PayPal settles in, the stablecoin rail beside it, and a Venezuelan bank tab behind the FX opt-in.
+- **Send money** — the transfer rails moved out of the dashboard into their own section, with USD first because that is what PayPal settles in, the stablecoin rail beside it, and — behind the FX opt-in — the **USD ↔ VES exchange**: PayPal holds one leg as a hold, the bolívares go bank to bank between the two people, and a person confirms arrival before anything captures.
 - **Route A — the recipient** — `createOrder` with `payee.emailAddress`, so the order names the account the money may land on and PayPal directs the funds there. A transfer drafted from `/send` writes its recipient into the envelope *before* PayPal is ever shown.
 - **Recipient enforced on the server** — the envelope gained `payee` beside `allowEndpoint`, printed in the order cell, the approval card and the manifest, and judged by the same endpoint that judges the ceiling: an attempt aimed at anyone else is refused, and one that names no destination at all is refused too.
 - **Honest console** — the log reports which path produced a policy, labels its simulated inputs as simulated, and prints the server's verdict instead of narrating one.
@@ -421,7 +451,6 @@ paypal-ai-agent/
 
 ### Then
 
-- Activity ledger from Transaction Search v1 (`searchTransactions`) — income, spend, refunds, and blocked attempts, which PayPal never sees and must be logged locally.
 - Recurring payments through `createSubscription` / `cancelSubscription`.
 
 ### Phase 2
@@ -431,7 +460,7 @@ Tracked in the maintainer's private session log, and summarised below.
 - **Cryptographic consent** — produce an AP2-style signature over the approved policy instead of a UI click.
 - **Real NVIDIA OpenShell integration** — run the agent in a sandbox, declare the approved endpoints as a network policy, inject credentials only for those.
 - **Merchant side** — expose a UCP-shaped manifest a seller agent can verify.
-- Auth, rate limiting and CSRF before any public deployment.
+- **Auth and CSRF** — rate limiting already guards `/api/agent`; what is missing is authentication on the store endpoint and CSRF hardening, before anything more than the two demo arrays is exposed. The public deployment above is live today with that gap — see Security notes.
 - Dispute automation with multimodal evidence.
 
 ---
