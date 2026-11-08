@@ -1,0 +1,14 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 400 300" role="img" aria-label="chelsea-boots">
+  <defs>
+    <linearGradient id="bg-chelsea-boots" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#f8fafc"/>
+      <stop offset="1" stop-color="#fef3c7"/>
+    </linearGradient>
+  </defs>
+  <rect width="400" height="300" fill="url(#bg-chelsea-boots)"/>
+  <circle cx="342" cy="52" r="52" fill="#0042a1" opacity=".07"/>
+  <circle cx="48" cy="252" r="68" fill="#16b364" opacity=".06"/>
+  <g fill="none" stroke="#0f172a" stroke-width="8" stroke-linecap="round" stroke-linejoin="round">
+    <path d="M138 78h70l8 96 54 26v42H130V158l8-12z" fill="#fef3c7"/><path d="M130 224h100M138 158h70M208 174l54 26" stroke="#0042a1"/><path d="M160 104h34M160 126h34"/>
+  </g>
+</svg>

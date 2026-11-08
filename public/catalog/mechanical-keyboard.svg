@@ -1,0 +1,14 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 400 300" role="img" aria-label="mechanical-keyboard">
+  <defs>
+    <linearGradient id="bg-mechanical-keyboard" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#f8fafc"/>
+      <stop offset="1" stop-color="#e2e8f0"/>
+    </linearGradient>
+  </defs>
+  <rect width="400" height="300" fill="url(#bg-mechanical-keyboard)"/>
+  <circle cx="342" cy="52" r="52" fill="#0042a1" opacity=".07"/>
+  <circle cx="48" cy="252" r="68" fill="#16b364" opacity=".06"/>
+  <g fill="none" stroke="#0f172a" stroke-width="8" stroke-linecap="round" stroke-linejoin="round">
+    <rect x="66" y="96" width="268" height="128" rx="18" fill="#dbeafe"/><g stroke="#0042a1" stroke-width="6"><path d="M92 124h28v22H92zM132 124h28v22h-28zM172 124h28v22h-28zM212 124h28v22h-28zM252 124h28v22h-28zM292 124h18v22h-18z"/><path d="M92 158h28v22H92zM132 158h28v22h-28zM172 158h28v22h-28zM212 158h28v22h-28zM252 158h58v22h-58zM92 192h218v16H92z"/></g>
+  </g>
+</svg>

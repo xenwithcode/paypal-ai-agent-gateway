@@ -106,6 +106,7 @@ export default function WhatCellRenderer(params: CustomCellRendererProps) {
           // and the CSS below is what controls the visible size.
           width={96}
           height={96}
+          unoptimized
           onError={() => setFailed(true)}
           className="h-9 w-9 shrink-0 rounded-lg border border-slate-200 bg-white object-cover"
         />

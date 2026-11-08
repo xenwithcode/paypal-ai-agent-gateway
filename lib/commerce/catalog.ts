@@ -12,6 +12,11 @@
 // order has expired. The extension is required for the reason on
 // `allowImportingTsExtensions`: this module is loaded by tests.
 import { calendarDay } from "../policy.ts";
+import {
+  isLocalProduct,
+  localProductById,
+  searchLocalCatalog,
+} from "./localCatalog.ts";
 
 const BASE = "https://dummyjson.com";
 const REVALIDATE_SECONDS = 60;
@@ -61,6 +66,15 @@ export interface CatalogProduct {
    * picker that looks fine and shows nothing.
    */
   images: string[];
+  /**
+   * Bilingual search terms owned by the local demo catalogue.
+   *
+   * dummyjson has no such field; local records carry it so a Spanish request
+   * ("chaqueta para montar moto") still matches an English title, and so the
+   * ordinary `scoreCandidates` ranking can see the same words the local
+   * search saw. It is never rendered.
+   */
+  keywords?: string[];
 }
 
 interface RawProduct {
@@ -85,10 +99,10 @@ interface RawProduct {
 
 /** Marks the value as coming from a demo catalog, so the UI never implies otherwise. */
 export const CATALOG_SOURCE = {
-  name: "dummyjson",
+  name: "local + dummyjson",
   url: "https://dummyjson.com",
   kind: "demo-catalog" as const,
-  note: "Fictional product catalog. Prices are real API responses for demo data.",
+  note: "Fictional products from the local demo catalog and dummyjson; prices are demo data.",
 };
 
 function normalise(raw: RawProduct | null | undefined): CatalogProduct | null {
@@ -151,6 +165,9 @@ export async function searchCatalog(query: string): Promise<CatalogProduct[]> {
 
 export async function getProduct(id: number): Promise<CatalogProduct | null> {
   if (!Number.isFinite(id) || id <= 0) return null;
+  // The local half is resolved without a network call; its ids live above
+  // dummyjson's range, so a clicked candidate can always be read back.
+  if (isLocalProduct(id)) return localProductById(id) ?? null;
   return normalise(await getJson<RawProduct>(`${BASE}/products/${id}`));
 }
 
@@ -169,12 +186,17 @@ export async function findWithinBudget(
 ): Promise<CatalogProduct[]> {
   if (!product || !product.category || !Number.isFinite(ceiling)) return [];
 
+  const local = searchLocalCatalog(product.category).filter(
+    (candidate) =>
+      candidate.id !== product.id &&
+      candidate.price <= ceiling &&
+      candidate.stock > 0
+  );
+
   const payload = await getJson<{ products?: RawProduct[] }>(
     `${BASE}/products/category/${encodeURIComponent(product.category)}?limit=20`
   );
-  if (!payload?.products) return [];
-
-  return payload.products
+  const remote = (payload?.products ?? [])
     .map(normalise)
     .filter(
       (p): p is CatalogProduct =>
@@ -183,9 +205,9 @@ export async function findWithinBudget(
         p.price <= ceiling &&
         // A sold-out product is not an option, however cheap.
         p.stock > 0
-    )
-    .sort((a, b) => b.price - a.price)
-    .slice(0, 3);
+    );
+
+  return [...remote, ...local].sort((a, b) => b.price - a.price).slice(0, 3);
 }
 
 /**
@@ -204,8 +226,18 @@ const STOP_WORDS = new Set([
 ]);
 
 async function searchResilient(query: string): Promise<{ found: CatalogProduct[]; via: string }> {
+  // The two catalogues answer together. dummyjson keeps the breadth; the
+  // local records fill the categories it has never had. The relevance judge
+  // still decides what is actually the thing that was asked for — adding a
+  // jacket does not make a motorcycle a jacket.
   const direct = await searchCatalog(query);
-  if (direct.length > 0) return { found: direct, via: "full query" };
+  const local = searchLocalCatalog(query);
+  if (direct.length > 0 || local.length > 0) {
+    const via = [direct.length > 0 ? "full query" : null, local.length > 0 ? "local catalog" : null]
+      .filter(Boolean)
+      .join(" + ");
+    return { found: [...direct, ...local], via };
+  }
 
   const words = query
     .toLowerCase()
@@ -216,7 +248,16 @@ async function searchResilient(query: string): Promise<{ found: CatalogProduct[]
 
   for (const word of words) {
     const result = await searchCatalog(word);
-    if (result.length > 0) return { found: result, via: `term "${word}"` };
+    const localResult = searchLocalCatalog(word);
+    if (result.length > 0 || localResult.length > 0) {
+      const via = [
+        `term "${word}"`,
+        localResult.length > 0 ? "local catalog" : null,
+      ]
+        .filter(Boolean)
+        .join(" + ");
+      return { found: [...result, ...localResult], via };
+    }
   }
 
   return { found: [], via: "no match" };
@@ -249,7 +290,9 @@ function scoreCandidates(wanted: string, found: CatalogProduct[]): ScoredCandida
   const words = intentTerms(wanted);
   return found
     .map((product) => {
-      const haystack = `${product.title} ${product.brand ?? ""} ${product.category}`.toLowerCase();
+      const haystack = `${product.title} ${product.brand ?? ""} ${product.category} ${
+        (product.keywords ?? []).join(" ")
+      }`.toLowerCase();
       const hits = words.filter((w) => haystack.includes(w)).length;
       return { product, hits, terms: words.length };
     })

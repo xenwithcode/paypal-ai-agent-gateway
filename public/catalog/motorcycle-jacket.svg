@@ -1,0 +1,14 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 400 300" role="img" aria-label="motorcycle-jacket">
+  <defs>
+    <linearGradient id="bg-motorcycle-jacket" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#f8fafc"/>
+      <stop offset="1" stop-color="#e0f2fe"/>
+    </linearGradient>
+  </defs>
+  <rect width="400" height="300" fill="url(#bg-motorcycle-jacket)"/>
+  <circle cx="342" cy="52" r="52" fill="#0042a1" opacity=".07"/>
+  <circle cx="48" cy="252" r="68" fill="#16b364" opacity=".06"/>
+  <g fill="none" stroke="#0f172a" stroke-width="8" stroke-linecap="round" stroke-linejoin="round">
+    <path d="M154 66 112 92 88 150l38 15 10-42v120h128V123l10 42 38-15-24-58-42-26-20 29-24 10-24-10z" fill="#dbeafe"/><path d="M200 108v135M162 150h18m40 0h18"/><path d="M170 110h60" stroke="#0042a1"/>
+  </g>
+</svg>

@@ -23,6 +23,7 @@ import {
   DEMO_SCENARIO_REASON,
   demoScenarioPolicy,
 } from "@/lib/demo/scenario";
+import { isLocalProduct } from "@/lib/commerce/localCatalog";
 
 /** Hard cap on the intent text. Mirrors the `maxLength` on the input field. */
 const MAX_PROMPT_LENGTH = 500;
@@ -123,6 +124,7 @@ export async function POST(req: NextRequest) {
           conditionDetail: `${evaluation.detail} · recorded demo scenario on ${CATALOG_SOURCE.name} (${CATALOG_SOURCE.kind})`,
           allowEndpoint: "",
           candidates: candidateRecords(candidates),
+          offeredCount: candidates.length,
           matchedId: DEMO_SCENARIO_MATCHED_ID,
           chosenId: null,
         },
@@ -216,7 +218,22 @@ export async function POST(req: NextRequest) {
     // are one decision in two halves, and both bill the same cheap model.
     const verdict = candidates.length > 0 ? await rankCandidates(policy.what, candidates) : null;
     const relevance = applyRelevance(candidates, verdict, policy.what);
-    const product = relevance.kept[0] ?? null;
+
+    // The local catalogue is the safety net for the categories dummyjson has
+    // never had. If the relevance judge keeps nothing but the search did find
+    // a local record for the same words, that curated record wins: it is a
+    // real jacket or a real pair of boots, not a motorcycle standing in for
+    // one. The judge is still the one refusing the motorcycles above.
+    const localHits = candidates.filter((candidate) => isLocalProduct(candidate.id));
+    const kept =
+      relevance.kept.length > 0
+        ? relevance.kept
+        : localHits.map((candidate) => ({
+            ...candidate,
+            reason: candidate.reason ?? "Local demo catalog match.",
+          }));
+    const searchNote = kept.length > 0 ? null : relevance.note;
+    const product = kept[0] ?? null;
     const evaluation = evaluateCondition(policy.condition, product);
     // Two different silences: the catalog returned nothing at all, or it
     // returned keyword hits the relevance judge refused. Both must say so
@@ -268,6 +285,7 @@ export async function POST(req: NextRequest) {
         // "the agent proposed X, you took Y, from Z options" a record rather
         // than a console line that scrolls away.
         candidates: candidateRecords(candidates),
+        offeredCount: kept.length,
         matchedId: product?.id ?? null,
         chosenId: null,
       },
@@ -277,12 +295,12 @@ export async function POST(req: NextRequest) {
       // ranking to itself — the operator saw the product it preferred and
       // never the ones it passed over, so the choice was invisible exactly
       // where a human is meant to make it.
-      candidates: relevance.kept,
+      candidates: kept,
       /**
        * The honest sentence when nothing matched — spoken and logged, so the
        * absence of a strip is explained rather than merely visible.
        */
-      searchNote: relevance.note ?? noCatalogMatch,
+      searchNote: searchNote ?? noCatalogMatch,
       /** Which candidate the agent would have taken, so the strip can mark it. */
       matchedId: product?.id ?? null,
       openShellConfig: {

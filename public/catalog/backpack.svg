@@ -1,0 +1,14 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 400 300" role="img" aria-label="backpack">
+  <defs>
+    <linearGradient id="bg-backpack" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#f8fafc"/>
+      <stop offset="1" stop-color="#dbeafe"/>
+    </linearGradient>
+  </defs>
+  <rect width="400" height="300" fill="url(#bg-backpack)"/>
+  <circle cx="342" cy="52" r="52" fill="#0042a1" opacity=".07"/>
+  <circle cx="48" cy="252" r="68" fill="#16b364" opacity=".06"/>
+  <g fill="none" stroke="#0f172a" stroke-width="8" stroke-linecap="round" stroke-linejoin="round">
+    <rect x="124" y="82" width="152" height="168" rx="30" fill="#dbeafe"/><path d="M156 82V66a44 44 0 0 1 88 0v16"/><path d="M124 144h152M162 168h76v48h-76z" stroke="#0042a1"/><path d="M156 198h-20v40m108-40h20v40"/>
+  </g>
+</svg>

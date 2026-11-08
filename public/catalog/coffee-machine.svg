@@ -1,0 +1,14 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 400 300" role="img" aria-label="coffee-machine">
+  <defs>
+    <linearGradient id="bg-coffee-machine" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#f8fafc"/>
+      <stop offset="1" stop-color="#ffedd5"/>
+    </linearGradient>
+  </defs>
+  <rect width="400" height="300" fill="url(#bg-coffee-machine)"/>
+  <circle cx="342" cy="52" r="52" fill="#0042a1" opacity=".07"/>
+  <circle cx="48" cy="252" r="68" fill="#16b364" opacity=".06"/>
+  <g fill="none" stroke="#0f172a" stroke-width="8" stroke-linecap="round" stroke-linejoin="round">
+    <rect x="112" y="70" width="176" height="104" rx="18" fill="#dbeafe"/><path d="M112 104h176M160 70V54h80v16"/><rect x="148" y="132" width="104" height="24" rx="8"/><path d="M156 174v46h88v-46M156 196h88"/><path d="M178 96h44" stroke="#0042a1"/><path d="M168 54c-8-12 8-18 0-30M200 54c-8-12 8-18 0-30M232 54c-8-12 8-18 0-30" stroke="#0042a1" stroke-width="6"/>
+  </g>
+</svg>

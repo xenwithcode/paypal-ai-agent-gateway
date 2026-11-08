@@ -220,6 +220,8 @@ export default function OrderPanel({
    * `candidates` list never held.
    */
   const candidates = row.candidates ?? [];
+  /** What the strip actually offered, not the raw keyword shortlist. */
+  const offered = row.offeredCount ?? candidates.length;
   const proposed = candidates.find((c) => c.id === row.matchedId) ?? null;
   const took = candidates.find((c) => c.id === row.chosenId) ?? null;
   const overridden =
@@ -341,6 +343,7 @@ export default function OrderPanel({
                     alt={row.what}
                     width={224}
                     height={224}
+                    unoptimized
                     onError={() => setImageFailed(true)}
                     className="h-28 w-28 rounded-xl border border-slate-200 bg-white object-cover"
                   />
@@ -518,9 +521,11 @@ export default function OrderPanel({
                     ? `${candidates.length} keyword hit${
                         candidates.length === 1 ? "" : "s"
                       } — none was what you asked for`
-                    : `${candidates.length} candidate${
-                        candidates.length === 1 ? "" : "s"
-                      } found for this order`}
+                    : offered < candidates.length
+                      ? `${offered} candidate${offered === 1 ? "" : "s"} offered from ${
+                          candidates.length
+                        } keyword hit${candidates.length === 1 ? "" : "s"}`
+                      : `${offered} candidate${offered === 1 ? "" : "s"} found for this order`}
                 </p>
                 {!proposed && !took ? (
                   <p className="mt-1 leading-relaxed text-slate-500">

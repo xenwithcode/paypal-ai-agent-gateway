@@ -1,0 +1,14 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 400 300" role="img" aria-label="desk-lamp">
+  <defs>
+    <linearGradient id="bg-desk-lamp" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#f8fafc"/>
+      <stop offset="1" stop-color="#fef9c3"/>
+    </linearGradient>
+  </defs>
+  <rect width="400" height="300" fill="url(#bg-desk-lamp)"/>
+  <circle cx="342" cy="52" r="52" fill="#0042a1" opacity=".07"/>
+  <circle cx="48" cy="252" r="68" fill="#16b364" opacity=".06"/>
+  <g fill="none" stroke="#0f172a" stroke-width="8" stroke-linecap="round" stroke-linejoin="round">
+    <ellipse cx="200" cy="246" rx="68" ry="14" fill="#dbeafe"/><path d="M200 246V122M200 122l-58-34 58-34 58 34z" fill="#e0f2fe"/><path d="M200 122v-64" stroke="#0042a1"/><path d="M150 84h100" stroke="#0042a1"/><path d="M168 246h64"/>
+  </g>
+</svg>

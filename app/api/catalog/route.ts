@@ -6,6 +6,7 @@
 // traced to a named, documented origin rather than appearing from nowhere.
 import { NextResponse } from "next/server";
 import { searchCatalog, CATALOG_SOURCE } from "@/lib/commerce/catalog";
+import { searchLocalCatalog } from "@/lib/commerce/localCatalog";
 
 export const dynamic = "force-dynamic";
 
@@ -20,9 +21,10 @@ export async function GET(request: Request) {
   }
 
   const products = await searchCatalog(query);
+  const local = searchLocalCatalog(query);
 
   return NextResponse.json(
-    { products, source: CATALOG_SOURCE },
+    { products: [...products, ...local], source: CATALOG_SOURCE },
     {
       headers: {
         "Cache-Control": "public, max-age=30, s-maxage=60, stale-while-revalidate=300",

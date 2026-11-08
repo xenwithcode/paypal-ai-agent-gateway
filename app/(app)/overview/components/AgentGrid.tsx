@@ -79,6 +79,26 @@ import { useDemoSurface } from "@/lib/demo/useDemoSurface";
  * row written by a previous version — is dropped instead of handed to a grid
  * that would render it without complaint.
  */
+/**
+ * The old automated demo persisted its chosen order on every replay.
+ *
+ * Before the guided film existed, a self-running kiosk picked the agent's
+ * favourite sneaker and wrote the row to the durable ledger each time it ran.
+ * A browser that watched it a dozen times carries a dozen identical
+ * "Sports Sneakers Off White & Red" rows, all awaiting approval and none of
+ * them a real decision. The current film marks its rows as samples and filters
+ * them out of persistence, so this only has to recognise the legacy shape:
+ * non-sample, still awaiting approval, and chosen from catalog product 91.
+ */
+function isLegacyDemoOrder(row: PolicyRow): boolean {
+  return (
+    row.sample !== true &&
+    row.status === STATUS.pending &&
+    row.chosenId === 91 &&
+    row.what === "Sports Sneakers Off White & Red"
+  );
+}
+
 function isPolicyRow(value: unknown): value is PolicyRow {
   if (!value || typeof value !== "object" || Array.isArray(value)) return false;
   const row = value as Record<string, unknown>;
@@ -499,6 +519,18 @@ export default function AgentGrid({
       }
       if (cancelled) return;
 
+      // Remove the old kiosk's duplicates before they become the table. The
+      // cleanup is persisted, so the next load (and the durable copy) agrees.
+      let cleanedLegacy = 0;
+      if (rows) {
+        const cleaned = rows.filter((row) => !isLegacyDemoOrder(row));
+        if (cleaned.length !== rows.length) {
+          cleanedLegacy = rows.length - cleaned.length;
+          rows = cleaned;
+          writePolicyRows(rows);
+        }
+      }
+
       if (!rows) {
         // Nothing stored and nothing to pull, so what is on screen is the
         // seed — and storage has to say the same. The write effect is
@@ -544,11 +576,15 @@ export default function AgentGrid({
       // product claims to keep.
       setLogs([
         `[${new Date().toLocaleTimeString()}] ${
-          restored
-            ? `🗂️ Restored ${restored} order${restored === 1 ? "" : "s"} from ${
-                fromStore ? "the store" : "this browser"
-              }.`
-            : "🗂️ Order table ready — rows are kept in this browser."
+          cleanedLegacy > 0
+            ? `🧹 Removed ${cleanedLegacy} duplicate demo order${
+                cleanedLegacy === 1 ? "" : "s"
+              } left by the old kiosk — ${restored} order${restored === 1 ? "" : "s"} kept.`
+            : restored
+              ? `🗂️ Restored ${restored} order${restored === 1 ? "" : "s"} from ${
+                  fromStore ? "the store" : "this browser"
+                }.`
+              : "🗂️ Order table ready — rows are kept in this browser."
         }`,
         ...readEvents(),
       ]);

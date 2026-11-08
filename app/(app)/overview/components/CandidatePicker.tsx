@@ -71,6 +71,7 @@ function Card({
             src={src}
             alt={product.title}
             fill
+            unoptimized
             sizes="(min-width: 1024px) 30vw, (min-width: 640px) 45vw, 90vw"
             onError={() => setFailed(true)}
             className="object-contain p-3"

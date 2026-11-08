@@ -77,6 +77,8 @@ The sidebar's **Watch the demo** is not a slideshow and not a recording of one. 
 
 Why it sounds like the product and not like a screen reader: the narration is **static audio in `public/demo/audio`**, recorded once with Gemini TTS in **Aoede** (`GEMINI_LIVE_VOICE`), the same prebuilt voice `gemini-3.8-live` speaks with. At runtime the browser reads a file — no model call, no API key, no latency, no accent lottery on a judge's laptop. If audio is unavailable or muted, the captions and the scripted timing still carry the film.
 
+The demo catalog is deliberately two-tiered. `dummyjson` supplies its breadth; **`lib/commerce/localCatalog.ts`** adds a curated local set for the categories dummyjson has never had — motorcycle jackets, Chelsea boots, headphones, coffee machines, backpacks, a smartwatch, and more — with their own illustrations in `public/catalog`. A judge who types "chaqueta para montar moto" gets a real jacket, not a motorcycle offered as one; a request the catalog cannot answer still says so.
+
 The honesty rules are structural, not narrated:
 
 - **It never moves money.** The film stops at PayPal's button; the crowdfunding position is a **sample** row drawn in memory and chipped as one. `X`/reset removes every row the walkthrough created, and the demo rows are filtered out of the durable ledger instead of being persisted.
@@ -425,6 +427,7 @@ paypal-ai-agent/
 │   ├── rateLimit.ts                # sliding window in front of the route that spends money
 │   ├── contingency.ts              # refunds + enforcement check
 │   ├── commerce/catalog.ts         # demo-catalog search + condition evaluation
+│   ├── commerce/localCatalog.ts    # curated local products dummyjson does not have
 │   ├── fx/{rates,providers}.ts     # conversion math + live feeds
 │   └── shields/                    # InflationShield, PagoMovilEngine
 ├── data/                           # runtime only, gitignored — the durable copy on disk

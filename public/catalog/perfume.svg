@@ -1,0 +1,14 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 400 300" role="img" aria-label="perfume">
+  <defs>
+    <linearGradient id="bg-perfume" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#f8fafc"/>
+      <stop offset="1" stop-color="#fce7f3"/>
+    </linearGradient>
+  </defs>
+  <rect width="400" height="300" fill="url(#bg-perfume)"/>
+  <circle cx="342" cy="52" r="52" fill="#0042a1" opacity=".07"/>
+  <circle cx="48" cy="252" r="68" fill="#16b364" opacity=".06"/>
+  <g fill="none" stroke="#0f172a" stroke-width="8" stroke-linecap="round" stroke-linejoin="round">
+    <path d="M156 104h88v124a24 24 0 0 1-24 24h-40a24 24 0 0 1-24-24z" fill="#dbeafe"/><path d="M176 104V72h48v32"/><path d="M164 72h72" stroke="#0042a1"/><path d="M200 148c-18 18-18 36 0 52 18-16 18-34 0-52z" fill="#e0f2fe" stroke="#0042a1"/><path d="M268 76l28-18M276 92l30 2" stroke="#0042a1" stroke-width="6"/>
+  </g>
+</svg>

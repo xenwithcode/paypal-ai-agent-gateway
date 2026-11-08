@@ -1,0 +1,14 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 400 300" role="img" aria-label="fitness-smartwatch">
+  <defs>
+    <linearGradient id="bg-fitness-smartwatch" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#f8fafc"/>
+      <stop offset="1" stop-color="#dcfce7"/>
+    </linearGradient>
+  </defs>
+  <rect width="400" height="300" fill="url(#bg-fitness-smartwatch)"/>
+  <circle cx="342" cy="52" r="52" fill="#0042a1" opacity=".07"/>
+  <circle cx="48" cy="252" r="68" fill="#16b364" opacity=".06"/>
+  <g fill="none" stroke="#0f172a" stroke-width="8" stroke-linecap="round" stroke-linejoin="round">
+    <rect x="146" y="84" width="108" height="132" rx="28" fill="#dbeafe"/><path d="M172 84V52h56v32M172 216v32h56v-32"/><path d="M176 124h48M176 150h30M176 176h40" stroke="#0042a1"/><circle cx="200" cy="150" r="42" stroke="#0042a1" stroke-width="6" opacity=".35"/>
+  </g>
+</svg>

@@ -75,6 +75,14 @@ export interface PolicyRow {
    */
   project?: string;
   candidates?: CandidateRecord[];
+  /**
+   * How many of the keyword hits the relevance judge actually offered.
+   *
+   * `candidates` keeps the whole shortlist for the audit — including the
+   * motorcycle that was refused for a jacket. The card must not call that
+   * shortlist "candidates found"; this is the count the strip showed.
+   */
+  offeredCount?: number;
   /** Which candidate the agent would have taken, so a later reader can compare. */
   matchedId?: number | null;
   /**
