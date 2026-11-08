@@ -39,7 +39,7 @@ Approve **once**: *≤ 60 USD, this week, these merchants.* The agent then produ
 
 | Capability | What you see |
 | --- | --- |
-| **Intent → order** | Type *"white sneakers, size 10, by Friday, only if the price drops to 60 USD"* and get a structured order: what, ceiling, **condition**, valid until, mode. **Name no amount and it asks instead** — no catalog search, no row — because an order without a ceiling is a blank cheque. |
+| **Intent → order** | Type *"white sneakers under 120 dollars, by Friday, only if the price drops to 110 dollars or less"* and get a structured order: what, ceiling, **condition**, valid until, mode. **Name no amount and it asks instead** — no catalog search, no row — because an order without a ceiling is a blank cheque. |
 | **Talk to it, by voice** | **🎙️ Talk to paypal-ai-agent**, above *Draft order*. You speak; Gemini Live decides what to ask for and returns it as a tool call; the gateway runs it through **the very handler the button uses**, the console prints every line, and the agent answers **out loud**. Its reply is written from the lines those handlers actually logged — so a refused capture is spoken as a refusal, and a balance question reads PayPal live instead of repeating a number it remembers. The text box is still there: voice is an addition to the keyboard, never a replacement for it. |
 | **Human-in-the-loop approval** | Every rule lands as `Awaiting approval`. The card opens itself after a draft — nothing is live until you authorize. |
 | **Approval card** | Click the product and the order opens as a card: real image, stock, rating, returns and SKU, then **your envelope** — ceiling, condition verdict, the one host it may reach. The catalog is re-read when it opens, so the price being judged is the price now. |
@@ -226,16 +226,17 @@ port is taken, in which case it picks the next free one and says so.
 
 1. **`/overview` — search with no amount.** The strip at the top *is* the
    thesis (the agent prepares, you approve, our server pays). Now type only
-   what you want — `white sneakers, size 10` — and press **Draft order**.
+   what you want — `white sneakers` — and press **Draft order**.
    **Nothing is drafted.** The gateway answers with a question instead —
    *"Name the most this order may ever cost — an order without a ceiling is
    not an order this gateway drafts"* — **before it reads a single product**:
    no catalog search, no row, no card. An agent that could spend a number
    nobody said would be a blank cheque with a chat window on it. Ask in
    Spanish and it asks back in Spanish.
-2. **The same search, now with an amount.** `white sneakers, size 10, under
-   60 USD` → this time it searches, a row appears with its ceiling and
-   condition, and the approval card opens itself. Two searches, one
+2. **The same search, now with an amount.** `white sneakers under 120 dollars,
+   by Friday, only if the price drops to 110 dollars or less` → this time it
+   searches, two candidates appear, and choosing one drafts the order with its
+   ceiling and condition. Two searches, one
    difference — that difference is the whole product. (The microphone above
    the box says the same thing out loud.)
 3. **Click any amount in *Money in flight*** — the chart drills into the
@@ -266,16 +267,16 @@ port is taken, in which case it picks the next free one and says so.
 ## Walkthrough
 
 1. **Draft an order — and watch it refuse without an amount first.** In the
-   intent bar, type only `white sneakers, size 10` and press **Draft order**:
+   intent bar, type only `white sneakers` and press **Draft order**:
    no row appears. The console prints `💬 [AGENT] Name the most this order may
    ever cost — an order without a ceiling is not an order this gateway
    drafts.` and the same sentence shows under the box — the gateway asked
    **before** reading a single product: no search, no strip, no card. Now add
    the amount:
-   `white sneakers, size 10, by Friday, only if the price drops to 60 USD or less`
-   → press **Draft order**. A row appears: *What* `white sneakers, size 10…`,
-   *Ceiling* `60 USD`, *Condition* `price <= 60`, *Mode* `Autonomous`, status
-   `Awaiting approval`.
+   `white sneakers under 120 dollars, by Friday, only if the price drops to 110 dollars or less`
+   → press **Draft order**, then choose a candidate. A row appears: *What*
+   the sneaker you chose, *Ceiling* `120 USD`, *Condition* `price <= 110`,
+   status `Awaiting approval`.
 
    With a Gemini key configured the natural-language deadline (`by Friday`) is
    parsed into *Valid until*. The no-key fallback does not resolve dates, so

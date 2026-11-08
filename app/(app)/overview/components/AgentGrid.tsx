@@ -200,7 +200,7 @@ const SEED_ROWS: PolicyRow[] = [
  * cannot be run is decoration.
  */
 const EXAMPLE_INTENT =
-  "white sneakers, size 10, by Friday, only if the price drops to 60 USD or less";
+  "white sneakers under 120 dollars, by Friday, only if the price drops to 110 dollars or less";
 
 export default function AgentGrid({
   balance,
@@ -240,6 +240,14 @@ export default function AgentGrid({
    * refusal the button does not appear to have caused.
    */
   const [intentError, setIntentError] = useState<string | null>(null);
+
+  /**
+   * The honest sentence when the catalog has no match — shown, not only
+   * logged. A judge who asks for a jacket and sees an empty strip has to know
+   * that the catalog is fictional and limited, and that the gateway refused to
+   * offer a motorcycle instead of inventing a product.
+   */
+  const [searchNote, setSearchNote] = useState<string | null>(null);
 
   const [rowData, setRowData] = useState<PolicyRow[]>(SEED_ROWS);
 
@@ -1401,6 +1409,7 @@ export default function AgentGrid({
     if (!intent) return { ok: false as const, candidateCount: 0 };
     setLoading(true);
     setIntentError(null);
+    setSearchNote(null);
     addLog(`📨 Drafting an order from: "${intent}"`);
     try {
       const res = await fetch("/api/agent", {
@@ -1435,7 +1444,10 @@ export default function AgentGrid({
         // arrives with an explanation instead of as silence. A spoken reply
         // then narrates it like any other line, because it is one.
         if (typeof data.searchNote === "string" && data.searchNote) {
+          setSearchNote(data.searchNote);
           addLog(`🔎 [SEARCH] ${data.searchNote}`);
+        } else {
+          setSearchNote(null);
         }
 
         // The strip answers "which of these?" before the card answers "do you
@@ -1667,6 +1679,7 @@ export default function AgentGrid({
       setPendingRow(null);
       setMatchedId(null);
       setIntentError(null);
+      setSearchNote(null);
       setPrompt("");
       if (demoCreatedIds.current.size > 0) {
         const ids = new Set(demoCreatedIds.current);
@@ -1679,6 +1692,7 @@ export default function AgentGrid({
     fillIntent: (arg) => {
       setPrompt(String(arg ?? ""));
       setIntentError(null);
+      setSearchNote(null);
     },
     draft: async (arg) => {
       const prompt = String(arg ?? "");
@@ -1884,6 +1898,7 @@ export default function AgentGrid({
               // request retires it, rather than leaving a stale refusal
               // next to text the operator has already changed.
               if (intentError) setIntentError(null);
+              if (searchNote) setSearchNote(null);
             }}
             placeholder={EXAMPLE_INTENT}
             maxLength={500}
@@ -1902,6 +1917,21 @@ export default function AgentGrid({
             className="rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-xs font-medium leading-relaxed text-red-700"
           >
             {intentError}
+          </p>
+        )}
+
+        {searchNote && !intentError && (
+          <p
+            role="status"
+            aria-live="polite"
+            className="rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-xs leading-relaxed text-amber-800"
+          >
+            <span className="font-semibold">No honest match — and no substitute.</span>{" "}
+            {searchNote}{" "}
+            <span className="text-amber-700">
+              The demo catalog is fictional and limited; the gateway will not offer
+              a different kind of product just to fill the strip.
+            </span>
           </p>
         )}
 

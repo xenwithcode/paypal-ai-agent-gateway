@@ -514,35 +514,53 @@ export default function OrderPanel({
               <div className="mt-3 rounded-lg border border-slate-200 bg-white px-3 py-2 text-xs">
                 <p className="flex items-center gap-1.5 font-semibold text-slate-700">
                   <Bot className="h-3.5 w-3.5" strokeWidth={1.75} aria-hidden="true" />
-                  {candidates.length} candidate{candidates.length === 1 ? "" : "s"} found for this
-                  order
+                  {!proposed && !took
+                    ? `${candidates.length} keyword hit${
+                        candidates.length === 1 ? "" : "s"
+                      } — none was what you asked for`
+                    : `${candidates.length} candidate${
+                        candidates.length === 1 ? "" : "s"
+                      } found for this order`}
                 </p>
-                <p className="mt-1 leading-relaxed text-slate-500">
-                  {proposed ? (
-                    <>
-                      The agent proposed{" "}
-                      <span className="font-medium text-slate-700">&ldquo;{proposed.title}&rdquo;</span>
-                    </>
-                  ) : (
-                    "No pick was recorded for the agent"
-                  )}
-                  {" · "}
-                  {took ? (
-                    <>
-                      you chose{" "}
-                      <span className="font-medium text-slate-700">&ldquo;{took.title}&rdquo;</span>
-                    </>
-                  ) : (
-                    <>
-                      the order points at{" "}
-                      <span className="font-medium text-slate-700">&ldquo;{row.what}&rdquo;</span>
-                    </>
-                  )}
-                </p>
-                {overridden && (
-                  <p className="mt-1 font-semibold text-amber-700">
-                    You overrode the agent&rsquo;s pick — this one was your call.
+                {!proposed && !took ? (
+                  <p className="mt-1 leading-relaxed text-slate-500">
+                    The relevance judge refused to offer a substitute. A motorcycle is not a
+                    jacket; a different product is not what you asked for.
                   </p>
+                ) : (
+                  <>
+                    <p className="mt-1 leading-relaxed text-slate-500">
+                      {proposed ? (
+                        <>
+                          The agent proposed{" "}
+                          <span className="font-medium text-slate-700">
+                            &ldquo;{proposed.title}&rdquo;
+                          </span>
+                        </>
+                      ) : (
+                        "No pick was recorded for the agent"
+                      )}
+                      {" · "}
+                      {took ? (
+                        <>
+                          you chose{" "}
+                          <span className="font-medium text-slate-700">
+                            &ldquo;{took.title}&rdquo;
+                          </span>
+                        </>
+                      ) : (
+                        <>
+                          the order points at{" "}
+                          <span className="font-medium text-slate-700">&ldquo;{row.what}&rdquo;</span>
+                        </>
+                      )}
+                    </p>
+                    {overridden && (
+                      <p className="mt-1 font-semibold text-amber-700">
+                        You overrode the agent&rsquo;s pick — this one was your call.
+                      </p>
+                    )}
+                  </>
                 )}
               </div>
             )}

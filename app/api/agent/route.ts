@@ -218,6 +218,13 @@ export async function POST(req: NextRequest) {
     const relevance = applyRelevance(candidates, verdict, policy.what);
     const product = relevance.kept[0] ?? null;
     const evaluation = evaluateCondition(policy.condition, product);
+    // Two different silences: the catalog returned nothing at all, or it
+    // returned keyword hits the relevance judge refused. Both must say so
+    // where the judge is looking, not only in the console.
+    const noCatalogMatch =
+      candidates.length === 0
+        ? `Nothing in this catalog matches "${policy.what}" — no candidate was offered.`
+        : null;
 
     // Computed once: the network scope shown to the approver and the one sent
     // to the sandbox config must never be two different strings.
@@ -275,7 +282,7 @@ export async function POST(req: NextRequest) {
        * The honest sentence when nothing matched — spoken and logged, so the
        * absence of a strip is explained rather than merely visible.
        */
-      searchNote: relevance.note,
+      searchNote: relevance.note ?? noCatalogMatch,
       /** Which candidate the agent would have taken, so the strip can mark it. */
       matchedId: product?.id ?? null,
       openShellConfig: {
