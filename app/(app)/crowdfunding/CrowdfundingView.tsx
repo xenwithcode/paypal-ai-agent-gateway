@@ -42,6 +42,10 @@ import {
 } from "@/lib/history";
 import { ensureHydrated } from "@/lib/store";
 import { recordEvent } from "@/lib/events";
+// The guided demo's contract — the same state setters the pin and the amount
+// pills call, plus one in-memory sample position so the walkthrough can end on
+// "Your investments" without pretending PayPal was pressed.
+import { useDemoSurface } from "@/lib/demo/useDemoSurface";
 
 /**
  * The showcase: pick a project, see the price in bolívares, and fund it with
@@ -146,6 +150,17 @@ export default function CrowdfundingView({
   const [lastPledgeRow, setLastPledgeRow] = useState<{ id: number; captured: boolean } | null>(
     null
   );
+
+  /**
+   * What the guided demo changed, so the page can be handed back untouched.
+   *
+   * The walkthrough adds one *sample* position — marked as a sample, drawn in
+   * memory, never written to the store — because the step after "choose the
+   * project" is "see it in Your investments". `undefined` means the demo has
+   * not replaced the list; `null` is a real baseline (the store was still
+   * loading), so the two cannot be confused.
+   */
+  const demoBaseline = useRef<ManifestRow[] | null | undefined>(undefined);
 
   /**
    * Back out of a selection that has not been paid.
@@ -547,6 +562,76 @@ export default function CrowdfundingView({
     [selected, envelope, value, refreshInvestments, primeSpeaker, speakLines]
   );
 
+  /**
+   * The guided demo's verbs on this surface.
+   *
+   * Selection and amount are the same setters the map pin and the amount
+   * pills call. The final action adds an illustrative *sample* position to the
+   * portfolio so the walkthrough can show "Your investments" without asking
+   * PayPal for money it is not allowed to move. It lives in React state only,
+   * carries the sample chip every other seeded row carries, and is removed
+   * when the demo resets.
+   */
+  useDemoSurface("crowdfunding", {
+    reset: () => {
+      if (demoBaseline.current !== undefined) {
+        setInvestments(demoBaseline.current);
+        demoBaseline.current = undefined;
+      }
+      resetSelection();
+    },
+    selectProject: (arg) => {
+      const index = Math.max(0, Math.trunc(Number(arg ?? 0)));
+      const project = projects[index] ?? projects[0];
+      if (!project) return;
+      setSelected(project);
+      setAmount(String(MIN_INVESTMENT_USD));
+      setPledge(null);
+      setPaypalNote(null);
+      setLastPledgeRow(null);
+      lastFailure.current = null;
+      lastOrder.current = null;
+    },
+    setAmount: (arg) => {
+      const amount = Number(arg);
+      if (Number.isFinite(amount)) setAmount(String(amount));
+    },
+    addDemoPosition: () => {
+      if (!selected) return;
+      const amount = Number.isFinite(value) && value > 0 ? value : MIN_INVESTMENT_USD;
+      if (demoBaseline.current === undefined) demoBaseline.current = investments;
+
+      const row: ManifestRow = {
+        id: Date.now(),
+        what: `Stake in ${selected.name}`,
+        merchant: selected.city,
+        limit: amount,
+        currency: "USD",
+        condition: "",
+        allowEndpoint: "",
+        payee: selected.payeeEmail,
+        status: STATUS.reserved,
+        project: selected.id,
+        createdAt: new Date().toISOString(),
+        sample: true,
+      };
+
+      // Replaced, not merged with a real position: the showcase is a
+      // demonstration and every row in it says so. The sample row for this
+      // same project is replaced rather than duplicated — two stakes in one
+      // business on one screen would read as two decisions, and the demo made
+      // exactly one. A judge with real money in the store gets it back the
+      // moment the demo resets.
+      setInvestments([
+        ...sampleInvestments().filter((sample) => sample.project !== selected.id),
+        row,
+      ]);
+      recordEvent(
+        `🎬 [DEMO] Sample position added for "${selected.name}" — illustrative only; no money moved.`
+      );
+    },
+  });
+
   if (projects.length === 0) {
     return (
       <div className="space-y-6">
@@ -608,6 +693,7 @@ export default function CrowdfundingView({
       >
         <section
           aria-label="Projects on the map"
+          data-demo-target="crowdfunding-map"
           className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm"
         >
           <div className="mb-3 flex flex-wrap items-baseline justify-between gap-2">
@@ -629,6 +715,7 @@ export default function CrowdfundingView({
         ) : (
           <section
             aria-label={`Invest in ${selected.name}`}
+            data-demo-target="crowdfunding-panel"
             className="space-y-4 rounded-2xl border border-slate-200 bg-white p-5 shadow-sm"
           >
             {/* An investor buys with their eyes. The illustration ships with
@@ -692,7 +779,10 @@ export default function CrowdfundingView({
                 : "This campaign is over: nothing new can be pledged against it."}
             </p>
 
-            <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+            <div
+              data-demo-target="crowdfunding-amount"
+              className="grid grid-cols-1 gap-4 sm:grid-cols-2"
+            >
               <div>
                 <label htmlFor="cf-amount" className="mb-1 block text-[11px] font-medium text-slate-600">
                   Amount (USD)
@@ -870,7 +960,7 @@ export default function CrowdfundingView({
           on offer?" and this one answers "what do I pick?" — a heading is
           how a reader scanning from the top finds the second one. Below the
           map, because choosing happens after seeing. */}
-      <section aria-label="Choose a project">
+      <section aria-label="Choose a project" data-demo-target="crowdfunding-grid">
         <h2 className="text-base font-semibold text-slate-900">
           Choose the project you want to invest in
         </h2>
@@ -892,7 +982,9 @@ export default function CrowdfundingView({
       {/* What *I* hold — last on purpose: a visitor who has just arrived
           wants to see what is on offer (the map), then what they would pick
           (the grid), and only after that what they already hold. */}
-      <PortfolioCard investments={investments} projects={projects} />
+      <div data-demo-target="crowdfunding-portfolio">
+        <PortfolioCard investments={investments} projects={projects} />
+      </div>
 
     </div>
   );

@@ -18,8 +18,11 @@ import {
   ChartColumn,
   Target,
   FileText,
+  Play,
+  Sparkles,
 } from "lucide-react";
 import { useFxShield } from "../hooks/useFxShield";
+import { startDemo } from "@/lib/demo/bus";
 
 type NavItem = {
   href: string;
@@ -131,6 +134,37 @@ export default function Sidebar() {
         aria-label="Main"
         className="flex gap-1.5 overflow-x-auto px-3 py-3 md:flex-1 md:flex-col md:gap-0.5 md:overflow-x-visible md:overflow-y-auto md:px-3 md:py-4"
       >
+        {/* The entrance, before the product: a judge who has never seen this
+            app should not have to reverse engineer which of eleven links is
+            the tour. It is a button rather than a route because the kiosk
+            lives in this shell and has to survive the pages it navigates. */}
+        <button
+          type="button"
+          onClick={startDemo}
+          title="Watch the guided demo in under three minutes — narrated, and it never moves money"
+          className="group relative mb-2 flex shrink-0 items-center gap-2.5 overflow-hidden rounded-xl border border-slate-700/80 bg-slate-950 px-3 py-2.5 text-left text-white shadow-sm transition hover:border-blue-400/60 hover:shadow-md focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 focus-visible:ring-offset-2 md:mb-3 md:w-full"
+        >
+          <span
+            aria-hidden="true"
+            className="absolute inset-0 bg-gradient-to-r from-blue-600/35 via-cyan-500/15 to-emerald-500/20 opacity-80 transition group-hover:opacity-100"
+          />
+          <span
+            aria-hidden="true"
+            className="relative flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-white/10 ring-1 ring-white/20"
+          >
+            <Play className="h-3.5 w-3.5 translate-x-[1px] fill-current" strokeWidth={2} />
+          </span>
+          <span className="relative min-w-0">
+            <span className="flex items-center gap-1.5 text-xs font-bold leading-tight">
+              Watch the demo
+              <Sparkles className="h-3 w-3 text-cyan-300" strokeWidth={2} aria-hidden="true" />
+            </span>
+            <span className="block whitespace-nowrap text-[10px] leading-tight text-blue-200/90">
+              Under 3 min · narrated
+            </span>
+          </span>
+        </button>
+
         {/* The three group titles wear the brand blue rather than the old
             grey: they are this page's structure, and structure a reader never
             notices is structure they navigate without. The colour is the

@@ -4,6 +4,8 @@
 
 The road — machine-to-machine commerce — is already being paved by other people. This project builds the **traffic light** on it.
 
+> **Judge in a hurry?** Press **Watch the demo** in the sidebar. It is an under-three-minute guided tour, narrated by **Aoede** — the same voice the agent speaks with — driving the real Overview and Crowdfunding handlers. It never moves money.
+
 ---
 
 ## The gap this fills
@@ -66,6 +68,27 @@ Approve **once**: *≤ 60 USD, this week, these merchants.* The agent then produ
 
 ---
 
+## The guided demo — the whole product in under three minutes
+
+The sidebar's **Watch the demo** is not a slideshow and not a recording of one. It is a **driver**: each beat calls the page's own handler — the same `/api/agent` search, the same candidate commit, the same project selection the pins and pills call — while a pre-recorded narration explains what the judge is looking at. The film crosses exactly once:
+
+1. **Overview — the purchase order.** A sentence becomes an envelope (`$120` ceiling, `$110` condition, Friday). The search returns two candidates, the agent marks its favourite, and the human chooses the one that actually meets the condition. The order lands as **Awaiting approval**, is shown in **Purchase orders**, and the same amount appears in **Money in flight**. The chart stays live after the film: a segment opens its order when the judge explores it.
+2. **Crowdfunding — money that grows.** **Where the money goes** (the map) → **Choose the project you want to invest in** (Finca de Café El Samán, 20% a year) → the amount in dollars and today's BCV rate → the position in **Your investments**, marked **Reserved, not taken**.
+
+Why it sounds like the product and not like a screen reader: the narration is **static audio in `public/demo/audio`**, recorded once with Gemini TTS in **Aoede** (`GEMINI_LIVE_VOICE`), the same prebuilt voice `gemini-3.8-live` speaks with. At runtime the browser reads a file — no model call, no API key, no latency, no accent lottery on a judge's laptop. If audio is unavailable or muted, the captions and the scripted timing still carry the film.
+
+The honesty rules are structural, not narrated:
+
+- **It never moves money.** The film stops at PayPal's button; the crowdfunding position is a **sample** row drawn in memory and chipped as one. `X`/reset removes every row the walkthrough created, and the demo rows are filtered out of the durable ledger instead of being persisted.
+- **The search is recorded, not improvised.** The film's one draft request sends `demo: true` to the same `/api/agent` route; the route builds the same envelope, the same candidate strip and the same condition verdict from `lib/demo/scenario.ts` and the two catalog records copied into `public/demo/products`. A judge never waits on a model that is having a bad afternoon, and the typed/spoken paths still call Gemini live.
+- **Every action is the page's own.** `lib/demo/bus.ts` is the whole contract; there is no demo-only path into anything that matters.
+- **The audio is a build artifact, not a dependency.** `scripts/generate-demo-narration.mjs` records it with the project's ADC credentials; `ONLY=<step-id>` re-records one beat. The files in the repo are what a judge hears, even offline.
+- **The tests pin it.** `tests/demo-script.test.ts` checks every step's route, action, audio file and money-moving verb; `tests/demo-bus.test.ts` checks the surface handshake.
+
+> This is also the footage the submission video records: the demo is the app functioning on the device it was built for, not a PowerPoint about it.
+
+---
+
 ## The Growth pillar — PayPal AI Crowdfunding
 
 > **Beyond smart money — this is where your capital multiplies.** One screen over from the gateway: the same envelope and the same server judge, pointed the other way — money in, growth out. Finance a real business in Venezuela from **$20 to $1,000** and receive your share in **USD**.
@@ -113,6 +136,8 @@ Approve **once**: *≤ 60 USD, this week, these merchants.* The agent then produ
 - **`lib/gemini.ts`** — calls Gemini with a `responseSchema`, so the model is forced to return valid JSON rather than prose we parse. The system prompt is English to stay aligned with the UI vocabulary. It also owns the authentication decision and hands out a client for any region, because the text model and the live model are not served from the same one.
 - **`lib/voice/tools.ts`** — the tools the spoken agent may ask for, plus the validation of what it asks. Pure, import-free, and shared by the server (which declares them), the model (which calls them) and the browser (which checks them before acting).
 - **`lib/voice/live.ts`** — the Live API session: audio in, tool calls out, audio back. Server-side only.
+- **`lib/demo/script.ts`** — the guided demo's thirteen beats: route, action, focus, callout, caption and the measured narration file. It is data, so the tests can check it and the kiosk can play it.
+- **`lib/demo/bus.ts`** — the registry that lets the shell's kiosk ask a page for one of its own handlers, and waits for that page to mount after a route change. No page state is copied into the demo.
 - **`lib/grid/setup.ts`** — module registration, the licence key and the grid's theme, in one place because there are two grids and neither imports the other. Which *modules* get registered is decided by `lib/grid/licence.ts`, which reads a key before anyone hands it to a manager — AG Grid and AG Studio keep separate licence stores, and a Studio key given to the grid prints "Invalid License Key" although the key is valid.
 - **`lib/policy.ts`** — one source of truth for status and mode strings shared by server and grid, so a cell can never drift from what the renderer compares against.
 - **`lib/fx/rates.ts`** — pure conversion math through USD; no fetching, shared by server and browser.
@@ -364,6 +389,7 @@ paypal-ai-agent/
 │   │   ├── appendices/             # architecture · AG Grid · target market · final notes
 │   │   ├── components/EventConsole.tsx  # one console, one record, two surfaces
 │   │   ├── components/VoiceCommand.tsx  # mic → command → execute → speak back
+│   │   ├── components/DemoKiosk.tsx     # the guided film: audio, spotlight, captions
 │   │   └── fx/                     # live rates, converter
 │   ├── api/agent/route.ts          # intent → policy, metered, validated
 │   ├── api/agent/voice/route.ts    # speech → tool calls → spoken reply, same meter
@@ -384,6 +410,7 @@ paypal-ai-agent/
 │   ├── policy.ts                   # STATUS / MODE + transition, charge, hold and offer judgements, ceiling bands
 │   ├── gemini.ts                   # structured-output LLM call + auth for any region
 │   ├── voice/{tools,live,turn,wav}.ts # the spoken contract · the Live session · turn rules · WAV headers
+│   ├── demo/{bus,script,scenario,useDemoSurface}.ts # film contract · beats · recorded search · page hook
 │   ├── grid/setup.ts               # which modules the licence allows, and the grid's palette
 │   ├── grid/licence.ts             # reads a key before it reaches a manager (two stores exist)
 │   ├── paypal.ts                   # server-only client, balance, order lifecycle, transactions

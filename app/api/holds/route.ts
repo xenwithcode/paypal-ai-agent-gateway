@@ -29,6 +29,7 @@ import {
 } from "@/lib/policy";
 import {
   matchProduct,
+  getProduct,
   evaluateCondition,
   findWithinBudget,
   CATALOG_SOURCE,
@@ -92,6 +93,17 @@ interface PolicyInput {
   payee: string;
   /** PayPal's authorization id, present only when the payer approved a hold. */
   authorizationId: string;
+  /**
+   * The catalog product the human actually chose.
+   *
+   * The row has carried this since the picker landed; the server did not, so
+   * an evaluation searched by the chosen title and re-scored every candidate
+   * — which meant choosing the second of two near-identical products could
+   * report the first one's price and verdict. The demo made that visible on
+   * the approval card: the right title, the wrong price. An id is exact;
+   * a title is a search.
+   */
+  chosenId?: number;
   /**
    * The crowdfunding project this order funds, when it funds one.
    *
@@ -176,6 +188,14 @@ function readPolicy(value: unknown): PolicyInput | string {
     return "policy.authorizationId is not a PayPal id.";
   }
 
+  const chosenId = p.chosenId;
+  if (
+    chosenId !== undefined &&
+    (typeof chosenId !== "number" || !Number.isFinite(chosenId) || chosenId <= 0)
+  ) {
+    return "policy.chosenId must be a positive number.";
+  }
+
   return {
     id: p.id,
     what: p.what,
@@ -190,7 +210,26 @@ function readPolicy(value: unknown): PolicyInput | string {
     payee,
     project,
     authorizationId: typeof authorizationId === "string" ? authorizationId : "",
+    chosenId: typeof chosenId === "number" ? chosenId : undefined,
   };
+}
+
+/**
+ * The product this order points at.
+ *
+ * A chosen candidate is resolved by id, exactly, because that is what the
+ * human saw and clicked. Everything else — a seeded row, a typed order, a row
+ * stored before the picker existed — falls back to the title search it has
+ * always used.
+ */
+async function resolvePolicyProduct(
+  policy: PolicyInput
+): Promise<{ product: Awaited<ReturnType<typeof getProduct>>; matchedBy: string | null }> {
+  if (policy.chosenId !== undefined) {
+    const product = await getProduct(policy.chosenId);
+    if (product) return { product, matchedBy: "chosen candidate" };
+  }
+  return matchProduct(`${policy.what} ${policy.merchant}`.trim());
 }
 
 /** What one order did on this pass, in the words the console will print. */
@@ -333,7 +372,7 @@ async function runAutonomousPass(raw: unknown): Promise<NextResponse> {
 
     // The condition, re-read from the catalog instead of believed from the row
     // — the same rule the capture path follows, for the same reason.
-    const { product } = await matchProduct(`${policy.what} ${policy.merchant}`.trim());
+    const { product } = await resolvePolicyProduct(policy);
     const evaluation = evaluateCondition(policy.condition, product);
     const marketPrice = product ? Number(product.price.toFixed(2)) : undefined;
 
@@ -434,9 +473,7 @@ export async function POST(req: NextRequest) {
     // last judged, and a price read at draft time is not still the price. This
     // refreshes it without implying that anything was settled.
     if (action === "evaluate") {
-      const { product, matchedBy } = await matchProduct(
-        `${policy.what} ${policy.merchant}`.trim()
-      );
+      const { product, matchedBy } = await resolvePolicyProduct(policy);
       const evaluation = evaluateCondition(policy.condition, product);
 
       // Alternatives are worth fetching exactly when the match is out of
@@ -576,9 +613,7 @@ export async function POST(req: NextRequest) {
     // transfer that reserved against PayPal's authorization can now capture.
     // The early refusal this replaces is what used to leave those holds
     // reserved forever, under a Capture button that could never succeed.
-    const { product, matchedBy } = await matchProduct(
-      `${policy.what} ${policy.merchant}`.trim()
-    );
+    const { product, matchedBy } = await resolvePolicyProduct(policy);
     const evaluation = evaluateCondition(policy.condition, product);
 
     if (evaluation.met !== true) {

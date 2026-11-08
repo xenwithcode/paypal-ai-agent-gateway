@@ -147,6 +147,10 @@ export default function OrderPanel({
             limit: row.limit,
             currency: row.currency,
             status: row.status,
+            // The exact product this card is about. A title search can return
+            // the other one of two near-identical products, and then the card
+            // would show the right name beside the wrong price.
+            chosenId: row.chosenId,
           },
         }),
       });
@@ -292,6 +296,7 @@ export default function OrderPanel({
         role="dialog"
         aria-modal="true"
         aria-label={`Order: ${row.what}`}
+        data-demo-target="order-card"
         className="w-full max-w-2xl overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-2xl"
       >
         {/* ── Header ─────────────────────────────────────────────── */}

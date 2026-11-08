@@ -15,6 +15,14 @@ import { applyRelevance } from "@/lib/commerce/relevance";
 import { ceilingQuestion } from "@/lib/ceilingQuestion";
 // Isolated module that owns the Venezuela inflation-shield logic.
 import { processEmergencyDevaluationShield } from "@/lib/shields/InflationShield";
+// The guided film's recorded input. It changes what is *asked*, never how the
+// envelope, the catalog or the condition are judged.
+import {
+  DEMO_SCENARIO_CANDIDATES,
+  DEMO_SCENARIO_MATCHED_ID,
+  DEMO_SCENARIO_REASON,
+  demoScenarioPolicy,
+} from "@/lib/demo/scenario";
 
 /** Hard cap on the intent text. Mirrors the `maxLength` on the input field. */
 const MAX_PROMPT_LENGTH = 500;
@@ -65,7 +73,11 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ success: false, error: "A JSON body is required." }, { status: 400 });
     }
 
-    const { prompt, location } = body as { prompt?: unknown; location?: unknown };
+    const { prompt, location, demo } = body as {
+      prompt?: unknown;
+      location?: unknown;
+      demo?: unknown;
+    };
 
     // Strict input validation: the prompt drives an LLM call, so we never let
     // a non-string, empty or oversized value reach the model.
@@ -77,6 +89,55 @@ export async function POST(req: NextRequest) {
         { success: false, error: `Intent exceeds ${MAX_PROMPT_LENGTH} characters.` },
         { status: 400 }
       );
+    }
+
+    // The guided film asks for one known scenario. It still goes through the
+    // same response shape, the same catalog records and the same condition
+    // evaluator; what it does not do is put a judge in front of a 40-second
+    // model call. The manual path below is untouched.
+    if (demo === true) {
+      const policy = demoScenarioPolicy();
+      const candidates = DEMO_SCENARIO_CANDIDATES;
+      const product =
+        candidates.find((candidate) => candidate.id === DEMO_SCENARIO_MATCHED_ID) ?? candidates[0];
+      const evaluation = evaluateCondition(policy.condition, product);
+
+      return NextResponse.json({
+        success: true,
+        source: "demo",
+        reason: DEMO_SCENARIO_REASON,
+        gridRow: {
+          id: Date.now(),
+          createdAt: new Date().toISOString(),
+          what: policy.what,
+          merchant: policy.merchant,
+          limit: policy.limit,
+          currency: policy.currency,
+          condition: policy.condition,
+          expires: policy.expires,
+          mode: policy.mode,
+          status: STATUS.pending,
+          marketPrice: product ? Number(product.price.toFixed(2)) : null,
+          marketImage: product?.thumbnail ?? null,
+          conditionMet: evaluation.met,
+          conditionDetail: `${evaluation.detail} · recorded demo scenario on ${CATALOG_SOURCE.name} (${CATALOG_SOURCE.kind})`,
+          allowEndpoint: "",
+          candidates: candidateRecords(candidates),
+          matchedId: DEMO_SCENARIO_MATCHED_ID,
+          chosenId: null,
+        },
+        candidates,
+        searchNote: null,
+        matchedId: DEMO_SCENARIO_MATCHED_ID,
+        openShellConfig: {
+          sandboxName: "sb-white-sneakers",
+          networkPolicy: {
+            allowEndpoint: "",
+            maxTransactionLimit: policy.limit,
+            tokenTarget: "PYUSD_SOLANA_MAINNET",
+          },
+        },
+      });
     }
 
     const normalisedPrompt = prompt.toLowerCase();

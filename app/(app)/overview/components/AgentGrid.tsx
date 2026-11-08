@@ -69,6 +69,9 @@ import { useFxShield } from "../../hooks/useFxShield";
 // The balance, re-read after something moves it — the figure this page is
 // given at render is correct then and stale from the first capture on.
 import { usePaypalBalance } from "../../hooks/usePaypalBalance";
+// The guided demo's contract: these are the handlers the kiosk can ask for,
+// and they are the same ones the buttons on this page call.
+import { useDemoSurface } from "@/lib/demo/useDemoSurface";
 
 /**
  * Structural check for rows read back out of storage. Anything that does not
@@ -266,6 +269,20 @@ export default function AgentGrid({
 
   /** Armed only while the voice agent is running a command: see `addLog`. */
   const logSinkRef = useRef<((line: string) => void) | null>(null);
+
+  /**
+   * What the guided demo needs to remember between steps.
+   *
+   * A search is two steps — the request, then the choice — and the candidate
+   * strip the judge sees is React state. These refs keep the same records
+   * available to the next action without duplicating the page's state or
+   * making the demo wait for a render it cannot observe. Rows created *by* the
+   * demo are tracked so a replay or an exit can remove them: the walkthrough
+   * must not leave furniture in the judge's table.
+   */
+  const demoSearchRef = useRef<{ row: PolicyRow; candidates: CatalogProduct[] } | null>(null);
+  const demoCreatedIds = useRef<Set<number>>(new Set());
+  const demoChosenIdRef = useRef<number | null>(null);
 
   // The Venezuela simulation belongs to the opt-in module, exactly like the
   // sidebar's Pago Móvil link, the /send/bank gate and the bank tab. It was
@@ -558,7 +575,16 @@ export default function AgentGrid({
   // could destroy.
   useEffect(() => {
     if (rowData === SEED_ROWS) return;
-    writePolicyRows(rowData);
+    // The guided demo's rows are samples drawn in memory. They belong on the
+    // screen, not in the durable ledger: a walkthrough that leaves an
+    // "Awaiting approval" row behind every time a judge presses play is a
+    // demo that quietly edits the product's record. Everything else persists
+    // exactly as before.
+    const persistable =
+      demoCreatedIds.current.size === 0
+        ? rowData
+        : rowData.filter((row) => !demoCreatedIds.current.has(row.id));
+    writePolicyRows(persistable);
   }, [rowData]);
 
   /**
@@ -597,6 +623,9 @@ export default function AgentGrid({
               // Present only when PayPal issued one. The server settles
               // against it or says plainly that no funds moved.
               authorizationId: row.authorizationId ?? "",
+              // The product the order actually points at, so the capture is
+              // judged against the same record the human approved.
+              chosenId: row.chosenId,
             },
           }),
         });
@@ -731,6 +760,11 @@ export default function AgentGrid({
               limit: row.limit,
               currency: row.currency,
               status: row.status,
+              // The exact product the human chose. Without it the server
+              // re-searches by title and can report a different candidate's
+              // price and verdict — the demo caught that on the second of two
+              // near-identical sneakers.
+              chosenId: row.chosenId,
             },
           }),
         });
@@ -799,15 +833,29 @@ export default function AgentGrid({
    * approval card open — on the thing they chose rather than on the one the
    * agent had picked in silence.
    */
-  const handleChoose = useCallback(
-    async (product: CatalogProduct) => {
-      if (!pendingRow) return;
-
-      const merchant = product.brand ?? pendingRow.merchant;
+  /**
+   * Commit a choice against an explicit draft.
+   *
+   * The button has the draft in state; the guided demo has it in a ref from
+   * the step that searched. Both end in this function, so the console line,
+   * the row and the re-judge cannot tell two stories about one choice.
+   */
+  const commitChoice = useCallback(
+    async (
+      product: CatalogProduct,
+      sourceRow: PolicyRow,
+      candidateCount: number,
+      opts?: { demo?: boolean }
+    ) => {
+      const merchant = product.brand ?? sourceRow.merchant;
       const chosen: PolicyRow = {
-        ...pendingRow,
+        ...sourceRow,
         what: product.title,
         merchant,
+        // A row the walkthrough created is a sample, on the row itself. It
+        // must never read as an order somebody actually placed — especially
+        // if the judge closes the tab before the demo gets to reset.
+        ...(opts?.demo ? { sample: true } : {}),
         marketPrice: Number(product.price.toFixed(2)),
         // The grid cell is 36px, so the thumbnail is the right asset there.
         // The picker and the approval card use `images[0]`, which is the only
@@ -821,11 +869,16 @@ export default function AgentGrid({
         chosenId: product.id,
       };
 
+      if (opts?.demo) {
+        demoCreatedIds.current.add(chosen.id);
+        demoChosenIdRef.current = chosen.id;
+      }
+
       setRowData((prev) => [...prev, chosen]);
       addLog(
         `📄 [ORDER] Created "${chosen.what}" · ceiling ${chosen.limit} ${chosen.currency}` +
           `${chosen.condition ? ` · condition ${chosen.condition}` : ""}` +
-          ` — chosen from ${candidates.length} candidate${candidates.length === 1 ? "" : "s"}.`
+          ` — chosen from ${candidateCount} candidate${candidateCount === 1 ? "" : "s"}.`
       );
 
       setPendingRow(null);
@@ -833,9 +886,35 @@ export default function AgentGrid({
       setMatchedId(null);
       setSelectedId(chosen.id);
 
+      if (opts?.demo) {
+        // Bring the new row into the grid's own viewport before the spotlight
+        // lands on the table. A row appended below ten existing orders is a
+        // row the judge never sees, and the step exists to show it.
+        const reveal = (attempt = 0) => {
+          const api = gridRef.current?.api;
+          if (!api) return;
+          const node = api.getRowNode(String(chosen.id));
+          if (node?.rowIndex !== undefined && node.rowIndex !== null) {
+            api.ensureIndexVisible(node.rowIndex, "middle");
+            return;
+          }
+          if (attempt < 8) window.setTimeout(() => reveal(attempt + 1), 180);
+        };
+        window.setTimeout(() => reveal(), 160);
+      }
+
       await rejudge(chosen, { what: chosen.what, merchant });
+      return chosen;
     },
-    [pendingRow, candidates.length, addLog, rejudge]
+    [addLog, rejudge]
+  );
+
+  const handleChoose = useCallback(
+    async (product: CatalogProduct) => {
+      if (!pendingRow) return;
+      await commitChoice(product, pendingRow, candidates.length);
+    },
+    [pendingRow, candidates.length, commitChoice]
   );
 
   /**
@@ -1314,9 +1393,12 @@ export default function AgentGrid({
    * typed draft just as easily as it can for a spoken one, and the spoken
    * reply points at it ("shown below").
    */
-  const draftOrderFrom = async (text: string, opts?: { revealResults?: boolean }) => {
+  const draftOrderFrom = async (
+    text: string,
+    opts?: { revealResults?: boolean; demo?: boolean }
+  ) => {
     const intent = text.trim();
-    if (!intent) return;
+    if (!intent) return { ok: false as const, candidateCount: 0 };
     setLoading(true);
     setIntentError(null);
     addLog(`📨 Drafting an order from: "${intent}"`);
@@ -1324,7 +1406,7 @@ export default function AgentGrid({
       const res = await fetch("/api/agent", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ prompt: intent })
+        body: JSON.stringify({ prompt: intent, demo: opts?.demo === true })
       });
       const data = await res.json();
       if (data.success) {
@@ -1335,12 +1417,14 @@ export default function AgentGrid({
         addLog(
           data.source === "model"
             ? `🧠 [Gemini] Parsed the intent into an order for "${data.gridRow.what}".`
-            // The reason comes from the server, which is the only place that
-            // can see the configuration. Guessing at it here is what this
-            // line used to do: it claimed "No GEMINI_API_KEY" even when a call
-            // had gone out and failed — and it would be wrong twice over on
-            // Vertex, where no key is involved.
-            : `⚙️ [FALLBACK] ${data.reason ?? "No model produced this policy."}`
+            : data.source === "demo"
+              ? `🎬 [DEMO] Recorded scenario — same envelope, same catalog, same judge. The typed and spoken paths still call Gemini.`
+              // The reason comes from the server, which is the only place that
+              // can see the configuration. Guessing at it here is what this
+              // line used to do: it claimed "No GEMINI_API_KEY" even when a call
+              // had gone out and failed — and it would be wrong twice over on
+              // Vertex, where no key is involved.
+              : `⚙️ [FALLBACK] ${data.reason ?? "No model produced this policy."}`
         );
 
         setPrompt("");
@@ -1367,18 +1451,22 @@ export default function AgentGrid({
           setCandidates(found);
           setMatchedId(typeof data.matchedId === "number" ? data.matchedId : null);
           setSelectedId(null);
+          // The guided demo's next step chooses from this exact search.
+          demoSearchRef.current = { row: data.gridRow, candidates: found };
           addLog(
             `🖼️ [SEARCH] ${found.length} candidate${found.length === 1 ? "" : "s"} for "${data.gridRow.what}" — shown below; choose one to draft the order.`
           );
           if (opts?.revealResults) {
             window.setTimeout(() => revealWhenHidden(pickerHostRef.current), 60);
           }
+          return { ok: true as const, candidateCount: found.length, rowId: data.gridRow.id };
         } else {
           // Nothing to choose, so any strip from a previous search is now
           // about a different order and must not outlive it.
           setCandidates([]);
           setPendingRow(null);
           setMatchedId(null);
+          demoSearchRef.current = null;
           addLog(
             `📄 [ORDER] Created "${data.gridRow.what}" · ceiling ${data.gridRow.limit} ${data.gridRow.currency}` +
               `${data.gridRow.condition ? ` · condition ${data.gridRow.condition}` : ""}.`
@@ -1390,6 +1478,7 @@ export default function AgentGrid({
           if (opts?.revealResults) {
             window.setTimeout(() => revealWhenHidden(panelHostRef.current), 60);
           }
+          return { ok: true as const, candidateCount: 0, rowId: data.gridRow.id };
         }
       } else if (data.needsCeiling === true) {
         // A question, not a failure: the request named no amount, so the
@@ -1403,6 +1492,8 @@ export default function AgentGrid({
             : "Name the most this order may ever cost.";
         addLog(`💬 [AGENT] ${ask}`);
         setIntentError(ask);
+        demoSearchRef.current = null;
+        return { ok: false as const, candidateCount: 0, needsCeiling: true };
       } else if (res.status === 429) {
         // Distinct from a rejection on purpose: nothing was judged here, so it
         // must not read as the agent turning the order down. The attempt was
@@ -1410,6 +1501,8 @@ export default function AgentGrid({
         const limit = data.error ?? "Too many requests. Wait a moment and try again.";
         addLog(`⏳ [LIMIT] ${limit}`);
         setIntentError(limit);
+        demoSearchRef.current = null;
+        return { ok: false as const, candidateCount: 0 };
       } else {
         // A 4xx/5xx the button caused. Logged *and* shown: the server's own
         // reason is what a person can act on, and guessing a second one here
@@ -1417,11 +1510,15 @@ export default function AgentGrid({
         const refused = data.error ?? `The agent could not answer (HTTP ${res.status}).`;
         addLog(`❌ [API] ${refused}`);
         setIntentError(refused);
+        demoSearchRef.current = null;
+        return { ok: false as const, candidateCount: 0 };
       }
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
       addLog(`❌ Error connecting to the server: ${message}`);
       setIntentError(`Could not reach the server — ${message}`);
+      demoSearchRef.current = null;
+      return { ok: false as const, candidateCount: 0 };
     } finally {
       setLoading(false);
     }
@@ -1557,6 +1654,95 @@ export default function AgentGrid({
     return captured;
   };
 
+  /**
+   * The guided demo's verbs. Nothing here is a second implementation: each
+   * one lands on the handler above (or the same commit the Choose button
+   * calls), which is the only reason the demo can be trusted to show the
+   * product rather than a puppet of it.
+   */
+  useDemoSurface("overview", {
+    reset: () => {
+      setSelectedId(null);
+      setCandidates([]);
+      setPendingRow(null);
+      setMatchedId(null);
+      setIntentError(null);
+      setPrompt("");
+      if (demoCreatedIds.current.size > 0) {
+        const ids = new Set(demoCreatedIds.current);
+        setRowData((prev) => prev.filter((row) => !ids.has(row.id)));
+        demoCreatedIds.current.clear();
+      }
+      demoChosenIdRef.current = null;
+      demoSearchRef.current = null;
+    },
+    fillIntent: (arg) => {
+      setPrompt(String(arg ?? ""));
+      setIntentError(null);
+    },
+    draft: async (arg) => {
+      const prompt = String(arg ?? "");
+      let result = await draftOrderFrom(prompt, { revealResults: false, demo: true });
+      // The catalogue's search is literal. If the model's English render or
+      // the relevance judge finds nothing under the exact phrase, the demo
+      // tries the catalogue's own word for the same item rather than leaving
+      // the judge in front of an empty strip. It is still a real search, and
+      // the console says it happened.
+      if (result.ok && result.candidateCount === 0) {
+        // A search with no honest match still drafts an order (the gateway
+        // never invents a product, so the order simply has none). The demo
+        // retries with the catalogue's own word for the same item, but the
+        // empty draft must not stay behind as a second row.
+        const emptyId = "rowId" in result ? result.rowId : undefined;
+        if (emptyId !== undefined) {
+          setRowData((prev) => prev.filter((row) => row.id !== emptyId));
+        }
+        addLog("🔎 [DEMO] The exact phrase found no honest match — trying the catalogue's own word for the same item.");
+        result = await draftOrderFrom("sneakers", { revealResults: false, demo: true });
+
+        // If even the retry finds nothing, the card it opened is a sample,
+        // and replay/exit must be able to take it away.
+        if (result.ok && result.candidateCount === 0) {
+          const fallbackId = "rowId" in result ? result.rowId : undefined;
+          if (fallbackId !== undefined) {
+            demoCreatedIds.current.add(fallbackId);
+            setRowData((prev) =>
+              prev.map((row) => (row.id === fallbackId ? { ...row, sample: true } : row))
+            );
+          }
+        }
+      }
+      return result;
+    },
+    choose: async (arg) => {
+      const source = demoSearchRef.current;
+      if (!source) {
+        addLog("❌ [DEMO] There is no candidate strip to choose from.");
+        return;
+      }
+
+      // "best" is the walkthrough's deliberate override: the agent's pick is
+      // the first candidate, but it can miss the condition the human set. The
+      // demo picks the cheapest one that fits the ceiling, which is the
+      // decision the screen exists to hand to a person.
+      const product =
+        arg === "best"
+          ? [...source.candidates].sort((a, b) => a.price - b.price)[0]
+          : source.candidates[Math.max(0, Math.trunc(Number(arg ?? 0)))] ?? source.candidates[0];
+
+      if (!product) return;
+      await commitChoice(product, source.row, source.candidates.length, { demo: true });
+    },
+    close: () => {
+      setSelectedId(null);
+    },
+    openFlight: () => {
+      const id = demoChosenIdRef.current;
+      if (id === null) return;
+      openOrderFromFlight(id, 1);
+    },
+  });
+
   return (
     <div className="p-6 max-w-6xl mx-auto space-y-6 relative">
 
@@ -1635,7 +1821,10 @@ export default function AgentGrid({
       <StartHere />
 
       {/* Natural-language intent bar */}
-      <div className="bg-white p-6 rounded-2xl border border-slate-200 shadow-sm space-y-3">
+      <div
+        data-demo-target="intent"
+        className="bg-white p-6 rounded-2xl border border-slate-200 shadow-sm space-y-3"
+      >
         {/* The microphone sits above the Draft button, in the label row: it
             is a second way in, not a third control squeezing the field, and
             it reports straight to the same console the rest of this page
@@ -1749,7 +1938,7 @@ export default function AgentGrid({
           so it is shown where the request was made, before any order exists
           rather than after. The approval card opens only once a choice does. */}
       {pendingRow && candidates.length > 0 && (
-        <div ref={pickerHostRef}>
+        <div ref={pickerHostRef} data-demo-target="candidates">
           <CandidatePicker
             candidates={candidates}
             matchedId={matchedId}
@@ -1761,7 +1950,10 @@ export default function AgentGrid({
       )}
 
       {/* AG Grid policy table */}
-      <div className="bg-white rounded-2xl border border-slate-200 p-4 shadow-sm sm:p-6">
+      <div
+        data-demo-target="orders"
+        className="bg-white rounded-2xl border border-slate-200 p-4 shadow-sm sm:p-6"
+      >
         {/* The table was the only region on this page with no name. A heading
             is what tells someone landing here that this is where the orders
             live, and the line under it states the one gesture that is not
@@ -1801,19 +1993,30 @@ export default function AgentGrid({
               byte-for-byte what it was. */}
           <AgGridReact<PolicyRow>
             ref={gridRef}
+            // `rowData` is data, not configuration, and it is the one option
+            // that changes while the page is open — a search adds candidates,
+            // a choice appends an order, an agent pass updates a verdict. It
+            // goes in as a direct prop because the React wrapper updates
+            // that; a `rowData` buried in `gridOptions` is read on mount and
+            // then ignored, which is exactly how a chosen order could exist in
+            // state and its card while never appearing in the table.
+            rowData={rowData}
             // Master/detail as props, the way the React wrapper documents it.
-            // Everything else lives in `gridOptions`, because AG Grid is
-            // explicit about options passed as individual props (error #307):
-            // it cannot tell application data from configuration, so it warns
-            // on every load. These two are the documented exception.
+            // The rest lives in `gridOptions`, because AG Grid is explicit
+            // about options passed as individual props (error #307): it
+            // cannot tell application data from configuration, so it warns on
+            // every load.
             masterDetail={ENTERPRISE_GRID}
             detailCellRendererParams={ENTERPRISE_GRID ? auditDetailParams : undefined}
             gridOptions={{
-              rowData,
               columnDefs,
               theme: gridTheme,
               animateRows: true,
               context: { onHoldAction: handleHoldAction },
+              // Stable identity per order: the demo scrolls to the row it just
+              // appended, and a grid that identifies rows by object reference
+              // makes that a guess after every re-judge.
+              getRowId: (params) => String((params.data as PolicyRow).id),
               rowHeight: 52,
               headerHeight: 44,
               onCellClicked: (event) => {
@@ -1859,7 +2062,9 @@ export default function AgentGrid({
 
           `onOpenOrder` closes the loop the other way: from the sum back to
           the order, which is the question a reader points at the bar and asks. */}
-      <MoneyInFlight rows={rowData} onOpenOrder={openOrderFromFlight} />
+      <div data-demo-target="flight">
+        <MoneyInFlight rows={rowData} onOpenOrder={openOrderFromFlight} />
+      </div>
 
       {/* The console as a shared component: Recurring reads the record this
           one writes, so there is one place the tone rules and the empty

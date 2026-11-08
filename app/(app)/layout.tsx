@@ -3,6 +3,7 @@
 // mobile. Lives in a route group so the root `/` redirect stays outside it and
 // never flashes the sidebar.
 import Sidebar from "./components/Sidebar";
+import DemoKiosk from "./components/DemoKiosk";
 
 export default function AppLayout({ children }: { children: React.ReactNode }) {
   return (
@@ -14,6 +15,9 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
       {/* Content is offset only where the sidebar is fixed; on mobile the
           sidebar sits above the content instead. */}
       <div className="md:pl-64 print:pl-0">{children}</div>
+      {/* The guided demo lives in the shell so it survives the route changes
+          it starts. It renders nothing until the sidebar CTA is pressed. */}
+      <DemoKiosk />
     </div>
   );
 }
