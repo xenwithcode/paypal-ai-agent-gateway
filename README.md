@@ -329,6 +329,12 @@ The three steps, in order: press the button in the app → PayPal opens its
 checkout → sign in with the row above and press **Approve**. The session then
 stays in the browser until it is closed, so the next approval needs no sign-in.
 
+> **Recording the approval?** PayPal's checkout opens in its **own window**, so
+> a recording of the app tab alone will not show the login or the approval.
+> Record the whole screen (or that PayPal window), and use a private window or
+> log out of the sandbox buyer if you want the password step in the take. The
+> app never receives that password: PayPal hosts it on its own origin.
+
 **Sandbox only.** These credentials work where the app is configured to spend
 fake money, and nowhere else: sandbox and live are separate accounts with
 separate logins, and the same words on a live login would be real money. They

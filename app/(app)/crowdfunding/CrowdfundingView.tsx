@@ -891,6 +891,10 @@ export default function CrowdfundingView({
                   PayPal asks you to approve. The money is reserved, not taken: it is captured only
                   if the campaign reaches its goal.
                 </p>
+                <p className="text-center text-[10px] leading-relaxed text-slate-400">
+                  PayPal opens its own window and may remember your sandbox session — use a private
+                  window to see the sign-in step.
+                </p>
               </div>
             ) : (
               <button

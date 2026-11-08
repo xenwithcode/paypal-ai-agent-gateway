@@ -707,6 +707,12 @@ export default function OrderPanel({
                       </button>
                     )}
                     <p className="text-center text-[11px] leading-relaxed text-slate-400">{note}</p>
+                    {usePaypal && (
+                      <p className="text-center text-[10px] leading-relaxed text-slate-400">
+                        PayPal opens its own window and may remember your sandbox session — use a
+                        private window to see the sign-in step.
+                      </p>
+                    )}
                   </div>
                 );
               })()
